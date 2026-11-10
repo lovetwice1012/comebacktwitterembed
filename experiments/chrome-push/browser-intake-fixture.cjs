@@ -26,6 +26,53 @@ function transfer(kind) {
     return { format: 'x-notification-subscription', version: 2, provenance: { kind: `${kind}-gcm`, adapterVersion: '1.0.0',
         browserVersion: kind === 'brave' ? '157.1.99.55' : '157.0.8103.39', ...(kind === 'brave' ? { engineVersion: '157.0.8103.39' } : {}), readMethod: `${kind}-gcm-snapshot` }, push };
 }
+async function firefoxBrowserFixture(origin, token, output, db) {
+    const { Builder, By, until } = require('selenium-webdriver');
+    const firefox = require('selenium-webdriver/firefox');
+    const options = new firefox.Options().setBinary('C:\\Program Files\\Mozilla Firefox\\firefox.exe').addArguments('-headless')
+        .setPreference('network.proxy.type', 1).setPreference('network.proxy.http', '127.0.0.1').setPreference('network.proxy.http_port', 9)
+        .setPreference('network.proxy.ssl', '127.0.0.1').setPreference('network.proxy.ssl_port', 9).setPreference('network.proxy.no_proxies_on', 'localhost,127.0.0.1');
+    const file = transfer('firefox'), filename = path.join(output, `synthetic-${randomUUID()}.json`);
+    await fs.writeFile(filename, JSON.stringify(file), { flag: 'wx' });
+    let driver;
+    try {
+        driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+        assert.equal((await driver.getCapabilities()).get('browserName'), 'firefox');
+        await driver.manage().window().setRect({ width: 390, height: 900 });
+        await driver.get(origin); await driver.manage().addCookie({ name: 'fixture', value: token, httpOnly: true }); await driver.navigate().refresh();
+        const button = text => By.xpath(`//button[contains(normalize-space(.), '${text}')]`);
+        await driver.wait(until.elementLocated(button('受信情報を追加・登録し直す')), 10000);
+        await (await driver.findElement(button('受信情報を追加・登録し直す'))).click();
+        await (await driver.findElement(button('ファイルを登録する'))).click();
+        await (await driver.findElement(By.css('.nx-consent-checkbox input'))).click();
+        const input = await driver.findElement(By.css('input[type=file]'));
+        await input.sendKeys(filename);
+        await driver.wait(async () => (await input.getAttribute('value')).endsWith(path.basename(filename)), 10000);
+        await (await driver.findElement(button('ファイルの選択を取り消す'))).click();
+        assert.equal(await input.getAttribute('value'), '');
+        await input.sendKeys(filename);
+        const validate = await driver.findElement(button('ファイルの内容を確認'));
+        await driver.wait(until.elementIsEnabled(validate), 10000); await validate.click();
+        await driver.wait(until.elementLocated(By.css('[aria-label="X通知ファイルの登録確認"]')), 10000);
+        const review = await driver.findElement(By.css('[aria-label="X通知ファイルの登録確認"]'));
+        assert((await review.getText()).includes('Firefox 160.0a1'));
+        assert((await input.getAttribute('value')).endsWith(path.basename(filename)));
+        await fs.writeFile(path.join(output, 'firefox-review.png'), await driver.takeScreenshot(), 'base64');
+        await (await driver.findElement(button('この受信情報を登録'))).click();
+        await driver.wait(async () => (await driver.findElement(By.css('body')).getText()).includes('受信情報を登録しました。'), 10000);
+        const secretVisible = await driver.executeScript('return document.documentElement.outerHTML.includes(arguments[0]) || Object.values(localStorage).includes(arguments[0]) || Object.values(sessionStorage).includes(arguments[0]);', file.push.p256dhPrivateKey.d);
+        assert.equal(secretVisible, false);
+        const rows = await db.queryDatabase('SELECT browser_kind,sealed_json FROM automation_x_subscriptions WHERE owner_user_id=?', ['222222222222222222']);
+        assert.equal(rows.length, 4); assert.equal(rows.filter(row => row.browser_kind === 'firefox').length, 2);
+        assert(rows.every(row => !row.sealed_json.includes(file.push.p256dhPrivateKey.d)));
+        const dimensions = await driver.executeScript('return { width: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth };');
+        assert.equal(dimensions.overflow, false);
+        return dimensions.width;
+    } finally {
+        if (driver) await driver.quit();
+        await fs.unlink(filename);
+    }
+}
 async function main() {
     assert.equal(Number(process.env.AUTOMATION_TEST_DB_PORT), 33631, 'Use isolated fixture DB port 33631');
     const playwright = require('playwright-core'), esbuild = require('esbuild');
@@ -121,7 +168,10 @@ async function main() {
             assert.equal(external, 0); assert.equal(errors, 0);
             await context.close();
         }
-        console.log(JSON.stringify({ renderer, firefoxMobile: true, chromeDesktop: true, braveMobile: true, realIntakeApi: true, encryptedRecords: 3, externalRequests: 0, pageErrors: 0, screenshots: output }));
+        const firefoxNativeWidth = process.env.CBTE_FIREFOX_FIXTURE === '1' ? await firefoxBrowserFixture(origin, token, output, db) : null;
+        console.log(JSON.stringify({ renderer, firefoxMobile: true, chromeDesktop: true, braveMobile: true,
+            firefoxNative: process.env.CBTE_FIREFOX_FIXTURE === '1', firefoxNativeWidth, realIntakeApi: true,
+            encryptedRecords: process.env.CBTE_FIREFOX_FIXTURE === '1' ? 4 : 3, chromiumExternalRequests: 0, chromiumPageErrors: 0, screenshots: output }));
     } finally {
         if (browser) await browser.close();
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
