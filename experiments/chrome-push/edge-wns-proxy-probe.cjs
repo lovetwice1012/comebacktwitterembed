@@ -6,14 +6,29 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
+const https = require('node:https');
 const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
-const { createHmac, createHash, createCipheriv } = require('node:crypto');
+const { createHmac, createHash, createCipheriv, createPrivateKey } = require('node:crypto');
+const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+async function sendFixture(subscription, message) {
+    const request = webpush.generateRequestDetails(subscription, message, { TTL: 60, contentEncoding: 'aes128gcm' });
+    const endpoint = new URL(request.endpoint);
+    if (endpoint.protocol !== 'https:' || !/^[a-z0-9-]+\.notify\.windows\.com$/i.test(endpoint.hostname)) throw new Error('PROBE_ENDPOINT_INVALID');
+    await new Promise((resolve, reject) => {
+        const req = https.request(endpoint, { method: 'POST', headers: request.headers, timeout: 15000 }, response => {
+            response.resume(); response.once('end', () => response.statusCode >= 200 && response.statusCode < 300 ? resolve() : reject(new Error('PROBE_PUSH_FAILED')));
+        });
+        req.once('error', () => reject(new Error('PROBE_PUSH_FAILED')));
+        req.once('timeout', () => req.destroy()); req.end(request.body);
+    });
+    return Buffer.from(request.body);
+}
 function cmac(key, message) {
     if (![16, 32].includes(key.length)) return null;
     const encrypt = block => { const cipher = createCipheriv(`aes-${key.length * 8}-ecb`, key, null); cipher.setAutoPadding(false); return Buffer.concat([cipher.update(block), cipher.final()]); };
@@ -54,7 +69,8 @@ c=x509.CertificateBuilder().subject_name(n).issuer_name(n).public_key(k.public_k
 print(json.dumps({'key':k.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.TraditionalOpenSSL,serialization.NoEncryption()).decode(),'cert':c.public_bytes(serialization.Encoding.PEM).decode()}))`;
 async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, deviceFields; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
+    let probeStage = 'setup';
     try {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
@@ -68,6 +84,12 @@ async function main() {
             const event = { clientAlpn: incoming.alpnProtocol || null, upstreamAlpn: null, sentChunks: 0, receivedChunks: 0,
                 sentBytes: 0, receivedBytes: 0, firstSend: null }; events.push(event);
             const sent = [], received = [];
+            event.fixtureCipher = () => {
+                if (!expectedCipher) return null;
+                const combined = Buffer.concat(received), offset = combined.indexOf(expectedCipher);
+                const captured = offset < 0 ? null : Buffer.from(combined.subarray(offset, offset + expectedCipher.length));
+                combined.fill(0); return captured;
+            };
             incoming.on('data', chunk => { event.sentChunks++; event.sentBytes += chunk.length;
                 if (event.sentBytes <= 262144) sent.push(Buffer.from(chunk));
                 if (event.firstSend === null) event.firstSend = chunk.subarray(0, 14).toString('ascii').startsWith('PRI * HTTP/2.0') ? 'http2'
@@ -115,7 +137,9 @@ async function main() {
                         first32BeMinusSize: chunk.length >= 4 && Math.abs(chunk.readUInt32BE(0) - chunk.length) <= 64 ? chunk.readUInt32BE(0) - chunk.length : null,
                         xmlOffset: chunk.indexOf('<'), commandOffsets: commands.map(name => chunk.indexOf(name)).filter(offset => offset >= 0),
                         tags: tags.filter(tag => chunk.includes(Buffer.from(`<${tag}>`)) || chunk.includes(Buffer.from(`<${tag} `))) }; });
-                    const result = { tags: tags.filter(tag => text.includes(`<${tag}>`) || text.includes(`<${tag} `)), commands: commands.filter(name => text.includes(name)), frames };
+                    const result = { tags: tags.filter(tag => text.includes(`<${tag}>`) || text.includes(`<${tag} `)), commands: commands.filter(name => text.includes(name)), frames,
+                        fixtureCipherRaw: Boolean(expectedCipher && b.includes(expectedCipher)),
+                        fixtureCipherBase64: Boolean(expectedCipher && text.includes(expectedCipher.toString('base64'))) };
                     if (deviceFields) {
                         const tag = name => { const match = text.match(new RegExp(`<${name}>([^<]*)</${name}>`)); return match ? match[1] : null; };
                         const token = tag('reconnect-token'), nonce = tag('nonce'), signature = tag('signature');
@@ -228,24 +252,51 @@ async function main() {
         new Promise(resolve => { timer = setTimeout(() => resolve(null), 30000); })]).finally(() => clearTimeout(timer));
         const value = result?.result?.value || { ok: false, name: 'Timeout' };
         if (value.ok) {
-            await webpush.sendNotification(value.subscription, 'synthetic-wns-probe', { TTL: 60 });
+            expectedCipher = await sendFixture(value.subscription, 'synthetic-wns-probe');
             for (let i = 0; i < 80 && !browserReceived; i++) await wait(100);
         }
         await wait(1000);
         if (value.ok && process.env.EDGE_PROBE_RECONNECT === '1') {
             await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
+            probeStage = 'read-store';
             const db = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
                 { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+            let subscriptionFields;
             try {
                 await db.open();
                 for await (const [key, stored] of db.iterator({ limit: 64 })) {
-                    if (!key.toString('utf8').toLowerCase().includes('device')) continue;
-                    if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
-                    deviceFields = protoBytes(stored, [2, 3]);
+                    if (key.toString('utf8').toLowerCase().includes('device')) {
+                        if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
+                        deviceFields = protoBytes(stored, [2, 3]);
+                    } else if (process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1' && stored.includes(Buffer.from(origin))
+                        && stored.includes(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
+                        && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
+                        if (subscriptionFields) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
+                        subscriptionFields = protoBytes(stored, [6, 7, 16]);
+                    }
                 }
             } finally { await db.close().catch(() => {}); }
             if (!deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
+            if (process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') {
+                probeStage = 'decrypt-received';
+                if (!subscriptionFields?.[6] || !subscriptionFields?.[7] || !subscriptionFields?.[16]) throw new Error('PROBE_SUBSCRIPTION_MISSING');
+                const captured = events[0]?.fixtureCipher();
+                if (!captured) throw new Error('PROBE_CIPHERTEXT_MISSING');
+                try {
+                    const jwk = createPrivateKey({ key: subscriptionFields[7], format: 'der', type: 'pkcs8' }).export({ format: 'jwk' });
+                    if (!subscriptionFields[6].equals(Buffer.from(value.subscription.keys.auth, 'base64url'))) throw new Error('PROBE_AUTH_MISMATCH');
+                    const publicPoint = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+                    if (!publicPoint.equals(Buffer.from(value.subscription.keys.p256dh, 'base64url'))) throw new Error('PROBE_PUBLIC_MISMATCH');
+                    appServerKeyMatches = subscriptionFields[16].equals(Buffer.from(vapid.publicKey, 'base64url'));
+                    const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                    const plain = decryptEce(captured, { encoding: 'aes128gcm' }, { public_key: [...publicPoint],
+                        private_key: [...Buffer.from(jwk.d, 'base64url')], auth_secret: [...subscriptionFields[6]] });
+                    capturedCipherDecrypted = plain.equals(Buffer.from('synthetic-wns-probe')); plain.fill(0);
+                } finally {
+                    captured.fill(0); for (const field of Object.values(subscriptionFields)) field.fill(0);
+                }
+            }
             const copyProfile = process.env.EDGE_PROBE_COPY_PROFILE === '1';
             const reopenProfile = copyProfile ? path.join(root, 'synthetic-profile-copy') : profile;
             if (copyProfile && process.env.EDGE_PROBE_MINIMAL_PROFILE === '1') {
@@ -291,10 +342,13 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
-        const shapes = events.map(event => { const { describe, ...metadata } = event; return { ...metadata, shape: describe() }; });
+        const shapes = events.map(event => { const { describe, fixtureCipher, ...metadata } = event; return { ...metadata, shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
-        console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult,
+        console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
+    } catch (error) {
+        console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
+        throw error;
     } finally {
         await cdp?.close().catch(() => {});
         if (browser && browser.exitCode === null) { browser.kill(); await new Promise(resolve => browser.once('exit', resolve)); }
