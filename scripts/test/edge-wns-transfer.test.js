@@ -5,6 +5,7 @@ const { createECDH, randomBytes, generateKeyPairSync, createHash } = require('no
 const { normalizeEdgeTransfer, identifyEdgeTransfer } = require('../../src/automation/edge-wns-transfer');
 const { parseTransferFile, identifyTransfer, createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { createXSetup } = require('../../src/automation/x-setup');
+const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
 const enc = value => value.toString('base64url');
 function fixture() {
     const key = createECDH('prime256v1'); key.generateKeys(); const pub = key.getPublicKey();
@@ -67,4 +68,20 @@ test('unfinished Edge enrollment stays closed even when existing browsers are en
     await assert.rejects(service.validate({ userId: '123456789' }, input), { code: 'X_SETUP_EDGE_NOT_READY' });
     await assert.rejects(service.importFile({ userId: '123456789' }, { ...input, consent: true }), { code: 'X_SETUP_EDGE_NOT_READY' });
     assert.equal(writes, 0);
+});
+test('worker borrows only bound credentials and wipes buffers after success or failure', async () => {
+    const file = fixture(); let saved;
+    assert.equal(await withEdgeWnsCredentials(file, async credentials => {
+        saved = credentials; assert.equal(credentials.authenticationMode, 'bound');
+        assert.equal(credentials.reconnectToken.toString('ascii'), file.push.reconnectToken);
+        assert.equal(credentials.siteChannel.toString('ascii'), file.push.siteChannel);
+        assert.equal(credentials.deviceKey.toString('base64url'), file.push.deviceKey);
+        assert.equal(Object.hasOwn(credentials, 'productKey'), false); return 'ok';
+    }), 'ok');
+    for (const key of ['siteChannel', 'deviceKey', 'reconnectToken']) assert(saved[key].every(byte => byte === 0));
+    await assert.rejects(withEdgeWnsCredentials(file, async credentials => { saved = credentials; throw new Error('fixture failure'); }), /fixture failure/);
+    for (const key of ['siteChannel', 'deviceKey', 'reconnectToken']) assert(saved[key].every(byte => byte === 0));
+    file.push.scope = 'https://example.com/'; let called = false;
+    await assert.rejects(withEdgeWnsCredentials(file, async () => { called = true; }), { code: 'X_EDGE_WNS_CREDENTIALS_INVALID' });
+    assert.equal(called, false);
 });
