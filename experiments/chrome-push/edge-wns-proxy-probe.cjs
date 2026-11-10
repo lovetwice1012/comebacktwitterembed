@@ -547,11 +547,33 @@ async function main() {
                     if (_key.toString('utf8').toLowerCase().includes('device')) counts.device++;
                     else if (belongs(origin, value.subscription)) counts.target++;
                     else if (belongs(otherOrigin, otherSubscription)) counts.other++;
-                    else { counts.unknown++; if (process.env.EDGE_PROBE_ENUMERATE === '1') unknownRecords.push(Buffer.from(stored)); }
+                    else {
+                        counts.unknown++;
+                        if (process.env.EDGE_PROBE_ENUMERATE === '1') {
+                            unknownRecords.push(Buffer.from(stored));
+                            const name = _key.toString('utf8').toLowerCase();
+                            if (counts.unknownCommonPrefix === undefined) counts.unknownCommonPrefix = name;
+                            else {
+                                let index = 0; while (index < counts.unknownCommonPrefix.length && index < name.length && counts.unknownCommonPrefix[index] === name[index]) index++;
+                                counts.unknownCommonPrefix = counts.unknownCommonPrefix.slice(0, index);
+                            }
+                            const words = ['version', 'registration', 'push', 'channel', 'entry', 'metadata', 'application', 'subscription', 'record', 'token', 'key', 'message', 'mapping', 'timestamp', 'metric', 'report', 'sample', 'status', 'event'];
+                            counts.unknownShapes ||= [];
+                            counts.unknownShapes.push({ keyLength: _key.length, valueLength: stored.length,
+                                knownWords: words.filter(word => name.includes(word)), pushOffset: name.indexOf('push'), subscriptionOffset: name.indexOf('subscription'),
+                                prefixDigits: /^push_subscription_\d{6}-/.test(name),
+                                keyShape: name.replace(/[a-z0-9]/g, 'x').replace(/[^x:/_.-]/g, '?'), hasSyntheticOrigin: name.includes(origin.toLowerCase()) || name.includes(otherOrigin.toLowerCase()) });
+                        }
+                    }
                 }
                 if (!firstRecord || !otherRecord || events.length !== 1) throw new Error('PROBE_TWO_SITE_RECORD_FAILED');
                 routingResult = events[0].fixtureRouting(expectedCipher, otherCipher, firstRecord, otherRecord);
-                if (process.env.EDGE_PROBE_ENUMERATE === '1') routingResult.recordCounts = counts;
+                if (process.env.EDGE_PROBE_ENUMERATE === '1') {
+                    // Only a shared literal prefix is reported, never a record key.
+                    counts.unknownCommonPrefixLength = (counts.unknownCommonPrefix || '').length;
+                    counts.unknownCommonPrefix = /^push[_a-z.\-]{1,28}$/.test(counts.unknownCommonPrefix || '') ? counts.unknownCommonPrefix : null;
+                    routingResult.recordCounts = counts;
+                }
                 const selected = selectSyntheticEdgeRecord([firstRecord, otherRecord], `${origin}/`);
                 try {
                     if (testXSelector) {
@@ -565,9 +587,15 @@ async function main() {
                                 throw new Error('PROBE_X_SELECTOR_MISMATCH');
                             if (process.env.EDGE_PROBE_ENUMERATE === '1') {
                                 counts.unknownWithSiteOrigin = 0;
+                                counts.unknownMatchingSiteInteger = 0;
                                 for (const candidate of unknownRecords) {
                                     try { if (require('../../src/automation/edge-wns-record').countOtherSiteRecords([rewritten, candidate]) === 1) counts.unknownWithSiteOrigin++; }
                                     catch { /* Classify only; never expose candidate content. */ }
+                                    if (candidate.length === 8) {
+                                        const values = [candidate.readBigUInt64LE(), candidate.readBigUInt64BE()].filter(value => value > 0n);
+                                        if (values.some(value => [firstRecord, otherRecord].some(record => matchingSyntheticRecordFields(record, value.toString(16)).length)))
+                                            counts.unknownMatchingSiteInteger++;
+                                    }
                                 }
                             }
                             if (!checked.channel.equals(selected.channel) || !checked.privateKey.equals(selected.privateKey)
