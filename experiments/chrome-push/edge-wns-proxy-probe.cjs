@@ -141,7 +141,7 @@ async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [], exchangeShapes = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
-    let probeStage = 'setup', previousServerNonce = null, peerAuthorizationCount = 0, peerRejectionCount = 0, browserStartTicks = null; const nativePfx = [];
+    let probeStage = 'setup', previousServerNonce = null, peerAuthorizationCount = 0, peerRejectionCount = 0, browserStartTicks = null, metadataParserVerified = false; const nativePfx = [];
     function startFixtureBrowser(args) {
         const child = spawn(edge, args, { windowsHide: true, stdio: 'ignore' });
         if (process.env.EDGE_PROBE_PEER_AUTH === '1') {
@@ -915,7 +915,14 @@ async function main() {
             let clientMetadata;
             if (generatedHandshake && process.env.EDGE_PROBE_CLIENT_METADATA === '1') {
                 const captured = events[1].fixtureSentFrames();
-                try { clientMetadata = syntheticClientMetadata(captured.bnd); }
+                try {
+                    clientMetadata = syntheticClientMetadata(captured.bnd);
+                    if (process.env.EDGE_PROBE_META_SELECTOR === '1') {
+                        const parsed = require('../../src/automation/edge-wns-client-metadata').parseEdgeClientMetadata(captured.bnd);
+                        if (JSON.stringify(parsed) !== JSON.stringify(clientMetadata)) throw new Error('PROBE_METADATA_MISMATCH');
+                        metadataParserVerified = true;
+                    }
+                }
                 finally { for (const frame of Object.values(captured)) frame.fill(0); }
                 const override = process.env.EDGE_PROBE_METADATA_OVERRIDE;
                 if (override === 'channel') clientMetadata.channel = clientMetadata.channel === '100' ? '101' : '100';
@@ -1261,7 +1268,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult, noRelayVerified: noRelay && events.length === 0 && endpointArgs.length === 0 }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, peerAuthorizationCount, peerRejectionCount, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, metadataParserVerified, peerAuthorizationCount, peerRejectionCount, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         const safeCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : null;
