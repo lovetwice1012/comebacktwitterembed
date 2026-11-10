@@ -80,7 +80,11 @@ for(const mode of ['failure','cycle','concurrent'])test(`MAIN-FRESH-2 actual Rea
  const first=f.container.querySelector('[data-workflow-revision="1"]');assert(first);
  if(mode==='concurrent'){assert.equal(f.container.querySelector('[data-workflow-revision="103"]'),null);await service.restoreRevision(actor,row.id,1,103);assert.equal((await service.getWorkflow(actor,row.id)).revision,104);return;}
  await click(f,first.querySelector('button'));
- await until(f,()=>f.container.querySelector('[aria-label="ルール名"]')?.value==='History rule');assert.equal((await service.getWorkflow(actor,row.id)).revision,103);
+ await until(f,()=>f.container.querySelector('[aria-label="ルール名"]')?.value==='History rule'
+  && f.container.textContent.includes('版 103 を下書きに復元しました。')
+  && !f.container.querySelector('[aria-label="保存後の表示の再取得"]')
+  && [...f.container.querySelectorAll('button')].some(button=>button.textContent.trim()==='通知一覧'&&!button.disabled));
+ assert.equal((await service.getWorkflow(actor,row.id)).revision,103);
  }finally{context.release();await f.close();await context.db.close();}
 });
 for(const contextChange of ['workflow','viewer','close'])test(`MAIN-FRESH-2 late history page is discarded after ${contextChange} change`,{skip:!port},async()=>{
