@@ -9,6 +9,8 @@ const { rewriteSyntheticChallenge } = require('./edge-fixture-challenge.cjs');
 const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
 const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const { syntheticRecipientMatches } = require('./edge-fixture-routing.cjs');
+const { createFrameDecoder } = require('../../src/automation/edge-wns-framing');
+const { parseNotification, createAcknowledgement } = require('../../src/automation/edge-wns-notification');
 const fail = code => Object.assign(new Error(code), { code });
 
 function selectSyntheticHandshake(chunks) {
@@ -122,8 +124,8 @@ function syntheticClientMetadata(bindFrame) {
     return { channel: firstLine[3], protocolVersion: client[1], clientName: client[2], clientVersion: client[3] };
 }
 
-function syntheticHandshake(key, token, productConstants, metadata = { channel: '100', protocolVersion: '1.0', clientName: 'Microsoft Edge', clientVersion: '157.0.4341.42' }) {
-    if (typeof token !== 'string' || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
+function syntheticHandshake(key, token, productConstants, metadata) {
+    if (!metadata || typeof metadata !== 'object' || typeof token !== 'string' || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
         || productConstants.id.length !== 16 || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e)
         || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
         throw fail('PROBE_DIRECT_CONFIG_INVALID');
@@ -155,23 +157,16 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
     const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
     const prelude = generated || (generatedPrelude ? syntheticPrelude() : null), socket = connect();
-    let pending = Buffer.alloc(0), waiting = null, failure = null, closed = false; const queue = [];
+    const decoder = createFrameDecoder();
+    let waiting = null, failure = null, closed = false; const queue = [];
     const abort = code => { if (failure) return; failure = fail(code); if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.reject(failure); } };
     socket.on('error', () => abort('PROBE_DIRECT_SOCKET_FAILED'));
     socket.on('close', () => { closed = true; abort('PROBE_DIRECT_SOCKET_CLOSED'); });
     socket.on('data', chunk => {
         try {
-            if (!Buffer.isBuffer(chunk) || pending.length + chunk.length > 262144) throw fail('PROBE_DIRECT_FRAME_INVALID');
-            pending = Buffer.concat([pending, chunk]);
-            while (pending.length) {
-                const end = pending.indexOf('\r\n'); if (end < 0) { if (pending.length > 512) throw fail('PROBE_DIRECT_FRAME_INVALID'); break; }
-                if (end > 512 || pending.subarray(0, end).some(byte => byte < 0x20 || byte > 0x7e)) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const parts = pending.subarray(0, end).toString('ascii').split(' '), size = parts.at(-1);
-                if (!/^\d{1,6}$/.test(size)) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const finish = end + 2 + Number(size); if (finish > 262144) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                if (pending.length < finish) break;
-                const frame = Buffer.from(pending.subarray(0, finish)); pending = Buffer.from(pending.subarray(finish));
-                if (queue.length >= 16) { frame.fill(0); throw fail('PROBE_DIRECT_FRAME_INVALID'); }
+            const frames = decoder.push(chunk);
+            if (queue.length + frames.length > 16) { for (const frame of frames) frame.fill(0); throw fail('PROBE_DIRECT_FRAME_INVALID'); }
+            for (const frame of frames) {
                 queue.push(frame);
                 if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.resolve(queue.shift()); }
             }
@@ -190,7 +185,8 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             if (parts[0] !== verb || parts[2] !== destination) {
                 const actual = /^WNS\/\d(?:\.\d)?$/.test(parts[0] || '') ? 'WNS_VERSION' : /^[A-Z]{1,12}$/.test(parts[0] || '') ? parts[0]
                     : /^2\d\d$/.test(parts[0] || '') ? 'STATUS_SUCCESS' : /^4\d\d$/.test(parts[0] || '') ? 'STATUS_CLIENT_ERROR'
-                        : /^5\d\d$/.test(parts[0] || '') ? 'STATUS_SERVER_ERROR' : /^\d+$/.test(parts[0] || '') ? 'NUMBER'
+                        : /^5\d\d$/.test(parts[0] || '') ? 'STATUS_SERVER_ERROR' : /^\d{1,4}$/.test(parts[0] || '')
+                            ? `NUMBER_${[...parts[0]].map(digit => ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE'][Number(digit)]).join('_')}`
                     : (parts[0] || '') === '' ? 'EMPTY' : 'OTHER';
                 const route = ['CON', 'WNS', 'WNS\\CHALLENGE', 'WNS\\NOTIF'].includes(parts[2]) ? parts[2].replace('\\', '_') : 'OTHER';
                 throw fail(`PROBE_DIRECT_EXPECTED_${verb}_GOT_${actual}_ROUTE_${route}`);
@@ -253,11 +249,14 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 try {
                     const other = await next();
                     try {
-                        if (syntheticRecipientMatches(other, expectedChannel)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID');
+                        let parsed;
+                        try { parsed = parseNotification(other, expectedChannel); }
+                        catch (error) { throw fail(`PROBE_DIRECT_FOREIGN_ROUTE_INVALID_${/^[A-Z_]+$/.test(error?.stage || '') ? error.stage : 'OTHER'}`); }
+                        if (parsed.kind !== 'foreign' || syntheticRecipientMatches(other, expectedChannel)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID');
                         const ciphertext = firstFixtureNotification([other]);
                         try { if (!ciphertext?.equals(expectedOther)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID'); }
                         finally { ciphertext?.fill(0); }
-                        const acknowledgement = syntheticNotificationAck(other, acknowledgementSequence++);
+                        const acknowledgement = createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++);
                         try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
                         finally { acknowledgement.fill(0); }
                         Object.assign(result, { otherReceived: true, otherCipherMatched: true, otherDiscardedBeforeDecrypt: true, otherAckWritten: true });
@@ -271,8 +270,9 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 try { notification = await next(); }
                 catch (error) { if (error.code === 'PROBE_DIRECT_TIMEOUT' || error.code === 'PROBE_DIRECT_SOCKET_CLOSED') return { ...result, notificationReceived: false }; throw error; }
                 try {
-                    if (expectedChannel && !syntheticRecipientMatches(notification, expectedChannel)) throw fail('PROBE_DIRECT_TARGET_ROUTE_INVALID');
-                    const ciphertext = firstFixtureNotification([notification]);
+                    const parsed = expectedChannel ? parseNotification(notification, expectedChannel) : null;
+                    if (parsed && (parsed.kind !== 'target' || !syntheticRecipientMatches(notification, expectedChannel))) throw fail('PROBE_DIRECT_TARGET_ROUTE_INVALID');
+                    const ciphertext = parsed ? parsed.data : firstFixtureNotification([notification]);
                     if (!ciphertext) return { ...result, notificationReceived: false };
                     try {
                         const matchesSentCiphertext = ciphertext.equals(expected);
@@ -281,7 +281,8 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                         if (onTargetCiphertext && matchesSentCiphertext) await onTargetCiphertext(ciphertext, notification);
                         const received = { ...result, notificationReceived: true, matchesSentCiphertext, payloadDecrypted: await decryptNotification(ciphertext) };
                         if ((!ackAndFollowup && !ackSingle) || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
-                        const acknowledgement = syntheticNotificationAck(notification, acknowledgementSequence++);
+                        const acknowledgement = parsed ? createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++)
+                            : syntheticNotificationAck(notification, acknowledgementSequence++);
                         try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
                         finally { acknowledgement.fill(0); }
                         if (ackSingle) {
@@ -313,7 +314,8 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             const done = new Promise(resolve => { socket.once('close', resolve); timer = setTimeout(resolve, 2000); });
             socket.destroy(); await done; clearTimeout(timer);
         }
-        pending.fill(0); for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
+        try { decoder.finish(); } catch { /* An aborted connection can end mid-frame; clear its buffered bytes. */ }
+        for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
     }
 }
 module.exports = { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticPrelude, syntheticClientMetadata, syntheticHandshake, independentSyntheticReconnect };
