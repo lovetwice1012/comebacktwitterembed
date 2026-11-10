@@ -23,9 +23,11 @@ async function main() {
     const realWns = process.env.EDGE_PROBE_REAL_WNS === '1';
     const calibrate = process.env.EDGE_PROBE_RELAY_CALIBRATION === '1';
     const takeover = process.env.EDGE_PROBE_TAKEOVER === '1';
+    const reimport = process.env.EDGE_PROBE_REIMPORT === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
+    if (reimport && (!takeover || process.env.EDGE_PROBE_BLOCK_WNS !== '1')) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
@@ -219,8 +221,9 @@ async function main() {
             if (realWns) {
                 stage = 'wns';
                 const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
+                const tokenVault = createWnsTokenWorkerVault(config);
                 const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, privateWorkerVault: vault,
-                    edgeTokenVault: createWnsTokenWorkerVault(config), rolloutMode: 'public' });
+                    edgeTokenVault: tokenVault, rolloutMode: 'public' });
                 const controller = new AbortController(), timer = setTimeout(() => controller.abort(), takeover ? 60000 : 30000); let received;
                 webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
                 try {
@@ -261,7 +264,33 @@ async function main() {
                     try {
                         const restoredReceipt = await wnsGateway.store.getInbox({ ...identity, id: received.inbox.id });
                         if ((await wnsGateway.decryptInbox(recovery, restoredReceipt))?.text !== (takeover ? 'synthetic-before-reopen' : 'synthetic-real-wns')) throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        if (reimport) {
+                            const state = await wnsGateway.store.readWnsTokenState(recovery, { vault: tokenVault, authorize: async () => {} });
+                            if (!state) throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                            try { takeoverResult.serverTokenDiffersFromFile = state.token.toString('ascii') !== result.file.push.reconnectToken; }
+                            finally { state.token.fill(0); }
+                        }
                     } finally { await wnsGateway.store.release(recovery); }
+                    if (reimport) {
+                        if (!takeoverResult.subscriptionRemainsSame || !takeoverResult.workerReceivedAfterReopen || !takeoverResult.serverTokenDiffersFromFile)
+                            throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        const rows = await testDb.queryDatabase('SELECT wns_token_generation FROM automation_x_push_receivers WHERE subscription_id=?', [identity.subscriptionId]);
+                        const generation = Number(rows[0]?.wns_token_generation);
+                        if (!Number.isSafeInteger(generation) || generation < 1) throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        const again = await service.startSession(actor, { consent: true });
+                        const updated = await service.importFile(actor, { sessionId: again.sessionId, fileText: JSON.stringify(result.file), consent: true });
+                        const after = await testDb.queryDatabase('SELECT wns_token_generation FROM automation_x_push_receivers WHERE subscription_id=?', [identity.subscriptionId]);
+                        if (!updated.duplicate || updated.subscription.id !== identity.subscriptionId || Number(after[0]?.wns_token_generation) !== generation)
+                            throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        const resumed = new AbortController(), timeout = setTimeout(() => resumed.abort(), 30000); let delivered;
+                        try {
+                            await wnsGateway.run({ ...identity, workerId: 'synthetic-edge-reimport', signal: resumed.signal,
+                                onSession: async () => { await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-reimport' }), { TTL: 60 }); },
+                                onReceived: async event => { delivered = event; resumed.abort(); } });
+                            if (delivered?.payload?.text !== 'synthetic-after-reimport') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                            takeoverResult.reimportRetainedServerToken = true; takeoverResult.receivedAfterReimport = true;
+                        } finally { clearTimeout(timeout); resumed.abort(); }
+                    }
                     realWnsWorkerTested = true;
                 } finally { clearTimeout(timer); controller.abort(); }
             }

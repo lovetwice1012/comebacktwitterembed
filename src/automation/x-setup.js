@@ -168,12 +168,13 @@ function createXSetup(db, options = {}) {
                     row = { id, revision, browser_kind: browserKind, browser_version: file.provenance.browserVersion, created_at_ms: createdAtMs, updated_at_ms: createdAtMs };
                 } else if (file.version === 3) {
                     // Same cryptographic subscription, freshly confirmed by
-                    // its owner. Invalidate the old lease and rotated token
-                    // atomically; keep revision, monitors and pending inbox.
+                    // its owner. Fence the old lease atomically but retain the
+                    // worker's latest encrypted WNS token: the stopped setup
+                    // browser may still contain an older reconnect token.
                     const envelope = sealer.seal(file, { subscriptionId: row.id, ownerUserId: actor.userId, revision: Number(row.revision) });
                     await query('UPDATE automation_x_subscriptions SET sealed_json=?,key_id=?,browser_version=?,updated_at_ms=GREATEST(updated_at_ms+1,?) WHERE id=? AND owner_user_id=?',
                         [JSON.stringify(envelope), envelope.keyId, file.provenance.browserVersion, now(), row.id, actor.userId]);
-                    await query("UPDATE automation_x_push_receivers SET state='awaiting',reason_code=NULL,lease_token=NULL,worker_id=NULL,lease_expires_at_ms=NULL,retry_at_ms=NULL,retry_attempt=0,wns_token_sealed_json=NULL,wns_token_revision=NULL,wns_token_generation=NULL,updated_at_ms=? WHERE subscription_id=?", [now(), row.id]);
+                    await query("UPDATE automation_x_push_receivers SET state='awaiting',reason_code=NULL,lease_token=NULL,worker_id=NULL,lease_expires_at_ms=NULL,retry_at_ms=NULL,retry_attempt=0,updated_at_ms=? WHERE subscription_id=?", [now(), row.id]);
                 } else if (file.version === 2) {
                     // Opening the dedicated Chrome profile can take over the
                     // Google Push connection without closing the worker's TCP

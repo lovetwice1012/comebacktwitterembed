@@ -19,7 +19,7 @@ function fixture() {
 }
 async function payload(service, actor, file) { const session = await service.startSession(actor, { consent: true });
     return { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true }; }
-test('Edge reimport fences old receiver, retains inbox, and replaces rotated token without sharing across owners', { skip: !port }, async () => {
+test('Edge reimport fences the old receiver and preserves the newer server token, inbox and owner', { skip: !port }, async () => {
     const db = await createTestDatabase(port);
     try {
         const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
@@ -57,7 +57,8 @@ test('Edge reimport fences old receiver, retains inbox, and replaces rotated tok
         const monitors = await db.queryDatabase('SELECT notification_settings_json,subscription_state,revision FROM automation_x_monitors WHERE owner_user_id=?', [owner.userId]);
         assert.equal(monitors.length, 1); assert.equal(monitors[0].notification_settings_json, settings); assert.equal(monitors[0].subscription_state, 'bound'); assert.equal(Number(monitors[0].revision), 1);
         const next = await store.claim({ ...identity, workerId: 'new-edge-worker' }); assert(next);
-        assert.equal(await store.readWnsTokenState(next, { vault: tokenVault, authorize: async () => {} }), null);
+        const retained = await store.readWnsTokenState(next, { vault: tokenVault, authorize: async () => {} });
+        assert.equal(retained.generation, 1); assert.equal(retained.token.toString(), 'rotated-token'); retained.token.fill(0);
         assert.deepEqual(vault.open(next.sealedEnvelope, { subscriptionId: identity.subscriptionId, ownerUserId: owner.userId, revision: 1 }), fresh);
         await assert.rejects(service.importFile(other, await payload(service, other, fresh)), { code: 'X_SETUP_SUBSCRIPTION_CONFLICT' });
         const changed = structuredClone(fresh); changed.push.authenticationSecret = randomBytes(16).toString('base64url');
@@ -70,5 +71,14 @@ test('Edge reimport fences old receiver, retains inbox, and replaces rotated tok
         const rejected = results.find(result => result.status === 'rejected'); assert.equal(rejected.reason.code, 'X_SETUP_SESSION_USED');
         await assert.rejects(store.assertLease(next), { code: 'X_PUSH_LEASE_LOST' });
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox WHERE subscription_id=?', [identity.subscriptionId])).length, 1);
+        const neverConnected = fixture(), initial = await service.importFile(other, await payload(service, other, neverConnected));
+        const beforeFirst = structuredClone(neverConnected); beforeFirst.push.reconnectToken = 'fresh-before-first-connect';
+        const refreshed = await service.importFile(other, await payload(service, other, beforeFirst)); assert.equal(refreshed.duplicate, true);
+        const newIdentity = { subscriptionId: initial.subscription.id, ownerUserId: other.userId };
+        const firstLease = await store.claim({ ...newIdentity, workerId: 'first-edge-worker' }); assert(firstLease);
+        try {
+            assert.equal(await store.readWnsTokenState(firstLease, { vault: tokenVault, authorize: async () => {} }), null);
+            assert.deepEqual(vault.open(firstLease.sealedEnvelope, { ...newIdentity, revision: 1 }), beforeFirst);
+        } finally { await store.release(firstLease); }
     } finally { await db.close(); }
 });
