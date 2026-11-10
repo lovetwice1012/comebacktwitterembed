@@ -320,8 +320,10 @@ async function main() {
             let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, serverConfirmations = 0, inspectErrors = 0, activeChromeSocket;
             const inspectOther = process.env.CHROME_FIXTURE_OTHER_DELIVERY === '1';
             const inspectBurst = process.env.CHROME_FIXTURE_BURST === '1';
+            const inspectSaturation = process.env.CHROME_FIXTURE_SATURATION === '1';
             if (inspectOther && (!otherSubscription || process.env.CHROME_FIXTURE_RUNTIME !== '1')) throw new Error('FIXTURE_OTHER_CONFIG_INVALID');
             if (inspectBurst && process.env.CHROME_FIXTURE_RUNTIME !== '1') throw new Error('FIXTURE_BURST_CONFIG_INVALID');
+            if (inspectSaturation && (process.env.CHROME_FIXTURE_RUNTIME !== '1' || inspectBurst || inspectOther)) throw new Error('FIXTURE_SATURATION_CONFIG_INVALID');
             const gateway = createXPushGateway(testDb, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
                 rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000,
                 ...(inspectOther || inspectBurst ? { createChromeSocket: () => {
@@ -400,6 +402,58 @@ async function main() {
                     }
                     if (jobs !== 1) throw new Error('FIXTURE_RUNTIME_ROUTE_FAILED');
                     console.log(JSON.stringify({ registeredChromeRuntimeRouted: true, queuedJobs: jobs, isolatedDatabase: true, realFcm: true }));
+                    if (inspectSaturation) {
+                        // Artificially retain acknowledged IDs to reproduce an
+                        // unusually delayed local confirmation, without changing
+                        // production code or using real user credentials.
+                        // Earlier routing advanced the fixture clock by 5 minutes.
+                        // Restore it before disconnect so retry cooldown and the
+                        // reconnection loop use the same time basis.
+                        clock = Date.now();
+                        const priorReceipts = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]))[0].n);
+                        const priorPending = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [saved.subscription.id]))[0].n);
+                        if (priorPending > 1 || priorReceipts !== 1) throw new Error('FIXTURE_SATURATION_INITIAL_STATE_INVALID');
+                        const originalConfirm = gateway.store.confirmMcs;
+                        let hold = true;
+                        gateway.store.confirmMcs = async (...args) => hold ? 0 : originalConfirm(...args);
+                        try {
+                            const sendCount = 101 - priorPending;
+                            for (let i = 0; i < sendCount; i++) {
+                                await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: `synthetic-capacity-${i}`,
+                                    url: `https://x.com/synthetic/status/${1234567890123460000n + BigInt(i)}`, author: { handle: 'synthetic', id: '12345' } }), { TTL: 180 });
+                                await pause(150);
+                            }
+                            let reason = null;
+                            for (let i = 0; i < 160 && reason !== 'X_PUSH_MCS_PENDING_LIMIT'; i++) {
+                                const row = (await testDb.queryDatabase('SELECT reason_code FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
+                                reason = row?.reason_code; if (reason !== 'X_PUSH_MCS_PENDING_LIMIT') await pause(250);
+                            }
+                            if (reason !== 'X_PUSH_MCS_PENDING_LIMIT') throw new Error('FIXTURE_SATURATION_NOT_REACHED');
+                            const count = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [saved.subscription.id]))[0].n);
+                            if (count !== 100) throw new Error('FIXTURE_SATURATION_COUNT_INVALID');
+                            hold = false;
+                            let restored = false;
+                            for (let i = 0; i < 240 && !restored; i++) {
+                                clock = Date.now(); await runtime.tick();
+                                const receipts = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]))[0].n);
+                                const pending = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [saved.subscription.id]))[0].n);
+                                restored = receipts === priorReceipts + sendCount && pending < 100;
+                                if (!restored) await pause(250);
+                            }
+                            if (!restored) throw new Error('FIXTURE_SATURATION_RECOVERY_UNVERIFIED');
+                            const rows = await testDb.queryDatabase('SELECT data_ciphertext,headers_json FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
+                            const { pathToFileURL } = require('node:url');
+                            const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                            const keys = { public_key: [...Buffer.from(result.push.p256dhPublicKey, 'base64url')],
+                                private_key: [...Buffer.from(result.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(result.push.authenticationSecret, 'base64url')] };
+                            const texts = rows.map(row => decryptNotification(row.data_ciphertext, JSON.parse(row.headers_json), keys).text);
+                            if (new Set(texts).size !== priorReceipts + sendCount || !texts.includes(marker)
+                                || Array.from({ length: sendCount }, (_unused, i) => `synthetic-capacity-${i}`).some(text => !texts.includes(text)))
+                                throw new Error('FIXTURE_SATURATION_CONTENT_MISMATCH');
+                            console.log(JSON.stringify({ realFcm: true, artificialConfirmationDelay: true, pendingLimit: 100,
+                                unacknowledgedMessageRedelivered: true, allReceiptsPresent: true, contentVerified: true }));
+                        } finally { gateway.store.confirmMcs = originalConfirm; }
+                    }
                     if (process.env.CHROME_FIXTURE_DELIVERY === '1') {
                         const { createTransport } = require('../../src/automation/transport');
                         const { createRunner } = require('../../src/automation/runtime');

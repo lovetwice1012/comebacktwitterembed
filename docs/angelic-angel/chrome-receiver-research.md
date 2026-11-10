@@ -29,6 +29,8 @@ Chromiumは製品のcategoryが登録時の値に一致する場合に限り、�
 
 受信確認の返答が遅れた場合の上限について、隔離MariaDBで未確認IDを100件まで保存し、101件目の通知とサービス制御通知が部分保存されず拒否されることを確認しました。既存IDの重複は処理でき、別ワーカーが100件を引き継いで確認後に次を保存できます。模擬サーバーを使いセッションとDBを組み合わせた試験でも、101件目に確認応答を送らずセッションを停止し、再接続で100件を確認した後、同じ101件目を処理できました。101件目の実FCMからの再送はこの試験では確認していません。
 
+その後、Chrome・Braveそれぞれの使い捨て購読と実FCMで上限到達を再現しました。試験コードがローカルの確認記録の削除を意図的に遅らせて100件を蓄積し、次の通知を確認せず接続を閉じた後、再接続で未保存の通知を受信しました。保存した全通知を復号し、送信した各合成内容が重複なく揃っていることも確認しています。実サーバーの確認処理が実際に遅延した状況や、実X・Discordへの配送を再現したものではありません。
+
 `scripts/test/chrome-mcs-*.test.js` と `scripts/test/chrome-x-transfer.test.js` はGoogleの通知サーバーに接続しない単体試験です。接続を伴う検証は `experiments/chrome-push/controlled-fixture.cjs` と `packaged-e2e.cjs` を使います。後者はWindows、Chrome、ビルド済み `packages/angelic-angel/dist`、使い捨てMariaDB、および試験用の `web-push`、`chrome-remote-interface` が必要です。試験用の新規プロファイルのみを作り、既存プロファイルにアクセスしません。
 
 Linuxワーカーまで確認する場合は、名前が `cbte-chrome-compat-20261110` の使い捨てWSL環境に、依存関係とビルド済み `packages/angelic-angel/dist` を含む検証用コピーを `/tmp/cbte-linux-worker` に用意し、同環境のループバック `33621` に使い捨てMariaDBを起動します。`CHROME_FIXTURE_LINUX=1` と `CHROME_FIXTURE_LINUX_DB=1` を指定すると、`linux-worker-fixture.cjs` は試験用スキーマを作成し、終了時にそのスキーマを削除します。購読情報は試験用Chromeから標準入力で渡され、ログやコマンド引数には出しません。実ユーザーのプロファイルや本番DBを指定してはいけません。
