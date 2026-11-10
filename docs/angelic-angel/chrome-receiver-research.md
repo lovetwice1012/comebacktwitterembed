@@ -12,7 +12,7 @@ Chromiumは製品のcategoryが登録時の値に一致する場合に限り、�
 
 対象の暗号化データと再送IDは同時にDB保存し、その後に受信確認します。保存失敗とlease期限切れで両方がロールバックされること、再起動相当のストア再作成と他ユーザーの拒否を実DBで確認しています。送信失敗と再接続時のID引き継ぎはモックによる単体試験です。PCとスマートフォン幅の登録画面はローカルブラウザーで表示・操作を確認しています。
 
-隔離した Alpine Linux 3.24.4・Node.js 24.22.1 では、MCSと端末確認の単体試験27件に加え、Windowsの試験専用Chromeが作成した購読情報を標準入力だけでLinuxプロセスへ渡し、Googleへの端末確認と暗号化通知の受信に成功しました。このLinux実接続試験の受信ストアはメモリ上の試験用実装で、Linuxの本番DBやDiscord配送まで確認したものではありません。
+隔離した Alpine Linux 3.24.4・Node.js 24.22.1 では、MCSと端末確認の単体試験27件と、Linux MariaDB 11.8.9を使うワーカー試験12件が成功しました。さらに、Windowsの試験専用Chromeが作成した購読情報を標準入力だけでLinuxプロセスへ渡し、Googleへの端末確認、実FCMからの受信、隔離DBへの暗号化保存、実ワーカーによる通知ジョブ作成まで確認しました。5分のまとめ処理は試験用DBの時刻を調整して再現しています。実際のXやDiscord配送、本番DBは使用していません。
 
 差分のセキュリティレビューでは、初期実装のChromeデバッグ用TCPポートに別プロセスが認証なしで接続できる問題を確認しました。配布版はChromeとの通信を継承されたパイプへ変更し、ローカルの仲介接続は専用フォルダー内で保護した使い捨ての認証情報と限定された操作だけを受け付けます。修正後、別プロセスによるデバッグ接続と任意コマンドを拒否しつつ、試験購読の取得とファイル作成ができることを確認しました。別Windowsユーザーを使った実証は行っていません。
 
@@ -28,3 +28,5 @@ Chromiumは製品のcategoryが登録時の値に一致する場合に限り、�
 ## 試験
 
 `scripts/test/chrome-mcs-*.test.js` と `scripts/test/chrome-x-transfer.test.js` はGoogleの通知サーバーに接続しない単体試験です。接続を伴う検証は `experiments/chrome-push/controlled-fixture.cjs` と `packaged-e2e.cjs` を使います。後者はWindows、Chrome、ビルド済み `packages/angelic-angel/dist`、使い捨てMariaDB、および試験用の `web-push`、`chrome-remote-interface` が必要です。試験用の新規プロファイルのみを作り、既存プロファイルにアクセスしません。
+
+Linuxワーカーまで確認する場合は、名前が `cbte-chrome-compat-20261110` の使い捨てWSL環境に、依存関係とビルド済み `packages/angelic-angel/dist` を含む検証用コピーを `/tmp/cbte-linux-worker` に用意し、同環境のループバック `33621` に使い捨てMariaDBを起動します。`CHROME_FIXTURE_LINUX=1` と `CHROME_FIXTURE_LINUX_DB=1` を指定すると、`linux-worker-fixture.cjs` は試験用スキーマを作成し、終了時にそのスキーマを削除します。購読情報は試験用Chromeから標準入力で渡され、ログやコマンド引数には出しません。実ユーザーのプロファイルや本番DBを指定してはいけません。

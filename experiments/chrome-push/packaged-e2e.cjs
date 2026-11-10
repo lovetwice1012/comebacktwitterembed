@@ -191,8 +191,11 @@ async function main() {
         if (process.env.CHROME_FIXTURE_LINUX === '1') {
             // The named WSL instance is a disposable fixture. Credentials
             // from this synthetic Chrome profile are passed via stdin only.
-            const probe = spawn('wsl.exe', ['-d', 'cbte-chrome-compat-20261110', '-u', 'root', '--exec', '/usr/bin/node',
-                '/tmp/cbte-saved-control/experiments/chrome-push/linux-mcs-fixture.cjs'], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+            const withDb = process.env.CHROME_FIXTURE_LINUX_DB === '1';
+            const probePath = withDb ? '/tmp/cbte-linux-worker/experiments/chrome-push/linux-worker-fixture.cjs'
+                : '/tmp/cbte-saved-control/experiments/chrome-push/linux-mcs-fixture.cjs';
+            const probe = spawn('wsl.exe', ['-d', 'cbte-chrome-compat-20261110', '-u', 'root', '--exec', '/usr/bin/node', probePath],
+                { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
             let outputText = '', readyResolve, readyReject, exitResolve;
             const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
             const exited = new Promise(resolve => { exitResolve = resolve; });
@@ -206,13 +209,16 @@ async function main() {
             probe.once('exit', code => { if (!outputText.includes('{"ready":true,"checkin":true}\n')) readyReject(new Error('FIXTURE_LINUX_LOGIN_FAILED')); exitResolve(code); });
             const timer = setTimeout(() => { probe.kill(); readyReject(new Error('FIXTURE_LINUX_TIMEOUT')); }, 45000);
             try {
-                probe.stdin.end(JSON.stringify({ credentials: { deviceId: result.push.deviceId, securityToken: result.push.securityToken,
+                probe.stdin.end(JSON.stringify(withDb ? result : { credentials: { deviceId: result.push.deviceId, securityToken: result.push.securityToken,
                     clientVersion: result.provenance.browserVersion }, route: { expectedCategory: result.push.productCategory,
                     expectedAppId: result.push.appId, expectedSender: result.push.authorizedEntity } }));
                 await ready;
-                await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: 'linux-synthetic' }), { TTL: 60 });
-                if (await exited !== 0 || !outputText.includes('{"encryptedReceipt":true}\n')) throw new Error('FIXTURE_LINUX_RECEIPT_FAILED');
-                console.log(JSON.stringify({ linuxWorkerCheckin: true, linuxWorkerEncryptedReceipt: true, isolatedProfile: true, realFcm: true }));
+                await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: 'linux-synthetic',
+                    url: 'https://x.com/synthetic/status/1234567890123456792', author: { handle: 'synthetic', id: '12345' } }), { TTL: 60 });
+                const expected = withDb ? '{"encryptedReceipt":true,"queuedJobs":1}\n' : '{"encryptedReceipt":true}\n';
+                if (await exited !== 0 || !outputText.includes(expected)) throw new Error('FIXTURE_LINUX_RECEIPT_FAILED');
+                console.log(JSON.stringify({ linuxWorkerCheckin: true, linuxWorkerEncryptedReceipt: true,
+                    ...(withDb ? { isolatedLinuxDatabase: true, queuedJobs: 1 } : {}), isolatedProfile: true, realFcm: true }));
             } finally { clearTimeout(timer); if (probe.exitCode === null) probe.kill(); }
         }
         if (process.env.CHROME_FIXTURE_CHECKIN === '1') {
