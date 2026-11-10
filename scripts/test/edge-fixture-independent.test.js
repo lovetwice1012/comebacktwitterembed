@@ -138,6 +138,27 @@ test('single synthetic ACK is not sent when decryption fails', async () => {
         decryptNotification: async () => false });
     assert.equal(result.payloadDecrypted, false); assert.equal(result.ackWritten, undefined); assert.equal(writes, 4);
 });
+test('a four-part WNS notification does not turn its payload length into an ACK channel', async () => {
+    let writes = 0, ack;
+    const socket = new EventEmitter();
+    socket.write = (buffer, callback) => {
+        writes++;
+        if (writes === 5) { ack = Buffer.from(buffer); queueMicrotask(callback); return true; }
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : writes === 3 ? frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>') : frame('PUT 4 WNS', '');
+        queueMicrotask(() => { callback(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    try {
+        const result = await independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, productConstants,
+            generatedHandshake: true, clientMetadata: syntheticMetadata, expectedChannel: Buffer.from('1;target'), ackSingle: true,
+            sendNotification: async () => { queueMicrotask(() => socket.emit('data', frame('NFY 5 WNS\\NOTIF', 'Channel: 1;target\r\nMsg-Id: synthetic\r\nContent-Encoding: aes128gcm\r\n\r\ncipher'))); return Buffer.from('cipher'); },
+            decryptNotification: async () => true });
+        assert.equal(result.ackWritten, true);
+        assert.equal(ack.subarray(0, ack.indexOf('\r\n')).toString('ascii').split(' ').length, 4);
+    } finally { ack?.fill(0); }
+});
 test('single synthetic ACK is not sent when receipt persistence fails', async () => {
     let writes = 0, decrypts = 0;
     const socket = new EventEmitter();

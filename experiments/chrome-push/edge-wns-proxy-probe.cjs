@@ -640,7 +640,7 @@ async function main() {
                         && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
                         if (subscriptionFields || relationSiteRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
                         if (process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') relationSiteRecord = Buffer.from(stored);
-                        if (testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') subscriptionFields = protoBytes(stored, [6, 7, 16]);
+                        if (testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') subscriptionFields = protoBytes(stored, [1, 6, 7, 16]);
                     }
                 }
                 if (testWrongKey) {
@@ -659,6 +659,11 @@ async function main() {
             if (testIndependent) {
                 if (!subscriptionFields?.[6] || !subscriptionFields?.[7] || !subscriptionFields?.[16]) throw new Error('PROBE_SUBSCRIPTION_MISSING');
                 try {
+                    if (testOffline) {
+                        const channel = subscriptionFields[1];
+                        if (!channel?.length || channel.length > 256 || channel.some(byte => byte < 0x21 || byte > 0x7e)) throw new Error('PROBE_SUBSCRIPTION_MISSING');
+                        independentChannel = Buffer.from(channel);
+                    }
                     const jwk = createPrivateKey({ key: subscriptionFields[7], format: 'der', type: 'pkcs8' }).export({ format: 'jwk' });
                     const publicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
                     if (!publicKey.equals(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
@@ -811,6 +816,7 @@ async function main() {
                     durableCipher = Buffer.from(ciphertext); await durableReceiver.receive(frame, 6);
                 } } : {}),
                 ...(observePrior ? { observePrior } : {}),
+                ...(testOffline ? { expectedChannel: independentChannel } : {}),
                 ...(testTwoSites ? { expectedChannel: independentChannel, sendOtherNotification: () => sendFixture(otherSubscription, 'synthetic-independent-other') } : {}),
                 sendNotification: () => sendFixture(value.subscription, label),
                 decryptNotification: async ciphertext => {
