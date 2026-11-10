@@ -13,6 +13,15 @@ test('research capture separates an encrypted body across arbitrary chunks and p
     assert.equal(bytes.at(-1), 1, 'input chunks must not be wiped or modified');
 });
 
+test('research capture locates a later notification without using its ciphertext as a delimiter', () => {
+    const first = Buffer.from('first'), second = Buffer.from([0, 255, 2]);
+    const bytes = Buffer.concat([notification(first), notification(second)]);
+    assert.deepEqual(firstFixtureNotification([bytes], 0), first);
+    assert.deepEqual(firstFixtureNotification([bytes.subarray(0, 17), bytes.subarray(17)], 1), second);
+    assert.equal(firstFixtureNotification([bytes], 2), null);
+    assert.equal(firstFixtureNotification([bytes], -1), null);
+});
+
 test('research capture rejects incomplete, oversized, ambiguous or different encoding frames', () => {
     const good = notification(Buffer.from('synthetic'));
     for (const candidate of [good.subarray(0, good.length - 1), Buffer.from('NFY 1 WNS\\NOTIF 1 999999\r\n'),

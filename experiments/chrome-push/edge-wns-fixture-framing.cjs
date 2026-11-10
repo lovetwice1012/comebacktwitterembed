@@ -2,13 +2,13 @@
 
 // Bounded parser for synthetic captures only. It is not a production WNS
 // client, does not authenticate, and cannot safely consume untrusted traffic.
-function firstFixtureNotification(chunks) {
-    if (!Array.isArray(chunks) || chunks.length > 4096) return null;
+function firstFixtureNotification(chunks, index = 0) {
+    if (!Array.isArray(chunks) || chunks.length > 4096 || !Number.isInteger(index) || index < 0 || index > 100) return null;
     let total = 0;
     for (const chunk of chunks) {
         if (!Buffer.isBuffer(chunk) || (total += chunk.length) > 262144) return null;
     }
-    const data = Buffer.concat(chunks); let pos = 0;
+    const data = Buffer.concat(chunks); let pos = 0, notifications = 0;
     try {
         while (pos < data.length) {
             const end = data.indexOf('\r\n', pos);
@@ -26,7 +26,7 @@ function firstFixtureNotification(chunks) {
                 const headers = data.subarray(payload, headersEnd).toString('ascii').split('\r\n');
                 const encoding = headers.filter(header => /^content-encoding:/i.test(header));
                 if (encoding.length !== 1 || !/^content-encoding:\s*aes128gcm\s*$/i.test(encoding[0])) return null;
-                return Buffer.from(data.subarray(headersEnd + 4, frameEnd));
+                if (notifications++ === index) return Buffer.from(data.subarray(headersEnd + 4, frameEnd));
             }
             pos = frameEnd;
         }
