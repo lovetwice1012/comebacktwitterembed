@@ -8,7 +8,7 @@ const { Transform } = require('node:stream');
 const { createFrameDecoder } = require('./edge-wns-framing');
 const { parseEdgeClientMetadata } = require('./edge-wns-client-metadata');
 const fail = code => Object.assign(new Error(code), { code });
-async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, connectUpstream, timeoutMs = 10000 }) {
+async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, connectUpstream = undefined, timeoutMs = 10000 }) {
     if (!Buffer.isBuffer(pfx) || !pfx.length || pfx.length > 65536 || typeof passphrase !== 'string' || !passphrase.length || passphrase.length > 256
         || typeof authorizePeer !== 'function' || connectUpstream !== undefined && typeof connectUpstream !== 'function'
         || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
@@ -24,7 +24,10 @@ async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, conn
             const serverPort = server.address()?.port, clientPort = incoming.remotePort;
             let timer;
             const authTimeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); });
-            Promise.race([Promise.resolve().then(() => authorizePeer({ clientPort, serverPort })).catch(() => false), authTimeout]).then(allowed => {
+            let onClose;
+            const disconnected = new Promise(resolve => { onClose = () => resolve(false); incoming.once('close', onClose); });
+            Promise.race([Promise.resolve().then(() => authorizePeer({ clientPort, serverPort })).catch(() => false), authTimeout, disconnected]).then(allowed => {
+                incoming.removeListener('close', onClose);
                 clearTimeout(timer); pending--;
                 if (allowed !== true || closed || active || incoming.destroyed) { incoming.destroy(); return; }
                 active = true;
@@ -56,7 +59,7 @@ async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, conn
                 incoming.once('close', () => { try { decoder.finish(); } catch {} upstream.destroy(); });
                 upstream.once('error', () => { finishError('X_EDGE_CALIBRATION_CONNECT_FAILED'); incoming.destroy(); });
                 upstream.once('secureConnect', () => { if (closed || incoming.destroyed) { upstream.destroy(); return; } incoming.pipe(inspect).pipe(upstream); upstream.pipe(incoming); });
-            }).catch(() => { clearTimeout(timer); pending--; incoming.destroy(); });
+            }).catch(() => { incoming.removeListener('close', onClose); clearTimeout(timer); pending--; incoming.destroy(); });
         });
     } finally { pfxCopy.fill(0); }
     server.maxConnections = 8;

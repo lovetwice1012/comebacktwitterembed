@@ -66,6 +66,30 @@ async function main() {
         let calibrationMetadata;
         if (process.env.EDGE_PROBE_RELAY_CALIBRATION === '1') {
             stage = 'calibration';
+            if (process.env.EDGE_PROBE_CALIBRATION_RUNNER === '1') {
+                const calibrationToken = randomBytes(16).toString('hex'), calibrationRoot = path.join(root, `edge-calibration-${calibrationToken}`);
+                await fs.mkdir(path.join(calibrationRoot, 'profile'), { recursive: true });
+                await fs.writeFile(path.join(calibrationRoot, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token: calibrationToken }), { flag: 'wx' });
+                const certHelper = path.resolve(__dirname, '../../client/angelic-setup/EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
+                const peerHelper = path.resolve(__dirname, '../../client/angelic-setup/EdgePeerIdentity.ps1').replace(/'/g, "''"), executable = edge.replace(/'/g, "''");
+                const command = `$ErrorActionPreference='Stop'; . '${certHelper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx);password=$c.password;certificate=[Convert]::ToBase64String($c.certificate)}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
+                const execute = source => require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')],
+                    { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+                const output = execute(command); if (output.status !== 0) throw new Error('PROBE_CERT_FAILED');
+                const cert = JSON.parse(output.stdout); calibrationPfx = Buffer.from(cert.pfx, 'base64');
+                const calibrated = await require('../../src/automation/edge-calibration-runner').runEdgeCalibration({ rootPath: calibrationRoot, token: calibrationToken, edgePath: edge,
+                    pfx: calibrationPfx, passphrase: cert.password, certificate: Buffer.from(cert.certificate, 'base64'),
+                    captureIdentity: async pid => {
+                        const source = `$ErrorActionPreference='Stop'; $p=Get-Process -Id ${pid}; try {if ([IO.Path]::GetFullPath($p.Path) -ine '${executable}') {exit 1}; $p.StartTime.ToUniversalTime().Ticks.ToString()} finally {$p.Dispose()}`;
+                        const value = execute(source); if (value.status !== 0) throw new Error('PROBE_PEER_AUTH_FAILED'); return (value.stdout || '').trim();
+                    },
+                    authorizePeer: async ({ clientPort, serverPort, browserPid, browserStartTicks }) => {
+                        const source = `$ErrorActionPreference='Stop'; . '${peerHelper}'; if (-not (Test-XEdgeOwnedLoopbackPeer -ClientPort ${clientPort} -ServerPort ${serverPort} -BrowserPid ${browserPid} -BrowserStartTicks ([long]'${browserStartTicks}') -BrowserExecutable '${executable}')) {exit 1}; exit 0`;
+                        return execute(source).status === 0;
+                    } });
+                if (calibrated.browserVersion !== browserProduct.split('/')[1]) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
+                calibrationMetadata = calibrated.client;
+            } else {
             // A separate disposable profile is calibrated. The profile whose
             // notification settings will be exported never uses the relay.
             const calibrationProfile = path.join(root, 'calibration-profile');
@@ -121,6 +145,7 @@ async function main() {
             finally { clearTimeout(timeout); }
             await calibrationRelay.close(); calibrationRelay = null;
             if (chrome.exitCode === null) { chrome.kill(); await once(chrome, 'exit'); } chrome = null;
+            }
         }
         stage = 'snapshot';
         const token = randomBytes(16).toString('hex'), snapshotPath = path.join(root, `edge-snapshot-${token}`);

@@ -66,3 +66,21 @@ test('ambiguous metadata is rejected before any of that chunk is forwarded', { s
         await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(forwarded, 0); client.destroy();
     } finally { message.fill(0); await relay.close(); await new Promise(resolve => upstream.close(resolve)); cert.pfx.fill(0); }
 });
+test('disconnected clients do not exhaust pending authorization capacity', { skip: process.platform !== 'win32', timeout: 20000 }, async () => {
+    const cert = certificate(), upstream = tls.createServer({ pfx: cert.pfx, passphrase: cert.passphrase }); let attempts = 0;
+    upstream.on('secureConnection', socket => socket.on('data', () => {})); upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
+    const relay = await createEdgeCalibrationRelay({ pfx: cert.pfx, passphrase: cert.passphrase, timeoutMs: 3000,
+        authorizePeer: async () => { attempts++; if (attempts <= 5) return new Promise(() => {}); return true; },
+        connectUpstream: () => connect(upstream.address().port, cert.ca) });
+    const message = bindFrame({ channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4', nonce: '1'.repeat(32),
+        reconnectToken: Buffer.from('PRIVATE-SYNTHETIC-TOKEN'), deviceKey: Buffer.alloc(32, 7) }, 3);
+    try {
+        for (let i = 0; i < 5; i++) {
+            const client = connect(relay.port, cert.ca); client.on('error', () => {}); await once(client, 'secureConnect');
+            for (let retry = 0; retry < 100 && attempts <= i; retry++) await new Promise(resolve => setTimeout(resolve, 10));
+            assert.equal(attempts, i + 1); const closed = once(client, 'close'); client.destroy(); await closed; await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        const accepted = connect(relay.port, cert.ca); accepted.on('error', () => {}); await once(accepted, 'secureConnect'); accepted.write(message);
+        assert.equal((await relay.metadata).clientName, 'Synthetic'); accepted.destroy();
+    } finally { message.fill(0); await relay.close(); await new Promise(resolve => upstream.close(resolve)); cert.pfx.fill(0); }
+});
