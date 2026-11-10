@@ -285,17 +285,20 @@ async function main() {
             if (preview.formatVersion !== 2) throw new Error('FIXTURE_PREVIEW_FAILED');
             const saved = await setup.importFile(actor, { sessionId: session.sessionId, fileText, consent: true });
             let clock = Date.now();
-            let foreignFrames = 0, foreignAckAttempts = 0, inspectErrors = 0;
+            let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, inspectErrors = 0;
             const inspectOther = process.env.CHROME_FIXTURE_OTHER_DELIVERY === '1';
+            const inspectBurst = process.env.CHROME_FIXTURE_BURST === '1';
             if (inspectOther && (!otherSubscription || process.env.CHROME_FIXTURE_RUNTIME !== '1')) throw new Error('FIXTURE_OTHER_CONFIG_INVALID');
+            if (inspectBurst && process.env.CHROME_FIXTURE_RUNTIME !== '1') throw new Error('FIXTURE_BURST_CONFIG_INVALID');
             const gateway = createXPushGateway(testDb, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
                 rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000,
-                ...(inspectOther ? { createChromeSocket: () => {
+                ...(inspectOther || inspectBurst ? { createChromeSocket: () => {
                     const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', rejectUnauthorized: true });
                     const decoder = require('../../src/automation/chrome-mcs-framing').createFrameDecoder();
                     const write = socket.write.bind(socket);
                     socket.write = (data, ...args) => {
                         if (Buffer.isBuffer(data) && data[0] === 7 && foreignFrames > 0) foreignAckAttempts++;
+                        if (Buffer.isBuffer(data) && data[0] === 0) pingFrames++;
                         return write(data, ...args);
                     };
                     socket.on('data', chunk => {
@@ -386,6 +389,28 @@ async function main() {
                             || delivered[0].allowed_mentions?.parse?.length !== 0 || delivered[0].enforce_nonce !== true) throw new Error('FIXTURE_DELIVERY_FAILED');
                         if ((await runner.tick()).state !== 'idle' || delivered.length !== 1) throw new Error('FIXTURE_DELIVERY_DUPLICATED');
                         console.log(JSON.stringify({ mockDiscordDmDelivered: true, actualDiscordRequests: 0, duplicateDelivery: false }));
+                    }
+                    if (inspectBurst) {
+                        const count = 26;
+                        for (let i = 0; i < count; i++) {
+                            await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: `synthetic-burst-${i}`,
+                                url: `https://x.com/synthetic/status/${1234567890123457000n + BigInt(i)}`, author: { handle: 'synthetic', id: '12345' } }), { TTL: 120 });
+                            await pause(150);
+                        }
+                        let rows = [];
+                        for (let i = 0; i < 160 && (rows.length < count + 1 || !pingFrames); i++) {
+                            rows = await testDb.queryDatabase('SELECT data_ciphertext,headers_json FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
+                            if (rows.length < count + 1 || !pingFrames) await pause(250);
+                        }
+                        if (rows.length !== count + 1 || !pingFrames || inspectErrors) throw new Error('FIXTURE_BURST_RECEIPT_FAILED');
+                        const { pathToFileURL } = require('node:url');
+                        const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                        const keys = { public_key: [...Buffer.from(result.push.p256dhPublicKey, 'base64url')],
+                            private_key: [...Buffer.from(result.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(result.push.authenticationSecret, 'base64url')] };
+                        const texts = rows.map(row => decryptNotification(row.data_ciphertext, JSON.parse(row.headers_json), keys).text);
+                        if (new Set(texts.filter(text => typeof text === 'string' && text.startsWith('synthetic-burst-'))).size !== count
+                            || Array.from({ length: count }, (_unused, i) => `synthetic-burst-${i}`).some(text => !texts.includes(text))) throw new Error('FIXTURE_BURST_CONTENT_MISMATCH');
+                        console.log(JSON.stringify({ realFcmBurst: count, encryptedReceipts: rows.length, confirmationRequested: true, allSyntheticPostsRecovered: true }));
                     }
                     if (process.env.CHROME_FIXTURE_REOPEN === '1') {
                         // The dedicated profile alone is reopened. Export closes
