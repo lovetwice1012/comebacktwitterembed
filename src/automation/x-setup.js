@@ -129,6 +129,8 @@ function createXSetup(db, options = {}) {
         await requireXEnrollment(db.queryDatabase, actor, rolloutOptions);
         await checkSession(db.queryDatabase, actor, input.sessionId);
         const file = parseTransferFile(input.fileText);
+        // Edge remains closed until the exporter and complete worker lifecycle are ready.
+        if (file.version === 3) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
         return { valid: true, browserVersion: file.provenance.browserVersion, scope: file.push.scope, formatVersion: file.version,
@@ -141,6 +143,7 @@ function createXSetup(db, options = {}) {
         // the owner lock after parsing so concurrent imports cannot replay it.
         await checkSession(db.queryDatabase, actor, input.sessionId);
         const file = parseTransferFile(input.fileText);
+        if (file.version === 3) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
         const identity = identifyTransfer(file);

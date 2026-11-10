@@ -1,8 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createECDH, randomBytes } = require('node:crypto');
+const { createECDH, randomBytes, generateKeyPairSync, createHash } = require('node:crypto');
 const { normalizeEdgeTransfer, identifyEdgeTransfer } = require('../../src/automation/edge-wns-transfer');
+const { parseTransferFile, identifyTransfer, createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
+const { createXSetup } = require('../../src/automation/x-setup');
 const enc = value => value.toString('base64url');
 function fixture() {
     const key = createECDH('prime256v1'); key.generateKeys(); const pub = key.getPublicKey();
@@ -38,4 +40,31 @@ test('does not invoke accessors in untrusted data', () => {
     const file = fixture(); let invoked = false;
     Object.defineProperty(file.push.client, 'clientName', { enumerable: true, get() { invoked = true; throw new Error(); } });
     assert.throws(() => normalizeEdgeTransfer(file), { code: 'X_EDGE_TRANSFER_INVALID' }); assert.equal(invoked, false);
+});
+test('Edge transfer uses owner-bound hybrid vault and distinct identities', () => {
+    const file = fixture(), parsed = parseTransferFile(JSON.stringify(file));
+    assert.deepEqual(parsed, file);
+    assert.deepEqual(identifyTransfer(parsed), { uaidHash: identifyEdgeTransfer(file).deviceHash,
+        channelHash: identifyEdgeTransfer(file).channelHash, contentHash: identifyEdgeTransfer(file).contentHash });
+    const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
+    const sealer = createTransferPublicSealer({ activeKeyId: 'test', publicKeys: { test: keys.publicKey } });
+    const vault = createTransferPrivateWorkerVault({ activeKeyId: 'test', privateKeys: { test: keys.privateKey } });
+    const context = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+    const envelope = sealer.seal(file, context);
+    assert(!JSON.stringify(envelope).includes(file.push.reconnectToken));
+    assert.deepEqual(vault.open(envelope, context), file);
+    assert.throws(() => vault.open(envelope, { ...context, ownerUserId: '987654321' }), { code: 'X_SETUP_DECRYPT_FAILED' });
+});
+test('unfinished Edge enrollment stays closed even when existing browsers are enabled', async () => {
+    const token = 'a'.repeat(64), tokenHash = createHash('sha256').update(token).digest('hex'); let writes = 0;
+    const db = { queryDatabase: async sql => {
+        assert.match(sql, /automation_x_setup_sessions/);
+        return [{ token_hash: tokenHash, consent_version: 1, consumed_at_ms: null, expires_at_ms: Date.now() + 60000 }];
+    }, withDatabaseTransaction: async () => { writes++; throw new Error('unexpected write'); } };
+    const service = createXSetup(db, { rolloutMode: 'public', sealer: { seal() { throw new Error('unexpected seal'); } },
+        receiverEnabled: true, chromeEnabled: true, braveEnabled: true, edgeEnabled: true });
+    const input = { sessionId: token, fileText: JSON.stringify(fixture()) };
+    await assert.rejects(service.validate({ userId: '123456789' }, input), { code: 'X_SETUP_EDGE_NOT_READY' });
+    await assert.rejects(service.importFile({ userId: '123456789' }, { ...input, consent: true }), { code: 'X_SETUP_EDGE_NOT_READY' });
+    assert.equal(writes, 0);
 });

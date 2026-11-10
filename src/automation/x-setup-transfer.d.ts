@@ -24,7 +24,16 @@ export interface BraveTransferFile extends Omit<ChromeTransferFile, 'provenance'
     provenance: { kind: 'brave-gcm'; adapterVersion: '1.0.0'; browserVersion: string; engineVersion: string; readMethod: 'brave-gcm-snapshot' };
     push: Omit<ChromeTransferFile['push'], 'productCategory'> & { productCategory: 'com.brave.windows' };
 }
-export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile;
+export interface EdgeTransferFile {
+    format: 'x-notification-subscription'; version: 3;
+    provenance: { kind: 'edge-wns'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'edge-wns-snapshot' };
+    push: { scope: 'https://x.com/'; siteChannel: string; deviceKey: string; reconnectToken: string;
+        agent: { os: string; osVersion: string; architecture: string; locale: string };
+        client: { channel: string; protocolVersion: string; clientName: string; clientVersion: string };
+        p256dhPublicKey: string; authenticationSecret: string; applicationServerKey: string;
+        p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
+}
+export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile | EdgeTransferFile;
 export interface TransferIdentity { uaidHash: string; channelHash: string; contentHash: string }
 export interface TransferContext { subscriptionId: string; ownerUserId: string; revision: number }
 export interface TransferVaultOptions { activeKeyId: string; keys: Record<string, Buffer> | Map<string, Buffer> }

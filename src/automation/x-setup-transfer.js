@@ -43,6 +43,7 @@ function normalizeFile(file) {
     // Version 2 is sealed with the same owner-bound vault. Intake separately
     // enforces the server-controlled Chrome and receiver rollout flags.
     if (file.version === 2) return require('./chrome-x-transfer').normalizeChromeTransfer(file);
+    if (file.version === 3) return require('./edge-wns-transfer').normalizeEdgeTransfer(file);
     if (file.format !== 'x-notification-subscription' || file.version !== 1) reject();
     const provenance = file.provenance;
     exactFields(provenance, ['kind', 'adapterVersion', 'browserVersion', 'readMethod']);
@@ -93,6 +94,10 @@ function identifyTransfer(file) {
         if (normalized.version === 2) {
             const id = require('./chrome-x-transfer').identifyChromeTransfer(normalized);
             return { uaidHash: id.deviceHash, channelHash: id.appHash, contentHash: id.contentHash };
+        }
+        if (normalized.version === 3) {
+            const id = require('./edge-wns-transfer').identifyEdgeTransfer(normalized);
+            return { uaidHash: id.deviceHash, channelHash: id.channelHash, contentHash: id.contentHash };
         }
         const hash = value => createHash('sha256').update(value, 'utf8').digest('hex');
         return { uaidHash: hash(normalized.push.uaid.replace(/-/g, '')), channelHash: hash(normalized.push.channelID), contentHash: hash(JSON.stringify(normalized)) };
