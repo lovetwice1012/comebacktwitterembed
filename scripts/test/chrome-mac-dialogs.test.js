@@ -1,0 +1,35 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const vm = require('node:vm');
+
+async function harness(responses) {
+    const source = await fs.readFile(path.join(__dirname, '../../src/automation/chrome-mac-dialogs.js'), 'utf8');
+    const module = { exports: {} }, calls = [];
+    const mockedRequire = name => name === 'node:child_process' ? { execFile(file, args, options, callback) {
+        calls.push({ file, args, options }); const next = responses.shift();
+        if (next === 'cancel') { const error = Object.assign(new Error('cancelled'), { code: 1, stderr: 'execution error: User canceled. (-128)' }); callback(error); }
+        else callback(null, { stdout: next + '\n', stderr: '' });
+    } } : require(name);
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, process: { platform: 'darwin' }, Number });
+    return { ui: module.exports.createMacChromeDialogs(), calls };
+}
+test('dialogs guide setup, disclose other-site data and return only the chosen local path', async () => {
+    const h = await harness(['yes', 'yes', 'yes', 'yes', '/Users/test/通知.json']);
+    assert.equal(await h.ui.confirmOpen(), true); assert.equal(await h.ui.confirmNotifications(), true); assert.equal(await h.ui.confirmKeychain(), true);
+    const result = await h.ui.confirmSave({ otherSubscriptionCount: 1 });
+    assert.equal(result.directory, '/Users/test'); assert.equal(result.filename, '通知.json'); assert.equal(result.otherSitesConsent, true);
+    assert(h.calls.every(call => call.file === '/usr/bin/osascript' && call.args[0] === '-e'));
+    assert(h.calls[0].args[1].includes('アップロード')); assert(h.calls[1].args[1].includes('投稿通知'));
+    assert(h.calls[2].args[1].includes('普段のChrome')); assert(h.calls[3].args[1].includes('サーバーに届く'));
+    assert(h.calls[3].args[1].includes('破棄'));
+});
+test('cancelled prompts stop the flow before file selection', async () => {
+    const h = await harness(['cancel']); assert.equal(await h.ui.confirmOpen(), false);
+    const other = await harness(['cancel']); assert.equal(await other.ui.confirmSave({ otherSubscriptionCount: 1 }), null);
+    assert.equal(other.calls.length, 1);
+    const noOther = await harness(['/Users/test/通知.json']); const result = await noOther.ui.confirmSave({ otherSubscriptionCount: 0 });
+    assert.equal(result.otherSitesConsent, false); assert.equal(noOther.calls.length, 1);
+});

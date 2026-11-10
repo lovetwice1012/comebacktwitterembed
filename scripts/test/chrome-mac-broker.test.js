@@ -36,11 +36,12 @@ test('Mac broker verifies signer and profile, fences duplicate starts and releas
     const { startMacChromeBroker } = module.exports;
     const params = { rootPath: profile.rootPath, profileId: profile.profileId };
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROWSER_INVALID' }); assert.equal(calls, 0);
-    accepted = true; await startMacChromeBroker(params);
+    accepted = true; const broker = await startMacChromeBroker(params);
     assert.equal(signing.file, '/usr/bin/codesign'); assert(signing.args.some(arg => arg.includes('EQHXZ8M8AV')));
     assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' }); assert.equal(calls, 1);
     chrome.exitCode = 0; chrome.emit('exit');
+    assert.equal(await broker.releaseComplete, true);
     const lock = path.join(profile.rootPath, 'broker.lock');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });

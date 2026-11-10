@@ -42,18 +42,20 @@ async function startMacChromeBroker({ rootPath, profileId }) {
             throw fail('X_CHROME_MAC_BROKER_INVALID');
         await lock.writeFile(JSON.stringify({ profileId, pid: process.pid })); await lock.sync();
         const broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath });
-        let released = false;
+        let released = false, settleRelease;
+        const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
             if (released) return; released = true;
+            let ok = false;
             try {
                 const current = await fs.lstat(lockPath);
-                if (current.dev === lockStat.dev && current.ino === lockStat.ino) await fs.unlink(lockPath);
+                if (current.dev === lockStat.dev && current.ino === lockStat.ino) { await fs.unlink(lockPath); ok = true; }
             } catch { /* A stale lock fails closed and can be recovered later. */ }
-            finally { await lock.close().catch(() => {}); }
+            finally { await lock.close().catch(() => { ok = false; }); settleRelease(ok); }
         };
         broker.chrome.once('exit', () => { void release(); });
         if (broker.chrome.exitCode !== null) await release();
-        return broker;
+        return { ...broker, releaseComplete };
     } catch (error) {
         if (lock) {
             try {
