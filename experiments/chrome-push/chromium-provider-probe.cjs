@@ -142,9 +142,34 @@ async function main() {
                         const containsKey = encoded => typeof encoded === 'string' && encoded.length > 0 && value.includes(Buffer.from(encoded, 'base64url'));
                         const keyMarker = containsKey(syntheticSubscription?.keys?.p256dh), authMarker = containsKey(syntheticSubscription?.keys?.auth);
                         let privatePublic = null, fixtureDecrypts = false, otherDecrypts = false, crossSiteRejected = false;
+                        let fixtureExactFields = null, otherExactFields = null;
                         if ((keyMarker && authMarker) || (containsKey(otherSubscription?.keys?.p256dh) && containsKey(otherSubscription?.keys?.auth))) {
                             try {
-                                const fields = protobufBytes(value, 7), authFields = protobufBytes(value, 6);
+                                const fields = protobufBytes(value, 7), authFields = protobufBytes(value, 6), origins = protobufBytes(value, 1),
+                                    endpoints = protobufBytes(value, 3), appKeys = protobufBytes(value, 16);
+                                const originLocations = site => Array.from({ length: 16 }, (_unused, index) => index + 1).filter(field =>
+                                    protobufBytes(value, field).some(part => part.includes(Buffer.from(site))));
+                                const exact = (site, subscription) => {
+                                    let urlOrigin = false, pathShape = 'other';
+                                    try { const parsed = new URL(origins[0].toString('utf8')); urlOrigin = parsed.origin === site;
+                                        pathShape = parsed.pathname === '/' ? 'root' : parsed.pathname === '/sw.js' ? 'script' : 'other'; } catch { /* Not a URL. */ }
+                                    return {
+                                    origin: origins.length === 1 && origins[0].equals(Buffer.from(site)),
+                                    originWithSlash: origins.length === 1 && origins[0].equals(Buffer.from(`${site}/`)), urlOrigin, pathShape,
+                                    originFields: originLocations(site),
+                                    originField8: protobufBytes(value, 8).filter(part => part.includes(Buffer.from(site))).map(part => {
+                                        const names = protobufBytes(part, 1), values = protobufBytes(part, 2);
+                                        return { length: part.length, nested: wireShape(part),
+                                            nameIsOrigin: names.length === 1 && names[0].equals(Buffer.from('origin')),
+                                            valueIsOrigin: values.length === 1 && values[0].equals(Buffer.from(site)),
+                                            valueIsOriginSlash: values.length === 1 && values[0].equals(Buffer.from(`${site}/`)) };
+                                    }),
+                                    endpoint: endpoints.length === 1 && endpoints[0].equals(Buffer.from(subscription.endpoint)),
+                                    auth: authFields.length === 1 && authFields[0].equals(Buffer.from(subscription.keys.auth, 'base64url')),
+                                    applicationServerKey: appKeys.length === 1 && appKeys[0].equals(Buffer.from(vapid.publicKey, 'base64url')),
+                                }; };
+                                if (keyMarker && authMarker) fixtureExactFields = exact(origin, syntheticSubscription);
+                                if (otherSubscription && containsKey(otherSubscription.keys.p256dh) && containsKey(otherSubscription.keys.auth)) otherExactFields = exact(otherOrigin, otherSubscription);
                                 if (fields.length === 1 && authFields.length === 1) {
                                     const key = createPrivateKey({ key: fields[0], format: 'der', type: 'pkcs8' }), privateJwk = key.export({ format: 'jwk' });
                                     const jwk = createPublicKey(key).export({ format: 'jwk' });
@@ -170,16 +195,28 @@ async function main() {
                             fixtureOriginInKey: marker(key, origin), fixtureOriginInValue: marker(value, origin),
                             fixtureEndpointInValue: marker(value, syntheticSubscription?.endpoint), fixturePublicKeyInValue: keyMarker, fixtureAuthInValue: authMarker,
                             fixturePrivateKeyMatches: Boolean(privatePublic && privatePublic === syntheticSubscription?.keys?.p256dh),
-                            fixtureDecrypts, crossSiteRejected,
+                            fixtureDecrypts, fixtureExactFields, crossSiteRejected,
                             otherOriginInValue: marker(value, otherOrigin), otherEndpointInValue: marker(value, otherSubscription?.endpoint),
                             otherPublicKeyInValue: containsKey(otherSubscription?.keys?.p256dh), otherAuthInValue: containsKey(otherSubscription?.keys?.auth),
                             otherPrivateKeyMatches: Boolean(privatePublic && privatePublic === otherSubscription?.keys?.p256dh),
-                            otherDecrypts,
+                            otherDecrypts, otherExactFields,
                             osCryptV10: value.subarray(0, 3).toString('ascii') === 'v10', osCryptV20: value.subarray(0, 3).toString('ascii') === 'v20' });
                     }
                     stores.push({ name, records });
                 } finally { await db.close().catch(() => {}); }
             }
+        }
+        if (otherSubscription && process.env.CHROMIUM_PROBE_STORE_SHAPE === '1') {
+            const records = stores.flatMap(store => store.records);
+            const matches = (record, which) => {
+                const fields = which === 'first' ? record.fixtureExactFields : record.otherExactFields;
+                return fields?.endpoint && fields.auth && fields.applicationServerKey
+                    && fields.originField8.length === 1 && fields.originField8[0].nameIsOrigin && fields.originField8[0].valueIsOriginSlash
+                    && (which === 'first' ? record.fixturePrivateKeyMatches && record.fixtureDecrypts : record.otherPrivateKeyMatches && record.otherDecrypts)
+                    && record.crossSiteRejected;
+            };
+            const first = records.filter(record => matches(record, 'first')), other = records.filter(record => matches(record, 'second'));
+            if (first.length !== 1 || other.length !== 1 || first[0] === other[0]) throw new Error('PROBE_SCOPE_MISMATCH');
         }
         console.log(JSON.stringify({ browser: kind, product: version.product, subscription: publicSubscription, secondSyntheticOrigin: Boolean(otherSubscription),
             category: typeof prefs.gcm?.product_category_for_subtypes === 'string' ? prefs.gcm.product_category_for_subtypes : null,
