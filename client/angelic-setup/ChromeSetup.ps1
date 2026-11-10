@@ -9,9 +9,9 @@ X以外の通知も同じ受信情報に含まれる場合、ファイル作成�
 #>
 [CmdletBinding()]
 param([ValidateSet('Status','Prepare','Open','Export')][string] $Action='Status',
-      [ValidateSet('chrome','brave','edge')][string] $Browser='chrome',
+      [ValidateSet('chrome','brave')][string] $Browser='chrome',
       [string] $PrivateRoot, [string] $OutputPath, [switch] $PromptForOtherNotifications,
-      [switch] $AllowOtherNotifications, [switch] $LibraryOnly)
+      [switch] $AllowOtherNotifications)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $Browser=$Browser.ToLowerInvariant()
@@ -164,7 +164,7 @@ function Get-Owner {
         $browserData=Read-SmallJson $browserMarker
         Assert-PropertyNames $browserData @('profileId','browser')
         if ($browserData.profileId -cne $owner.profileId -or $browserData.browser -cne $Browser) { throw 'Browser profile mismatch' }
-    } elseif ($Browser -cne 'chrome') { throw 'Browser profile missing' }
+    } elseif ($Browser -ceq 'brave') { throw 'Browser profile missing' }
     return $owner
 }
 function Get-ActiveLaunch($Owner) {
@@ -223,7 +223,7 @@ function Quote-WindowsArgument([string]$Value) {
     return '"'+$escaped+'"'
 }
 function Invoke-Helper([string]$Name,$InputObject) {
-    if ($Name -cnotin @('ChromeCapture.cjs','ChromeReader.cjs','EdgeCapture.cjs','EdgeReader.cjs')) { throw 'Helper invalid' }
+    if ($Name -cnotin @('ChromeCapture.cjs','ChromeReader.cjs')) { throw 'Helper invalid' }
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=[IO.Path]::Combine($script:PackageRoot,'ChromeNode.exe')
     $info.Arguments=Quote-WindowsArgument ([IO.Path]::Combine($script:PackageRoot,$Name))
@@ -279,9 +279,7 @@ function Start-PrivateBroker([string]$Chrome,[string]$Profile) {
     }
 }
 
-if ($LibraryOnly) { return }
 try {
-    if ($Browser -ceq 'edge') { Fail-Safely 'X_CHROME_PACKAGE_INVALID' 'Edge 用のツールをお使いください。' }
     try { Assert-Package } catch { Fail-Safely 'X_CHROME_PACKAGE_INVALID' 'ZIPを新しくダウンロードし、すべて展開してください。' }
     if ([string]::IsNullOrWhiteSpace($PrivateRoot)) { $PrivateRoot=[IO.Path]::Combine($env:LOCALAPPDATA,'XNotificationSetup',$(if ($Browser -ceq 'brave') { 'BraveSetup' } else { 'ChromeSetup' })) }
     $script:Root=Get-LocalPath $PrivateRoot

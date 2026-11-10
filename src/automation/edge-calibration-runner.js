@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { createECDH, createHash, X509Certificate } = require('node:crypto');
 const { parseUniqueJson } = require('./strict-json');
-const { createChromePipe } = require('./chrome-cdp-pipe');
+const { createChromePipe } = require('./edge-cdp-pipe');
 const { createEdgeCalibrationRelay } = require('./edge-calibration-relay');
 const fail = code => Object.assign(new Error(code), { code });
 async function checkRoot(rootPath, token) {

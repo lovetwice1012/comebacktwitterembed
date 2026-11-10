@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { PassThrough, Writable } = require('node:stream');
 const { createECDH } = require('node:crypto');
-const { createChromePipe } = require('../../src/automation/chrome-cdp-pipe');
+const { createChromePipe } = require('../../src/automation/edge-cdp-pipe');
 const origin = 'http://127.0.0.1:12345';
 function fixture() {
     const chrome = new EventEmitter(), output = new PassThrough(), methods = [];

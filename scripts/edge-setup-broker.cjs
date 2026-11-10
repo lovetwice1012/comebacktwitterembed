@@ -1,5 +1,5 @@
 'use strict';
-const { startChromeBroker } = require('../src/automation/chrome-private-broker');
+const { startChromeBroker } = require('../src/automation/edge-private-broker');
 const { parseUniqueJson } = require('../src/automation/strict-json');
 async function main() {
     let length = 0; const chunks = []; let combined;

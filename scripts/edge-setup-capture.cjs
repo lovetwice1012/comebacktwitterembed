@@ -1,5 +1,5 @@
 'use strict';
-const { captureFromBroker } = require('../src/automation/chrome-broker-client');
+const { captureFromBroker } = require('../src/automation/edge-broker-client');
 const { parseUniqueJson } = require('../src/automation/strict-json');
 async function main() {
     const chunks = []; let size = 0, combined;

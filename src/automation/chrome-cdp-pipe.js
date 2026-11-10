@@ -2,18 +2,11 @@
 
 // Chrome DevTools over inherited anonymous pipes, never a debugger TCP port.
 // Only fixed commands for selecting the X page, reading its PushSubscription
-// and closing this dedicated browser are exposed to the local broker. The
-// separate calibration mode can create a localhost-only test subscription.
+// and closing this dedicated browser are exposed to the local broker.
 const fault = code => Object.assign(new Error(code), { code });
-function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000, includeApplicationServerKey = false, browserMode = 'chrome', calibration = false } = {}) {
+function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 } = {}) {
     if (!chrome?.stdio?.[3] || !chrome?.stdio?.[4] || typeof origin !== 'string'
-        || typeof includeApplicationServerKey !== 'boolean' || typeof calibration !== 'boolean' || !['chrome', 'edge'].includes(browserMode)
-        || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 60000
         || (origin !== 'https://x.com' && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin))) throw fault('X_CHROME_PIPE_INVALID');
-    if (calibration) {
-        try { if (browserMode !== 'edge' || origin === 'https://x.com' || new URL(origin).origin !== origin) throw new Error(); }
-        catch { throw fault('X_CHROME_PIPE_INVALID'); }
-    }
     const input = chrome.stdio[3], output = chrome.stdio[4], waiting = new Map();
     let sequence = 0, buffer = Buffer.alloc(0), failed = false;
     function abort() {
@@ -49,9 +42,8 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
     }
     async function ready() {
         const version = await call('Browser.getVersion');
-        const pattern = browserMode === 'edge' ? /^Edg\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/ : /^Chrome\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/;
-        if (typeof version.product !== 'string' || !pattern.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
-        return version.product.slice(version.product.indexOf('/') + 1);
+        if (typeof version.product !== 'string' || !/^Chrome\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
+        return version.product.slice('Chrome/'.length);
     }
     async function capture() {
         const result = await call('Target.getTargets');
@@ -69,19 +61,14 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
             try {
             const expression = `(async()=>{if(location.origin!==${JSON.stringify(origin)})throw Error('origin');const found=[];` +
                 `for(const r of await navigator.serviceWorker.getRegistrations()){if(new URL(r.scope).origin!==${JSON.stringify(origin)})continue;` +
-                `const s=await r.pushManager.getSubscription();if(s){const v={scope:r.scope,...s.toJSON()};` +
-                (includeApplicationServerKey ? `const k=s.options?.applicationServerKey;if(!k||k.byteLength!==65)throw Error('key');v.applicationServerKey=btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');` : '') +
-                `found.push(v);}}` +
+                `const s=await r.pushManager.getSubscription();if(s)found.push({scope:r.scope,...s.toJSON()});}` +
                 `if(location.origin!==${JSON.stringify(origin)}||found.length!==1)throw Error('subscription');return found[0]})()`;
             const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
             const value = response.result?.value;
             if (response.exceptionDetails || response.result?.type !== 'object' || !value || typeof value.scope !== 'string'
                 || typeof value.endpoint !== 'string' || value.scope.length > 4096 || value.endpoint.length > 4096 || !value.keys
-                || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string'
-                || includeApplicationServerKey && (typeof value.applicationServerKey !== 'string' || !/^[A-Za-z0-9_-]{87}$/.test(value.applicationServerKey)
-                    || Buffer.from(value.applicationServerKey, 'base64url').toString('base64url') !== value.applicationServerKey)) throw fault('X_CHROME_CAPTURE_INVALID');
-                return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
-                    ...(includeApplicationServerKey ? { applicationServerKey: value.applicationServerKey } : {}) };
+                || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string') throw fault('X_CHROME_CAPTURE_INVALID');
+                return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } };
             } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
         };
         let selected;
@@ -90,8 +77,7 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
             try { value = await captureTarget(target); }
             catch (error) { if (matches.length > 1) throw fault('X_CHROME_CAPTURE_AMBIGUOUS'); throw error; }
             if (selected && (value.scope !== selected.scope || value.endpoint !== selected.endpoint
-                || value.keys.p256dh !== selected.keys.p256dh || value.keys.auth !== selected.keys.auth
-                || includeApplicationServerKey && value.applicationServerKey !== selected.applicationServerKey))
+                || value.keys.p256dh !== selected.keys.p256dh || value.keys.auth !== selected.keys.auth))
                 throw fault('X_CHROME_CAPTURE_AMBIGUOUS');
             selected = value;
         }
@@ -105,38 +91,6 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
         try { await Promise.race([exited, new Promise((_resolve, reject) => { timer = setTimeout(() => reject(fault('X_CHROME_CAPTURE_TIMEOUT')), 15000); })]); }
         finally { clearTimeout(timer); }
     }
-    async function prepareCalibration(applicationServerKey) {
-        if (!calibration || typeof applicationServerKey !== 'string' || !/^[A-Za-z0-9_-]{87}$/.test(applicationServerKey)) throw fault('X_CHROME_PIPE_INVALID');
-        const key = Buffer.from(applicationServerKey, 'base64url');
-        try {
-            if (key.length !== 65 || key.toString('base64url') !== applicationServerKey || key[0] !== 4) throw fault('X_CHROME_PIPE_INVALID');
-            require('node:crypto').ECDH.convertKey(key, 'prime256v1', undefined, undefined, 'uncompressed');
-        } catch { throw fault('X_CHROME_PIPE_INVALID'); } finally { key.fill(0); }
-        await call('Browser.grantPermissions', { origin, permissions: ['notifications'] });
-        const target = await call('Target.createTarget', { url: 'about:blank' });
-        if (typeof target.targetId !== 'string' || !target.targetId || target.targetId.length > 256) throw fault('X_CHROME_PIPE_INVALID');
-        const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
-        if (typeof attached.sessionId !== 'string' || !attached.sessionId || attached.sessionId.length > 256) throw fault('X_CHROME_PIPE_INVALID');
-        try {
-            await call('Page.enable', {}, attached.sessionId);
-            await call('Page.navigate', { url: `${origin}/` }, attached.sessionId);
-            const deadline = Date.now() + timeoutMs; let loaded = false;
-            while (Date.now() < deadline) {
-                const state = await call('Runtime.evaluate', { expression: 'location.origin', returnByValue: true }, attached.sessionId);
-                if (state.result?.value === origin) { loaded = true; break; }
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            if (!loaded) throw fault('X_CHROME_PIPE_TIMEOUT');
-            const expression = `(async()=>{if(location.origin!==${JSON.stringify(origin)})throw Error('origin');` +
-                `const v=${JSON.stringify(applicationServerKey)}.replace(/-/g,'+').replace(/_/g,'/');` +
-                `const key=Uint8Array.from(atob(v),c=>c.charCodeAt(0));` +
-                `const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;` +
-                `const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});return Boolean(s&&s.endpoint)})()`;
-            const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
-            if (response.exceptionDetails || response.result?.value !== true) throw fault('X_CHROME_PIPE_INVALID');
-            return true;
-        } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
-    }
-    return { ready, capture, closeBrowser, ...(calibration ? { prepareCalibration } : {}) };
+    return { ready, capture, closeBrowser };
 }
 module.exports = { createChromePipe };

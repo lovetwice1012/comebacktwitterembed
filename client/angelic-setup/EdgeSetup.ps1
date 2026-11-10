@@ -15,7 +15,7 @@ $ErrorActionPreference='Stop'
 $request=[pscustomobject]@{ action=$Action; privateRoot=$PrivateRoot; outputPath=$OutputPath;
     prompt=[bool]$PromptForOtherNotifications; allow=[bool]$AllowOtherNotifications }
 $packageRoot=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$packageVersion='0.1.0-edge-preview.1'
+$packageVersion='0.1.0-edge-preview.3'
 function Assert-EdgeBootstrapPath([string]$Path) {
     $current=[IO.Path]::GetPathRoot($Path)
     foreach($part in $Path.Substring($current.Length).Split([char]92)) {
@@ -32,7 +32,7 @@ function Assert-EdgeBootstrapFields($Object,[string[]]$Names) {
     foreach($name in $actual){if($Names -cnotcontains $name){throw 'Invalid package metadata'}}
 }
 function Assert-EdgeBootstrapPackage {
-    $names=@('ChromeSetup.ps1','EdgeSetup.ps1','Start-EdgeSetup.ps1','EdgeSnapshot.ps1','EdgeExport.ps1',
+    $names=@('EdgeShared.ps1','EdgeSetup.ps1','Start-EdgeSetup.ps1','EdgeSnapshot.ps1','EdgeExport.ps1',
         'EdgeCalibration.ps1','EdgeCalibrationJob.ps1','EdgeEphemeralCertificate.ps1','EdgePeerIdentity.ps1','EdgePeerVerify.ps1','NativeSetup.ps1',
         'ChromeBroker.cjs','ChromeCapture.cjs','ChromeReader.cjs','EdgeBroker.cjs','EdgeCapture.cjs','EdgeReader.cjs','EdgeCalibrate.cjs',
         'ChromeLevelDB.node','ChromeNode.exe','ChromeNode-LICENSE.txt','ChromeDependencies-LICENSE.txt','はじめに.txt','Edgeで開始.cmd','LICENSE')
@@ -60,7 +60,7 @@ function Assert-EdgeBootstrapPackage {
 }
 try {
     try { Assert-EdgeBootstrapPackage } catch { throw 'X_EDGE_PACKAGE_INVALID: ZIP を新しくダウンロードし、すべて展開してください。' }
-    . ([IO.Path]::Combine($packageRoot,'ChromeSetup.ps1')) -LibraryOnly -Browser edge
+    . ([IO.Path]::Combine($packageRoot,'EdgeShared.ps1')) -LibraryOnly -Browser edge
     $Action=$request.action;$PrivateRoot=$request.privateRoot;$OutputPath=$request.outputPath
     $PromptForOtherNotifications=$request.prompt;$AllowOtherNotifications=$request.allow
     $Browser='edge';$script:PackageVersion=$packageVersion

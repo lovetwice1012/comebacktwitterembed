@@ -109,6 +109,26 @@ test('saved Brave receiver remains identifiable and compatible with old receiver
         assert.equal(f.exports.parseXSetupSubscription(subscription()).browserKind, 'firefox');
     } finally { await f.close(); }
 });
+test('Edge setup is independently gated and labels its download and imported receiver', async () => {
+    const hidden = await fixture({ current: status({ chromeEnabled: true, edgeEnabled: false, receiverEnabled: true }), upload: false });
+    try { assert.equal([...hidden.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Edge'), false); }
+    finally { await hidden.close(); }
+    const f = await fixture({ current: status({ chromeEnabled: false, edgeEnabled: true, receiverEnabled: true }), upload: false,
+        respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
+            ? { valid: true, browserVersion: '157.0.4341.42', browserKind: 'edge', scope: 'https://x.com/', formatVersion: 3 } : undefined });
+    try {
+        const edge = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Edge'); assert(edge);
+        await f.act(async () => edge.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-edge');
+        assert.match(f.container.textContent, /Edgeで開始/); await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        assert.match(f.review().textContent, /Edge 157\.0\.4341\.42/); f.assertPrivate();
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ browserKind: 'edge' })).browserKind, 'edge');
+        assert.throws(() => f.exports.parseXSetupPreview({ valid: true, browserVersion: '157.0.4341.42', scope: 'https://x.com/', formatVersion: 3 }));
+        assert.throws(() => f.exports.parseXSetupPreview({ valid: true, browserVersion: '157.0.4341.42', scope: 'https://x.com/other', formatVersion: 3, browserKind: 'edge' }));
+        assert.equal(f.exports.parseXSetupStatus(status({ edgeEnabled: true, receiverEnabled: false })).edgeEnabled, false);
+        assert.equal(f.exports.parseXSetupStatus(status({ edgeEnabled: true, receiverEnabled: true, rollout: { mode: 'supporters', eligible: false, reasonCode: 'X_ROLLOUT_SUPPORTERS_ONLY', reason: null } })).edgeEnabled, false);
+    } finally { await f.close(); }
+});
 test('provider loss notice is visible without exposing event identifiers', async () => {
     const f = await fixture({ current: status({ subscriptions: [subscription({ lastProviderLossAtMs: 1791921600000 })] }), upload: false });
     try {

@@ -10,20 +10,19 @@ const fault = code => Object.assign(new Error(code), { code });
 // The listener exposes only a single capture-and-close action, never general
 // DevTools. Its random 256-bit capability is returned over the launching
 // process's private stdout pipe and must be stored under the user's ACL.
-async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.com', extraArgs = [], spawnChrome = spawn, includeApplicationServerKey = false, browserMode = 'chrome' }) {
+async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.com', extraArgs = [], spawnChrome = spawn }) {
     if (typeof chromePath !== 'string' || typeof profilePath !== 'string' || typeof spawnChrome !== 'function'
-        || !Array.isArray(extraArgs) || extraArgs.some(arg => typeof arg !== 'string') || typeof includeApplicationServerKey !== 'boolean'
-        || !['chrome', 'edge'].includes(browserMode) || browserMode === 'edge' && !includeApplicationServerKey
+        || !Array.isArray(extraArgs) || extraArgs.some(arg => typeof arg !== 'string')
         || (origin !== 'https://x.com' && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin))) throw fault('X_CHROME_BROKER_INVALID');
     // Only the dedicated setup profile is affected. Keep Chrome's check-in and
     // subscription registration endpoints available, but give its MCS
     // receive connection an unreachable loopback endpoint. This prevents the
     // setup browser from taking notifications away from the server worker.
-    const token = randomBytes(32), chrome = spawnChrome(chromePath, ['--remote-debugging-pipe',
-        ...(browserMode === 'chrome' ? ['--gcm-mcs-endpoint=https://127.0.0.1:1', '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND'] : []), `--user-data-dir=${profilePath}`,
+    const token = randomBytes(32), chrome = spawnChrome(chromePath, ['--remote-debugging-pipe', '--gcm-mcs-endpoint=https://127.0.0.1:1',
+        '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND', `--user-data-dir=${profilePath}`,
         '--no-first-run', '--no-default-browser-check', ...extraArgs, `${origin}/`],
     { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
-    const pipe = createChromePipe(chrome, { origin, includeApplicationServerKey, browserMode });
+    const pipe = createChromePipe(chrome, { origin });
     let engineVersion;
     try { engineVersion = await pipe.ready(); } catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
     let busy = false, stopped = false;

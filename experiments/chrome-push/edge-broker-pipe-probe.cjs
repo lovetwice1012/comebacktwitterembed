@@ -11,8 +11,8 @@ const { pathToFileURL } = require('node:url');
 const CDP = require('chrome-remote-interface');
 const webpush = require('web-push');
 const { ClassicLevel } = require('classic-level');
-const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
-const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
+const { startChromeBroker } = require('../../src/automation/edge-private-broker');
+const { captureFromBroker } = require('../../src/automation/edge-broker-client');
 const { rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
@@ -96,7 +96,7 @@ async function main() {
             if (process.env.EDGE_PROBE_CALIBRATION_PIPE === '1') {
                 chrome = spawn(edge, ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${calibrationProfile}`,
                     '--no-first-run', '--no-default-browser-check', 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
-                const pipe = require('../../src/automation/chrome-cdp-pipe').createChromePipe(chrome, { origin, browserMode: 'edge', calibration: true, timeoutMs: 30000 });
+                const pipe = require('../../src/automation/edge-cdp-pipe').createChromePipe(chrome, { origin, browserMode: 'edge', calibration: true, timeoutMs: 30000 });
                 if (await pipe.ready() !== browserProduct.split('/')[1] || await pipe.prepareCalibration(vapid.publicKey) !== true) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
                 await pipe.closeBrowser(); chrome = null;
             } else {
