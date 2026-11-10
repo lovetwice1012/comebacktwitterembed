@@ -9,11 +9,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-function macho(cpu) { const value = Buffer.alloc(32); value.writeUInt32LE(0xfeedfacf, 0); value.writeUInt32LE(cpu, 4); value.writeUInt32LE(2, 12); return value; }
+function macho(cpu, min = 0x000d0500) {
+    const value = Buffer.alloc(56); value.writeUInt32LE(0xfeedfacf, 0); value.writeUInt32LE(cpu, 4); value.writeUInt32LE(2, 12);
+    value.writeUInt32LE(1, 16); value.writeUInt32LE(24, 20); value.writeUInt32LE(0x32, 32); value.writeUInt32LE(24, 36);
+    value.writeUInt32LE(1, 40); value.writeUInt32LE(min, 44); return value;
+}
 test('unsigned Mac preview layout preserves executable permissions and local manifest', async () => {
     const runtime = macho(0x0100000c), helper = macho(0x0100000c), bundle = { 'MacSetup.cjs': Buffer.from('fixture'), 'MacLevelDB.node': Buffer.from('fixture') };
     const zip = assembleMacApp({ bundle, runtime, helper, license: Buffer.from('test license') }), files = unzipSync(zip);
     const root = 'X通知の準備.app/Contents/', manifest = JSON.parse(Buffer.from(files[`${root}MacOS/MacSetup-manifest.json`]).toString());
+    assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('<key>LSMinimumSystemVersion</key><string>13.5</string>'));
     assert.equal(manifest.packageId, 'x-notification-mac-chrome-setup');
     assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
     const launch = Buffer.from(files[`${root}MacOS/Launch`]).toString();
@@ -28,6 +33,8 @@ test('unsigned Mac preview layout preserves executable permissions and local man
     for (const name of ['Launch', 'MacNode', 'MacStoreLock']) assert.equal(modes[`${root}MacOS/${name}`], 0o100755);
     assert.equal(modes[`${root}MacOS/MacSetup.cjs`], 0o100644);
     assert(isMachOExecutable(runtime, 'arm64')); assert(!isMachOExecutable(runtime, 'x64'));
+    assert(!isMachOExecutable(macho(0x0100000c, 0x000e0000), 'arm64'));
+    assert(!isMachOExecutable(runtime.subarray(0, 40), 'arm64'));
     await assert.rejects(buildMacChromePreview({ arch: 'arm64', runtime, helper, license: Buffer.from('test license') }), /input verification failed/);
 });
 test('preview CLI refuses unverified binaries without creating output', async t => {
