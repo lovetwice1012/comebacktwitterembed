@@ -92,6 +92,7 @@ async function main() {
     const testBindShape = process.env.EDGE_PROBE_BIND_SHAPE === '1';
     const testSession = process.env.EDGE_PROBE_SESSION === '1';
     const testSessionDb = process.env.EDGE_PROBE_SESSION_DB === '1';
+    const testGateway = process.env.EDGE_PROBE_GATEWAY === '1';
     if (testXSelector && (!testTwoSites || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testTlsIsolation && (noRelay || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testBindShape && (!testIndependent || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
@@ -99,6 +100,7 @@ async function main() {
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
         || process.env.EDGE_PROBE_DURABLE === '1' || process.env.EDGE_PROBE_ROTATION === '1')) throw new Error('PROBE_MODE_INVALID');
     if (testSessionDb && (!testSession || Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621)) throw new Error('PROBE_MODE_INVALID');
+    if (testGateway && !testSessionDb) throw new Error('PROBE_MODE_INVALID');
     const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
@@ -940,6 +942,9 @@ async function main() {
                         vault = createWnsTokenWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: generateKeyPairSync('rsa', { modulusLength: 3072 }).privateKey } });
                     }
                     const store = { async assertLease(current, options) { if (dbStore) return dbStore.assertLease(current, options); await options.authorize(); },
+                        async readWnsTokenState(current, options) { return dbStore.readWnsTokenState(current, options); },
+                        async saveWnsTokenState(current, options) { borrowed = options.token; tokenHash = createHash('sha256').update(options.token).digest('hex'); return dbStore.saveWnsTokenState(current, options); },
+                        async getInbox(input) { return dbStore.getInbox(input); },
                         async recordFrame(current, entry, options) {
                             const saved = dbStore ? await dbStore.recordFrame(current, entry, options) : (await options.authorize(), { ...lease, ...entry, id: '1', duplicate: false });
                             const encrypted = Buffer.from(entry.data, 'base64url'); let plain;
@@ -952,25 +957,41 @@ async function main() {
                             } finally { encrypted.fill(0); plain?.fill(0); }
                         } };
                     const initialToken = Buffer.from(deviceFields[2]);
-                    const session = createEdgeWnsSession({ transport: createEdgeWnsTransport(), store, lease, siteChannel: independentChannel,
+                    const agent = { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' };
+                    const session = testGateway ? null : createEdgeWnsSession({ transport: createEdgeWnsTransport(), store, lease, siteChannel: independentChannel,
                         authorize: async () => {}, saveRotatedToken: async token => {
                             borrowed = token; tokenHash = createHash('sha256').update(token).digest('hex');
                             if (dbStore) await dbStore.saveWnsTokenState(lease, { vault, token, expectedGeneration: 0, authorize: async () => {} });
-                        },
-                        agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' }, client: clientMetadata,
-                        deviceKey: key, reconnectToken: initialToken, productKey: productConstants.key, productId: productConstants.id });
+                        }, agent, client: clientMetadata, deviceKey: key, reconnectToken: initialToken, productKey: productConstants.key, productId: productConstants.id });
                     try {
-                        await session.start();
-                        if (!borrowed?.length || !borrowed.every(byte => byte === 0)) throw new Error('PROBE_SESSION_TOKEN_INVALID');
-                        const other = await sendFixture(otherSubscription, 'synthetic-session-other'); other.fill(0);
-                        const foreign = await session.next(15000);
-                        if (durableDb && Number((await durableDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n) !== 0)
-                            throw new Error('PROBE_SESSION_FOREIGN_STORED');
-                        expected = await sendFixture(value.subscription, 'synthetic-session-target');
-                        const target = await session.next(15000);
-                        if (foreign.state !== 'discarded' || target.state !== 'persisted' || persisted !== 1) throw new Error('PROBE_SESSION_ROUTE_INVALID');
+                        if (testGateway) {
+                            const { runEdgeWnsGateway } = require('../../src/automation/edge-wns-gateway');
+                            const controller = new AbortController(); let received = 0;
+                            const timer = setTimeout(() => controller.abort(), 30000);
+                            try {
+                                await runEdgeWnsGateway({ store, lease, vault, authorize: async () => {}, signal: controller.signal,
+                                    credentials: { agent, client: clientMetadata, deviceKey: key, reconnectToken: initialToken,
+                                        productKey: productConstants.key, productId: productConstants.id, siteChannel: independentChannel },
+                                    onReady: async () => {
+                                        const other = await sendFixture(otherSubscription, 'synthetic-session-other'); other.fill(0);
+                                        expected = await sendFixture(value.subscription, 'synthetic-session-target');
+                                    }, onReceived: async () => { received++; controller.abort(); } });
+                                if (received !== 1 || persisted !== 1) throw new Error('PROBE_SESSION_ROUTE_INVALID');
+                                if (!borrowed?.length || !borrowed.every(byte => byte === 0)) throw new Error('PROBE_SESSION_TOKEN_INVALID');
+                            } finally { clearTimeout(timer); }
+                        } else {
+                            await session.start();
+                            if (!borrowed?.length || !borrowed.every(byte => byte === 0)) throw new Error('PROBE_SESSION_TOKEN_INVALID');
+                            const other = await sendFixture(otherSubscription, 'synthetic-session-other'); other.fill(0);
+                            const foreign = await session.next(15000);
+                            if (durableDb && Number((await durableDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n) !== 0)
+                                throw new Error('PROBE_SESSION_FOREIGN_STORED');
+                            expected = await sendFixture(value.subscription, 'synthetic-session-target');
+                            const target = await session.next(15000);
+                            if (foreign.state !== 'discarded' || target.state !== 'persisted' || persisted !== 1) throw new Error('PROBE_SESSION_ROUTE_INVALID');
+                        }
                         if (dbStore) {
-                            session.close(); await dbStore.release(lease); released = true;
+                            session?.close(); await dbStore.release(lease); released = true;
                             const successor = await dbStore.claim({ ...identity, workerId: 'synthetic-session-successor' });
                             if (!successor) throw new Error('PROBE_SESSION_LEASE_INVALID');
                             try {
@@ -983,9 +1004,10 @@ async function main() {
                                     throw new Error('PROBE_SESSION_ROUTE_INVALID');
                             } finally { await dbStore.release(successor); }
                         }
-                        independentResult = { sessionReady: true, tokenCleared: true, foreignDiscarded: true, targetReceived: true, productionStoreRecovered: Boolean(dbStore) };
+                        independentResult = { sessionReady: true, tokenCleared: true, foreignDiscarded: true, targetReceived: true,
+                            productionStoreRecovered: Boolean(dbStore), gateway: testGateway };
                     } finally {
-                        expected?.fill(0); initialToken.fill(0); session.close();
+                        expected?.fill(0); initialToken.fill(0); session?.close();
                         if (dbStore && !released) await dbStore.release(lease).catch(() => {});
                     }
                 } else {
