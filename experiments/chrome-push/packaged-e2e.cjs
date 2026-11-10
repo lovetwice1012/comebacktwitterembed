@@ -6,6 +6,7 @@ const syncFs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const https = require('node:https');
+const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
 const { unzipSync } = require('fflate');
 const webpush = require('web-push');
@@ -62,7 +63,7 @@ print(json.dumps({'key':k.private_bytes(serialization.Encoding.PEM,serialization
 async function main() {
     if (!process.env.CHROME_SETUP_ZIP) throw new Error('FIXTURE_ZIP_REQUIRED');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-chrome-full-e2e-'));
-    let server, child, cdp, testDb, browserPushEvents = 0;
+    let server, child, cdp, testDb, otherSubscription, browserPushEvents = 0;
     try {
         const bundle = path.join(root, 'bundle'); await fs.mkdir(bundle);
         const entries = unzipSync(await fs.readFile(process.env.CHROME_SETUP_ZIP));
@@ -133,6 +134,7 @@ async function main() {
                   const r=await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
                   return (await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.vapid})).toJSON();})()` });
                 if (second.exceptionDetails || !second.result.value?.endpoint) throw new Error('FIXTURE_OTHER_SUBSCRIBE_FAILED');
+                otherSubscription = second.result.value;
             } finally { await other.close(); }
         }
         await cdp.Browser.close().catch(() => {});
@@ -283,8 +285,32 @@ async function main() {
             if (preview.formatVersion !== 2) throw new Error('FIXTURE_PREVIEW_FAILED');
             const saved = await setup.importFile(actor, { sessionId: session.sessionId, fileText, consent: true });
             let clock = Date.now();
+            let foreignFrames = 0, foreignAckAttempts = 0, inspectErrors = 0;
+            const inspectOther = process.env.CHROME_FIXTURE_OTHER_DELIVERY === '1';
+            if (inspectOther && (!otherSubscription || process.env.CHROME_FIXTURE_RUNTIME !== '1')) throw new Error('FIXTURE_OTHER_CONFIG_INVALID');
             const gateway = createXPushGateway(testDb, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
-                rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000 });
+                rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000,
+                ...(inspectOther ? { createChromeSocket: () => {
+                    const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', rejectUnauthorized: true });
+                    const decoder = require('../../src/automation/chrome-mcs-framing').createFrameDecoder();
+                    const write = socket.write.bind(socket);
+                    socket.write = (data, ...args) => {
+                        if (Buffer.isBuffer(data) && data[0] === 7 && foreignFrames > 0) foreignAckAttempts++;
+                        return write(data, ...args);
+                    };
+                    socket.on('data', chunk => {
+                        try {
+                            for (const frame of decoder.push(chunk)) if (frame.tag === 8) {
+                                const protocol = require('../../src/automation/chrome-mcs-protobuf');
+                                if (protocol.inspectControlMessage(frame.payload)) continue;
+                                const message = protocol.dataMessage(frame.payload, {
+                                    expectedCategory: result.push.productCategory, expectedAppId: result.push.appId, expectedSender: result.push.authorizedEntity });
+                                if (!message.matches) foreignFrames++;
+                            }
+                        } catch { inspectErrors++; }
+                    });
+                    return socket;
+                } } : {}) });
             const marker = `synthetic-${Date.now()}`, controller = new AbortController(); let matched = false;
             if (process.env.CHROME_FIXTURE_RUNTIME === '1') {
                 const entitlements = require('../../src/automation/entitlements');
@@ -307,6 +333,20 @@ async function main() {
                         listening = rows[0]?.state === 'listening'; if (!listening) await pause(250);
                     }
                     if (!listening) throw new Error('FIXTURE_RUNTIME_CONNECT_FAILED');
+                    if (inspectOther) {
+                        const otherMarker = 'synthetic-foreign-payload';
+                        await webpush.sendNotification(otherSubscription, JSON.stringify({ marker: otherMarker }), { TTL: 60 });
+                        for (let i = 0; i < 120 && (!foreignFrames || !foreignAckAttempts); i++) await pause(250);
+                        if (!foreignFrames || !foreignAckAttempts || inspectErrors) throw new Error('FIXTURE_OTHER_RECEIPT_FAILED');
+                        // Allow the gateway to process its ACK before observing
+                        // persistence; this payload is never decrypted here.
+                        await pause(500);
+                        const inbox = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox');
+                        const jobs = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_jobs');
+                        const audit = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_audit WHERE detail_json LIKE ?', [`%${otherMarker}%`]);
+                        if (Number(inbox[0].n) || Number(jobs[0].n) || Number(audit[0].n)) throw new Error('FIXTURE_OTHER_PERSISTED');
+                        console.log(JSON.stringify({ foreignPushObservedAndDiscarded: true, foreignInboxRows: 0, foreignJobs: 0, foreignAuditPayloads: 0, realFcm: true }));
+                    }
                     await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: marker,
                         url: 'https://x.com/synthetic/status/1234567890123456789', author: { handle: 'synthetic', id: '12345' } }), { TTL: 60 });
                     let recorded = false;
