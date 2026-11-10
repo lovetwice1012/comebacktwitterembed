@@ -7,7 +7,10 @@ const { selectSyntheticHandshake, describeSyntheticHandshake, syntheticPrelude, 
 const key = Buffer.alloc(32, 7), token = 'synthetic-token', nonce = '1'.repeat(32);
 const productConstants = { key: Buffer.from('0123456789abcdef'), id: Buffer.from('fedcba9876543210') };
 const syntheticMetadata = { channel: '123', protocolVersion: '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
-const frame = (header, body) => Buffer.from(`${header} ${Buffer.byteLength(body)}\r\n${body}`);
+const frame = (header, body) => {
+    if (header === 'BND 3 CON' && body.startsWith('<wns>')) body = `MS-CV: synthetic\r\n\r\n${body.replace('<wns>', '<wns><ver>1.0</ver>')}`;
+    return Buffer.from(`${header} ${Buffer.byteLength(body)}\r\n${body}`);
+};
 function fixture() {
     const signature = syntheticReconnectSignature(key, token, nonce).toString('base64');
     return Buffer.concat([frame('CNT 1 CON', '<connect/>'), frame('ATH 2 CON\\DEVICE', '<device/>'),

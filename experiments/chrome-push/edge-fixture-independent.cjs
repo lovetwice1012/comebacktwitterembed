@@ -11,6 +11,7 @@ const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const { syntheticRecipientMatches } = require('./edge-fixture-routing.cjs');
 const { createFrameDecoder } = require('../../src/automation/edge-wns-framing');
 const { parseNotification, createAcknowledgement } = require('../../src/automation/edge-wns-notification');
+const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
 const fail = code => Object.assign(new Error(code), { code });
 
 function selectSyntheticHandshake(chunks) {
@@ -144,11 +145,12 @@ function syntheticHandshake(key, token, productConstants, metadata) {
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, observePrior, expectedChannel, sendOtherNotification }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, observePrior, expectedChannel, sendOtherNotification }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
         || onRotatedToken !== undefined && typeof onRotatedToken !== 'function'
         || onTargetCiphertext !== undefined && typeof onTargetCiphertext !== 'function'
+        || onBindShape !== undefined && typeof onBindShape !== 'function'
         || !Number.isInteger(ackSettleMs) || ackSettleMs < 0 || ackSettleMs > 2000 || ackSingle && ackAndFollowup) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
         || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
@@ -192,16 +194,22 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 throw fail(`PROBE_DIRECT_EXPECTED_${verb}_GOT_${actual}_ROUTE_${route}`);
             }
             if (verb !== 'BND') return {};
-            const nonces = [...response.toString('ascii').matchAll(/<nonce>([^<]{1,256})<\/nonce>/g)];
-            const tokens = [...response.toString('ascii').matchAll(/<reconnect-token>([^<]{1,4096})<\/reconnect-token>/g)];
-            if (onRotatedToken) {
-                if (tokens.length !== 1 || !/^[\x21-\x7e]{1,4096}$/.test(tokens[0][1])) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const captured = Buffer.from(tokens[0][1], 'ascii');
-                try { await onRotatedToken(captured); } finally { captured.fill(0); }
+            if (onBindShape) {
+                const separator = response.indexOf('\r\n\r\n', end + 2);
+                if (separator < 0 || separator > end + 8192) throw fail('PROBE_DIRECT_FRAME_INVALID');
+                const body = response.subarray(separator + 4).toString('ascii');
+                const allowed = new Set(['wns', 'client', 'nonce', 'reconnect-token', 'ver', 'error', 'status']);
+                const tags = [...body.matchAll(/<\/?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?\/?\s*>/g)]
+                    .map(match => allowed.has(match[1]) ? match[1] : 'other');
+                await onBindShape({ commandParts: parts.length, sequenceMatchesRequest: parts[1] === '3', tags, hasDeclaration: /<\?/.test(body),
+                    hasDoctype: /<!/i.test(body), hasAttributes: /<[A-Za-z][A-Za-z0-9-]*\s/.test(body) });
             }
-            return { hasReconnectToken: response.includes(Buffer.from('<reconnect-token>')),
-                hasNonce: nonces.length === 1, reconnectTokenUnchanged: tokens.length === 1 ? tokens[0][1] === token : null,
-                serverNonce: nonces.length === 1 ? nonces[0][1] : null };
+            const binding = parseBindResponse(response, 3), original = Buffer.from(token, 'ascii');
+            try {
+                if (onRotatedToken) await onRotatedToken(binding.reconnectToken);
+                return { hasReconnectToken: true, hasNonce: true, reconnectTokenUnchanged: binding.reconnectToken.equals(original),
+                    serverNonce: binding.nonce };
+            } finally { binding.reconnectToken.fill(0); original.fill(0); }
         } finally { response.fill(0); }
     }
     try {
