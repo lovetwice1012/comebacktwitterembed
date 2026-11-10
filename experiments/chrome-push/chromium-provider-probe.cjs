@@ -221,7 +221,7 @@ async function main() {
                             catch (error) { duplicateRejected = error?.code === 'EDGE_FIXTURE_RECORD_INVALID'; }
                             if (!duplicateRejected) throw new Error('PROBE_DUPLICATE_ACCEPTED');
                         } finally {
-                            for (const selected of [first, second]) if (selected) for (const key of ['publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[key].fill(0);
+                            for (const selected of [first, second]) if (selected) for (const key of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[key].fill(0);
                         }
                     }
                     stores.push({ name, records });

@@ -22,7 +22,8 @@ const { createSyntheticRewriteStream } = require('./edge-fixture-rewrite.cjs');
 const { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticClientMetadata, independentSyntheticReconnect } = require('./edge-fixture-independent.cjs');
 const { readSyntheticProductConstants } = require('./edge-fixture-product.cjs');
 const { syntheticChallengeResponse } = require('./edge-fixture-challenge.cjs');
-const { matchingSyntheticRecordFields } = require('./edge-fixture-record.cjs');
+const { matchingSyntheticRecordFields, selectSyntheticEdgeRecord } = require('./edge-fixture-record.cjs');
+const { compareSyntheticRouting, syntheticRecipientProof, syntheticChannelStability } = require('./edge-fixture-routing.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -83,6 +84,7 @@ async function main() {
     const testWrongKey = process.env.EDGE_PROBE_TEST_WRONG_KEY === '1';
     const testRewrite = process.env.EDGE_PROBE_REWRITE_SIGNATURE === '1';
     const testIndependent = process.env.EDGE_PROBE_INDEPENDENT_RECONNECT === '1';
+    const testTwoSites = process.env.EDGE_PROBE_TWO_SITES === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -94,9 +96,11 @@ async function main() {
         || process.env.EDGE_PROBE_KEEP_SOCKET === '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store')))
         throw new Error('PROBE_MODE_INVALID');
+    if (testTwoSites && (testIndependent || testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT === '1'
+        || process.env.EDGE_PROBE_KEEP_SOCKET === '1')) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
-    const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0 };
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
+    const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
         if (testIndependent || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
@@ -115,6 +119,9 @@ async function main() {
             event.fixtureBindResponses = () => fixtureBindResponses(received);
             event.fixtureSentFrames = () => selectSyntheticHandshake(sent);
             event.fixtureRelations = frames => syntheticHandshakeRelations(frames, received, deviceFields);
+            event.fixtureRouting = (first, second, firstRecord, secondRecord) => compareSyntheticRouting(received, first, second, firstRecord, secondRecord);
+            event.fixtureRecipient = (first, second, channel) => syntheticRecipientProof(received, first, second, channel);
+            event.fixtureChannelStability = (first, next, other, otherNext) => syntheticChannelStability(received, first, next, other, otherNext);
             event.upstreamOpen = () => !upstream.destroyed;
             event.closeFixtureConnection = () => upstream.destroy();
             event.containsFixtureCipher = () => {
@@ -443,9 +450,62 @@ async function main() {
           catch(e){return {ok:false,name:e.name};}})()` }),
         new Promise(resolve => { timer = setTimeout(() => resolve(null), 30000); })]).finally(() => clearTimeout(timer));
         const value = result?.result?.value || { ok: false, name: 'Timeout' };
+        let otherSubscription, otherOrigin;
         if (value.ok) {
             expectedCipher = await sendFixture(value.subscription, 'synthetic-wns-probe');
             for (let i = 0; i < 80 && !browserReceived; i++) await wait(100);
+        }
+        if (testTwoSites) {
+            if (!value.ok || !browserEvents.initial) throw new Error('PROBE_TWO_SITE_INITIAL_FAILED');
+            otherOrigin = `http://localhost:${pageServer.address().port}`;
+            await cdp.Browser.grantPermissions({ origin: otherOrigin, permissions: ['notifications'] });
+            const otherLoaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
+            await cdp.Page.navigate({ url: otherOrigin }); await otherLoaded;
+            const other = await cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+                const registration=await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
+                const subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key}); return subscription.toJSON(); })()` });
+            if (other.exceptionDetails || !other.result?.value?.endpoint) throw new Error('PROBE_TWO_SITE_SUBSCRIBE_FAILED');
+            otherSubscription = other.result.value;
+            otherCipher = await sendFixture(otherSubscription, 'synthetic-other-site');
+            for (let i = 0; i < 80 && !browserEvents.other; i++) await wait(100);
+            if (!browserEvents.other) throw new Error('PROBE_TWO_SITE_RECEIVE_FAILED');
+            expectedNextCipher = await sendFixture(value.subscription, 'synthetic-wns-probe');
+            for (let i = 0; i < 80 && browserEvents.initial < 2; i++) await wait(100);
+            if (browserEvents.initial < 2) throw new Error('PROBE_TWO_SITE_RECEIVE_FAILED');
+            otherNextCipher = await sendFixture(otherSubscription, 'synthetic-other-site');
+            for (let i = 0; i < 80 && browserEvents.other < 2; i++) await wait(100);
+            if (browserEvents.other < 2) throw new Error('PROBE_TWO_SITE_RECEIVE_FAILED');
+            await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
+            if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
+            const store = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
+                { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+            let firstRecord, otherRecord;
+            try {
+                await store.open();
+                for await (const [_key, stored] of store.iterator({ limit: 128 })) {
+                    const belongs = (site, subscription) => stored.includes(Buffer.from(site))
+                        && stored.includes(Buffer.from(subscription.keys.p256dh, 'base64url')) && stored.includes(Buffer.from(subscription.keys.auth, 'base64url'));
+                    if (belongs(origin, value.subscription)) { if (firstRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); firstRecord = Buffer.from(stored); }
+                    if (belongs(otherOrigin, otherSubscription)) { if (otherRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); otherRecord = Buffer.from(stored); }
+                }
+                if (!firstRecord || !otherRecord || events.length !== 1) throw new Error('PROBE_TWO_SITE_RECORD_FAILED');
+                routingResult = events[0].fixtureRouting(expectedCipher, otherCipher, firstRecord, otherRecord);
+                const selected = selectSyntheticEdgeRecord([firstRecord, otherRecord], `${origin}/`);
+                try {
+                    const recipient = events[0].fixtureRecipient(expectedCipher, otherCipher, selected.channel);
+                    const nextRecipient = events[0].fixtureRecipient(expectedNextCipher, otherNextCipher, selected.channel);
+                    const stability = events[0].fixtureChannelStability(expectedCipher, expectedNextCipher, otherCipher, otherNextCipher);
+                    if (!recipient.targetAccepted || recipient.otherAccepted || !nextRecipient.targetAccepted || nextRecipient.otherAccepted
+                        || !stability.targetChannelStable || !stability.otherChannelStable || !stability.sitesHaveDistinctChannels) throw new Error('PROBE_TWO_SITE_ROUTING_FAILED');
+                    const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                    const plaintext = decryptEce(expectedCipher, { encoding: 'aes128gcm' }, { public_key: [...selected.publicKey],
+                        private_key: [...selected.privateKey], auth_secret: [...selected.auth] });
+                    try { routingResult = { ...routingResult, ...recipient, ...stability, targetNextAccepted: nextRecipient.targetAccepted,
+                        otherNextAccepted: nextRecipient.otherAccepted, targetDecrypted: plaintext.equals(Buffer.from('synthetic-wns-probe')), otherDecryptAttempts: 0 }; }
+                    finally { plaintext.fill(0); }
+                    if (!routingResult.targetDecrypted) throw new Error('PROBE_TWO_SITE_DECRYPT_FAILED');
+                } finally { for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0); }
+            } finally { firstRecord?.fill(0); otherRecord?.fill(0); await store.close().catch(() => {}); }
         }
         await wait(1000);
         if (value.ok && process.env.EDGE_PROBE_KEEP_SOCKET === '1') {
@@ -712,7 +772,7 @@ async function main() {
                 }
             } finally { rotatedToken?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureRouting, fixtureRecipient, fixtureChannelStability, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
@@ -722,7 +782,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, handshakeShape, handshakeRelations, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, routingResult, handshakeShape, handshakeRelations, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
@@ -731,6 +791,7 @@ async function main() {
         if (independentWebPush) for (const secret of Object.values(independentWebPush)) secret.fill(0);
         if (productConstants) for (const secret of Object.values(productConstants)) secret.fill(0);
         relationDeviceRecord?.fill(0); relationSiteRecord?.fill(0);
+        expectedCipher?.fill(0); otherCipher?.fill(0); expectedNextCipher?.fill(0); otherNextCipher?.fill(0);
         await cdp?.close().catch(() => {});
         if (browser && browser.exitCode === null) { browser.kill(); await new Promise(resolve => browser.once('exit', resolve)); }
         for (const socket of sockets) socket.destroy();

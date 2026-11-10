@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectSyntheticEdgeRecord, matchingSyntheticRecordFields } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
+const { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
 function varint(number) { const result = []; do { let part = number % 128; number = Math.floor(number / 128); if (number) part |= 128; result.push(part); } while (number); return Buffer.from(result); }
 const bytes = (field, value) => { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); };
 const metadata = origin => bytes(8, Buffer.concat([bytes(1, 'origin'), bytes(2, origin)]));
@@ -11,6 +11,9 @@ test('synthetic record comparison exposes only matching field numbers', () => {
     assert.deepEqual(matchingSyntheticRecordFields(record, '2a'), [{ field: 1, wire: 0 }, { field: 2, wire: 2 }]);
     assert.deepEqual(matchingSyntheticRecordFields(record, 'ff'), []);
     assert.throws(() => matchingSyntheticRecordFields(record, 'not-hex'), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+    assert.deepEqual(matchingSyntheticTextFields(record, 'private-synthetic'), [{ field: 3, relation: 'exact' }]);
+    assert.deepEqual(matchingSyntheticTextFields(record, 'synthetic'), [{ field: 3, relation: 'contains' }]);
+    assert.throws(() => matchingSyntheticTextFields(record, 'bad space'), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
 });
 function sample(scope, override = {}) {
     const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }), jwk = pair.privateKey.export({ format: 'jwk' });
@@ -19,7 +22,7 @@ function sample(scope, override = {}) {
     const app = Buffer.concat([Buffer.from([4]), Buffer.from(appJwk.x, 'base64url'), Buffer.from(appJwk.y, 'base64url')]);
     const der = pair.privateKey.export({ format: 'der', type: 'pkcs8' });
     const endpoint = override.endpoint || 'https://wns2-pn1p.notify.windows.com/?token=synthetic';
-    const record = Buffer.concat([bytes(3, endpoint), bytes(6, auth), bytes(7, der), metadata(scope), bytes(16, override.appKey || app)]);
+    const record = Buffer.concat([bytes(1, override.channel || '1;123456789'), bytes(3, endpoint), bytes(6, auth), bytes(7, der), metadata(scope), bytes(16, override.appKey || app)]);
     return { record, auth, publicKey, endpoint };
 }
 test('synthetic Edge selector chooses the exact local site and rejects another site and duplicates', () => {
@@ -36,6 +39,8 @@ test('synthetic Edge selector rejects ambiguous, malformed and foreign endpoints
     assert.throws(() => selectSyntheticEdgeRecord([sample(scope, { appKey: Buffer.concat([Buffer.from([4]), Buffer.alloc(64)]) }).record], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
     assert.throws(() => selectSyntheticEdgeRecord([Buffer.concat([valid.record, metadata(scope)])], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
     assert.throws(() => selectSyntheticEdgeRecord([Buffer.concat([valid.record, bytes(6, randomBytes(16))])], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+    assert.throws(() => selectSyntheticEdgeRecord([Buffer.concat([valid.record, bytes(1, '1;duplicate')])], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+    assert.throws(() => selectSyntheticEdgeRecord([sample(scope, { channel: 'bad channel' }).record], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
     assert.throws(() => selectSyntheticEdgeRecord([Buffer.concat([valid.record, Buffer.from([0x80])])], scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
     assert.throws(() => selectSyntheticEdgeRecord([valid.record], 'http://localhost:99999/'), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
 });

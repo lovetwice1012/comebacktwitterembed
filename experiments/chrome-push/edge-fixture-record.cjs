@@ -60,20 +60,21 @@ function selectSyntheticEdgeRecord(records, expectedScope) {
         } catch { if (raw.includes(Buffer.from(expectedScope))) throw invalid(); continue; }
         if (!origins.includes(expectedScope)) continue;
         if (origins.length !== 1 || selected) throw invalid();
-        const endpoint = string(one(parsed, 3, 2)), auth = one(parsed, 6, 2), privateDer = one(parsed, 7, 2), appKey = one(parsed, 16, 2);
+        const channel = one(parsed, 1, 2), endpoint = string(one(parsed, 3, 2)), auth = one(parsed, 6, 2), privateDer = one(parsed, 7, 2), appKey = one(parsed, 16, 2);
         let url, jwk;
         try { url = new URL(endpoint); jwk = createPrivateKey({ key: privateDer, format: 'der', type: 'pkcs8' }).export({ format: 'jwk' }); } catch { throw invalid(); }
         if (url.protocol !== 'https:' || !/^[a-z0-9-]+\.notify\.windows\.com$/i.test(url.hostname) || url.username || url.password || url.port || url.hash
+            || !channel.length || channel.length > 256 || channel.some(byte => byte < 0x21 || byte > 0x7e)
             || auth.length !== 16 || appKey.length !== 65 || appKey[0] !== 4 || jwk.kty !== 'EC' || jwk.crv !== 'P-256'
             || Buffer.from(jwk.x, 'base64url').length !== 32 || Buffer.from(jwk.y, 'base64url').length !== 32 || Buffer.from(jwk.d, 'base64url').length !== 32) throw invalid();
         try { ECDH.convertKey(appKey, 'prime256v1', undefined, undefined, 'uncompressed'); } catch { throw invalid(); }
-        selected = { scope: expectedScope, endpoint, publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]),
+        selected = { scope: expectedScope, endpoint, channel: Buffer.from(channel), publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]),
             auth: Buffer.from(auth), privateKey: Buffer.from(jwk.d, 'base64url'), applicationServerKey: Buffer.from(appKey) };
     }
     if (!selected) throw invalid();
     return selected;
     } catch (error) {
-        if (selected) for (const key of ['publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[key].fill(0);
+        if (selected) for (const key of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[key].fill(0);
         throw error;
     }
 }
@@ -90,4 +91,11 @@ function matchingSyntheticRecordFields(record, candidate) {
         return lhs.some(value => rhs.some(other => value === other));
     }).map(item => ({ field: item.number, wire: item.wire }));
 }
-module.exports = { selectSyntheticEdgeRecord, matchingSyntheticRecordFields };
+function matchingSyntheticTextFields(record, candidate) {
+    if (typeof candidate !== 'string' || !/^[\x21-\x7e]{4,4096}$/.test(candidate)) throw invalid();
+    const value = Buffer.from(candidate, 'ascii');
+    try { return fields(record).filter(item => item.wire === 2 && item.value.includes(value))
+        .map(item => ({ field: item.number, relation: item.value.equals(value) ? 'exact' : 'contains' })); }
+    finally { value.fill(0); }
+}
+module.exports = { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields };

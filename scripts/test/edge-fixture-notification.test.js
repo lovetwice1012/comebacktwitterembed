@@ -13,7 +13,7 @@ test('every synthetic push reaches a matching fixture observation endpoint', asy
     });
     for (const [body, expected] of [
         ['synthetic-wns-probe', 'initial'], ['synthetic-after-browser-exit', 'second'],
-        ['synthetic-after-node-ack', 'third'], ['synthetic-after-reconnect', 'fourth'], ['synthetic-wns-copy-probe', 'copy'],
+        ['synthetic-after-node-ack', 'third'], ['synthetic-after-reconnect', 'fourth'], ['synthetic-wns-copy-probe', 'copy'], ['synthetic-other-site', 'other'],
     ]) {
         let work;
         onPush({ data: { text: () => body }, waitUntil(promise) { work = promise; } });
