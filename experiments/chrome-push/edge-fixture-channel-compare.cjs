@@ -66,7 +66,7 @@ async function main() {
         for (let i = 0; i < 3; i++) fingerprints.push(await sample(encoded));
         const distinct = new Set(fingerprints.map(value => value.channelFingerprint)).size;
         const protocolDistinct = new Set(fingerprints.map(value => value.protocolFingerprint)).size;
-        let directResult = null;
+        let directResult = null, binaryMatches = null;
         if (process.env.EDGE_PROBE_VALIDATE_DERIVED === '1' && distinct === 1 && protocolDistinct === 1) {
             // The observed synthetic identifier is exactly three decimal digits.
             // Recover it only in memory to test a fourth isolated profile.
@@ -83,13 +83,29 @@ async function main() {
                     protocolVersion = candidate;
             }
             if (!protocolVersion) throw new Error('PROBE_COMPARE_FAILED');
+            if (process.env.EDGE_PROBE_SCAN_CHANNEL === '1') {
+                if (process.env.NODE_ENV !== 'test') throw new Error('PROBE_MODE_INVALID');
+                const fs = require('node:fs/promises');
+                const dll = await fs.readFile('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\157.0.4341.42\\msedge.dll');
+                try {
+                    const count = candidate => { let cursor = 0, total = 0; while ((cursor = dll.indexOf(candidate, cursor)) >= 0) { total++; cursor += candidate.length; } return total; };
+                    binaryMatches = { ascii: count(Buffer.from(channel, 'ascii')), utf16: count(Buffer.from(channel, 'utf16le')) };
+                    const needle = Buffer.from(channel, 'utf16le'), contexts = [];
+                    for (let offset = 0; (offset = dll.indexOf(needle, offset)) >= 0; offset += needle.length) {
+                        const window = dll.subarray(Math.max(0, offset - 2048), Math.min(dll.length, offset + 2048));
+                        const words = ['wns', 'push', 'channel', 'client', 'protocol', 'notification'];
+                        contexts.push(words.filter(word => window.includes(Buffer.from(word, 'ascii')) || window.includes(Buffer.from(word, 'utf16le'))));
+                    }
+                    binaryMatches.nearbyWords = contexts;
+                } finally { dll.fill(0); }
+            }
             directResult = await verifyDerived(channel, protocolVersion);
         }
         console.log(JSON.stringify({ syntheticProfiles: fingerprints.length, distinctIdentifiers: distinct,
             identicalAcrossProfiles: distinct === 1, protocolVersionsIdentical: protocolDistinct === 1, generatedFramesWithoutCapturedMetadata: directResult === null ? null
                 : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted),
             reconnectTokenUnchanged: directResult?.reconnectTokenUnchanged ?? null,
-            noRelayVerified: directResult?.noRelayVerified ?? null,
+            noRelayVerified: directResult?.noRelayVerified ?? null, binaryMatches,
             ackWritten: directResult?.ackWritten ?? null, followupReceived: directResult?.followupReceived ?? null,
             followupMatches: directResult?.followupMatches ?? null, followupDecrypted: directResult?.followupDecrypted ?? null,
             rotation: directResult?.rotation ?? null }));
