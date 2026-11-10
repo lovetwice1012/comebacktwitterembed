@@ -84,6 +84,55 @@ test('Chrome worker fences ACK after a committed receipt if its lease is lost', 
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_mcs_pending')).length, 1);
     } finally { await db.close(); }
 });
+for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFixture]]) test(`${browser}: a successor worker recovers an encrypted receipt after its predecessor loses the ACK`, async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = makeFile(), subscription = await insertSubscription(db, file);
+        const payload = { notificationType: 'tweet', text: 'recovery-fixture' }, cipher = await encrypted(file, payload);
+        const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
+            pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, 'recovery-id'),
+            bytes(21, Buffer.from(cipher.data, 'base64url'))]);
+        let firstSocket, firstCallbacks = 0;
+        class FailedAckSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] === 7) { this.writes.push(wire); return done(new Error('synthetic ACK write failure')); }
+                return super.write(wire, done);
+            }
+        }
+        const options = { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 3000 };
+        const first = createXPushGateway(db, { ...options, createChromeSocket: () => firstSocket = new FailedAckSocket(db) });
+        await assert.rejects(first.run({ ...subscription, workerId: 'first-worker',
+            onSession: () => firstSocket.emit('data', encodeFrame(8, message)), onReceived: () => firstCallbacks++ }), { code: 'X_PUSH_SOCKET_FAILED' });
+        assert.equal(firstCallbacks, 0);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+        assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending')).map(row => row.persistent_id), ['recovery-id']);
+        const controller = new AbortController(); let secondSocket, replayCallbacks = 0, recovered;
+        class SuccessorSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] === 41) {
+                    this.writes.push(wire); done();
+                    queueMicrotask(() => this.emit('data', encodeFrame(3, Buffer.concat([bytes(1, 'ok'), Buffer.from([48, 1])]), { first: true })));
+                    return;
+                }
+                if (wire[0] === 7) { this.writes.push(wire); done(); setImmediate(() => controller.abort()); return; }
+                super.write(wire, done);
+            }
+        }
+        const second = createXPushGateway(db, { ...options, createChromeSocket: () => secondSocket = new SuccessorSocket(db) });
+        const result = await second.run({ ...subscription, workerId: 'second-worker', signal: controller.signal,
+            onSession: async ({ lease }) => {
+                assert(secondSocket.writes[0].includes(Buffer.from('recovery-id')));
+                const rows = await db.queryDatabase('SELECT id FROM automation_x_push_inbox');
+                recovered = await second.store.getInbox({ ...lease, id: String(rows[0].id) });
+                assert.deepEqual(await second.decryptInbox(lease, recovered), payload);
+                secondSocket.emit('data', encodeFrame(8, message));
+            }, onReceived: () => replayCallbacks++ });
+        assert.equal(result.state, 'stopped'); assert.equal(recovered.status, 'received'); assert.equal(replayCallbacks, 0);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+        assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending')).map(row => row.persistent_id), ['recovery-id']);
+    } finally { await db.close(); }
+});
 test('Chrome worker runs and saves check-in without interrupting the MCS session', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {
