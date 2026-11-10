@@ -71,6 +71,7 @@ print(json.dumps({'key':k.private_bytes(serialization.Encoding.PEM,serialization
 async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
+    const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0 };
     let probeStage = 'setup';
     try {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
@@ -86,9 +87,76 @@ async function main() {
                 sentBytes: 0, receivedBytes: 0, firstSend: null }; events.push(event);
             const sent = [], received = [];
             event.upstreamOpen = () => !upstream.destroyed;
+            event.closeFixtureConnection = () => upstream.destroy();
             event.containsFixtureCipher = () => {
                 if (!expectedCipher) return false;
                 const captured = Buffer.concat(received), found = captured.includes(expectedCipher); captured.fill(0); return found;
+            };
+            event.acknowledgeSyntheticSecond = async () => {
+                // Experimental local fixture only. Parse identifiers in memory
+                // from the existing connection; never output their values.
+                const find = (chunks, verb, wantedIndex) => {
+                    const data = Buffer.concat(chunks); let pos = 0, found = 0;
+                    try {
+                        while (pos < data.length) {
+                            const end = data.indexOf('\r\n', pos); if (end < pos || end - pos > 512) return null;
+                            const parts = data.subarray(pos, end).toString('ascii').split(' '), sizeText = parts.at(-1);
+                            if (!/^\d{1,6}$/.test(sizeText)) return null;
+                            const begin = end + 2, finish = begin + Number(sizeText); if (finish > data.length) return null;
+                            if (parts[0] === verb && parts.includes('WNS\\NOTIF') && found++ === wantedIndex) {
+                                const split = data.indexOf('\r\n\r\n', begin); if (split < begin || split + 4 > finish) return null;
+                                const headers = new Map(data.subarray(begin, split).toString('ascii').split('\r\n').map(line => {
+                                    const separator = line.indexOf(':'); return separator < 1 ? ['', ''] : [line.slice(0, separator).toLowerCase(), line.slice(separator + 1).trim()];
+                                }));
+                                return { parts, headers };
+                            }
+                            pos = finish;
+                        }
+                        return null;
+                    } finally { data.fill(0); }
+                };
+                const firstAck = find(sent, 'ACK', 0), secondNotification = find(received, 'NFY', 1);
+                const sequence = firstAck?.parts[1], channel = secondNotification?.parts[3];
+                const correlation = firstAck?.headers.get('ms-cv'), messageId = secondNotification?.headers.get('msg-id');
+                const safe = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[\x21-\x7e]+$/.test(value);
+                if (!/^\d{1,8}$/.test(sequence || '') || !/^[0-9a-f]{1,16}$/i.test(channel || '') || !safe(correlation) || !safe(messageId)) throw new Error('PROBE_ACK_SHAPE_INVALID');
+                const headers = Buffer.from(`MS-CV: ${correlation}\r\nMsg-Id: ${messageId}\r\n\r\n`, 'ascii');
+                const wire = Buffer.concat([Buffer.from(`ACK ${Number(sequence) + 1} WNS\\NOTIF ${channel} ${headers.length}\r\n`, 'ascii'), headers]);
+                try { await new Promise((resolve, reject) => upstream.write(wire, error => error ? reject(new Error('PROBE_ACK_WRITE_FAILED')) : resolve())); }
+                finally { wire.fill(0); headers.fill(0); }
+            };
+            event.fixtureAcknowledgementAnalysis = () => {
+                // Derive only equality relationships and header names from
+                // this local fixture. Never emit any identifiers or values.
+                const scan = (chunks, wanted) => {
+                    const data = Buffer.concat(chunks); let pos = 0;
+                    try {
+                        while (pos < data.length) {
+                            const end = data.indexOf('\r\n', pos); if (end < pos || end - pos > 512) return null;
+                            const parts = data.subarray(pos, end).toString('ascii').split(' '), length = Number(parts.at(-1)), begin = end + 2, finish = begin + length;
+                            if (!Number.isSafeInteger(length) || length < 0 || length > 262144 || finish > data.length) return null;
+                            if (parts[0] === wanted && (wanted === 'CNT' || parts.includes('WNS\\NOTIF'))) {
+                                const separator = data.indexOf('\r\n\r\n', begin); if (separator < begin || separator + 4 > finish) return null;
+                                const lines = data.subarray(begin, separator).toString('ascii').split('\r\n');
+                                const headers = lines.map(line => { const index = line.indexOf(':'); return index < 1 ? null : [line.slice(0, index).toLowerCase(), line.slice(index + 1).trim()]; }).filter(Boolean);
+                                return { parts, headers, bodyLength: finish - separator - 4 };
+                            }
+                            pos = finish;
+                        }
+                        return null;
+                    } finally { data.fill(0); }
+                };
+                const notification = scan(received, 'NFY'), ack = scan(sent, 'ACK'), connect = scan(sent, 'CNT');
+                if (!notification || !ack) return null;
+                const safeHeaderName = name => /^[a-z][a-z-]{0,40}$/.test(name) ? name : 'other';
+                return { notificationParts: notification.parts.length, acknowledgementParts: ack.parts.length, acknowledgementBodyBytes: ack.bodyLength,
+                    notificationSequenceNumeric: /^\d+$/.test(notification.parts[1]), acknowledgementSequenceNumeric: /^\d+$/.test(ack.parts[1]),
+                    sequenceDifference: /^\d{1,9}$/.test(notification.parts[1]) && /^\d{1,9}$/.test(ack.parts[1]) ? Number(ack.parts[1]) - Number(notification.parts[1]) : null,
+                    equalPartPositions: ack.parts.flatMap((value, left) => notification.parts.flatMap((other, right) => value === other && left !== 0 && right !== 0 ? [[left, right]] : [])),
+                    acknowledgementHeaders: ack.headers.map(([name]) => safeHeaderName(name)),
+                    matchingHeaderNames: ack.headers.filter(([name, value]) => notification.headers.some(([otherName, otherValue]) => name === otherName && value === otherValue)).map(([name]) => safeHeaderName(name)),
+                    correlationMatchesNotification: ack.headers.some(([name, value]) => name === 'ms-cv' && notification.headers.some(([otherName, otherValue]) => otherName === name && otherValue === value)),
+                    correlationMatchesConnect: ack.headers.some(([name, value]) => name === 'ms-cv' && connect?.headers.some(([otherName, otherValue]) => otherName === name && otherValue === value)) };
             };
             event.fixtureCipher = (index = 0) => {
                 if (!expectedCipher) return null;
@@ -253,8 +321,8 @@ async function main() {
         await new Promise(resolve => relay.listen(0, '127.0.0.1', resolve));
         const vapid = webpush.generateVAPIDKeys(); webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
         pageServer = http.createServer((req, res) => {
-            if (req.url === '/sw.js') { res.writeHead(200, { 'content-type': 'application/javascript' }); res.end("self.addEventListener('push',e=>e.waitUntil(Promise.all([fetch('/seen',{method:'POST'}),self.registration.showNotification('fixture')]))) "); }
-            else if (req.url === '/seen' && req.method === 'POST') { browserReceived = true; res.writeHead(204); res.end(); }
+            if (req.url === '/sw.js') { res.writeHead(200, { 'content-type': 'application/javascript' }); res.end("self.addEventListener('push',e=>{const text=e.data?.text();const kind=text==='synthetic-wns-probe'?'initial':text==='synthetic-after-browser-exit'?'second':text==='synthetic-after-node-ack'?'third':text==='synthetic-after-reconnect'?'fourth':'unknown';e.waitUntil(Promise.all([fetch('/seen?case='+kind,{method:'POST'}),self.registration.showNotification('fixture')]))}) "); }
+            else if (/^\/seen\?case=(initial|second|third|fourth)$/.test(req.url || '') && req.method === 'POST') { const kind = req.url.slice('/seen?case='.length); browserEvents[kind]++; browserReceived = true; res.writeHead(204); res.end(); }
             else { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<script>window.key=${JSON.stringify(vapid.publicKey)}</script>`); }
         });
         await new Promise(resolve => pageServer.listen(0, '127.0.0.1', resolve));
@@ -287,6 +355,7 @@ async function main() {
             if (process.env.EDGE_PROBE_RECONNECT === '1') throw new Error('PROBE_MODE_INVALID');
             await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
+            const browserExited = browser.exitCode !== null;
             const initial = events[0], aliveAfterBrowserExit = initial?.upstreamOpen() === true;
             expectedCipher = await sendFixture(value.subscription, 'synthetic-after-browser-exit');
             let receivedWithoutBrowser = false;
@@ -322,8 +391,46 @@ async function main() {
                     decryptedWithoutBrowser = plain.equals(Buffer.from('synthetic-after-browser-exit')); plain.fill(0);
                 } finally { captured.fill(0); for (const field of Object.values(subscriptionFields)) field.fill(0); }
             }
-            detachedConnectionResult = { browserExited: browser.exitCode !== null, aliveAfterBrowserExit, receivedWithoutBrowser,
-                decryptedWithoutBrowser, sameConnection: events.length === 1, acknowledgementSentByFixture: false };
+            let syntheticAckWritten = false, laterNotificationReceived = false;
+            if (receivedWithoutBrowser && (process.env.EDGE_PROBE_SYNTHETIC_ACK === '1' || process.env.EDGE_PROBE_THIRD_MESSAGE === '1')) {
+                if (process.env.EDGE_PROBE_SYNTHETIC_ACK === '1') { await initial.acknowledgeSyntheticSecond(); syntheticAckWritten = true; }
+                expectedCipher = await sendFixture(value.subscription, 'synthetic-after-node-ack');
+                for (let i = 0; i < 100 && !laterNotificationReceived && initial.upstreamOpen(); i++) {
+                    laterNotificationReceived = initial.containsFixtureCipher(); if (!laterNotificationReceived) await wait(100);
+                }
+            }
+            let replayAfterReconnect = null;
+            if (process.env.EDGE_PROBE_ACK_RECONNECT === '1' && laterNotificationReceived) {
+                initial.closeFixtureConnection();
+                await fs.rm(path.join(profile, 'DevToolsActivePort'), { force: true });
+                browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--disable-features=msPushWinrt',
+                    '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
+                    '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+                let reopenedPort;
+                for (let i = 0; i < 120 && !reopenedPort; i++) {
+                    try { reopenedPort = Number((await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); }
+                    if (browser.exitCode !== null) throw new Error('PROBE_BROWSER_EXITED');
+                }
+                if (!reopenedPort) throw new Error('PROBE_BROWSER_TIMEOUT');
+                cdp = await CDP({ port: reopenedPort }); await cdp.Browser.grantPermissions({ origin, permissions: ['notifications'] });
+                await cdp.Page.enable(); const reloaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
+                await cdp.Page.navigate({ url: origin }); await reloaded;
+                for (let i = 0; i < 100 && !browserEvents.second && !browserEvents.third; i++) await wait(100);
+                const replaySecond = browserEvents.second > 0, replayThird = browserEvents.third > 0;
+                let subscriptionTimer;
+                const current = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+                    const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.endpoint:null;})()` }),
+                new Promise(resolve => { subscriptionTimer = setTimeout(() => resolve(null), 15000); })]).finally(() => clearTimeout(subscriptionTimer));
+                if (!current) throw new Error('PROBE_SUBSCRIPTION_TIMEOUT');
+                const sameSubscription = current.result?.value === value.subscription.endpoint;
+                if (sameSubscription) {
+                    await webpush.sendNotification(value.subscription, 'synthetic-after-reconnect', { TTL: 60 });
+                    for (let i = 0; i < 100 && !browserEvents.fourth; i++) await wait(100);
+                }
+                replayAfterReconnect = { second: replaySecond, third: replayThird, sameSubscription, freshDelivery: browserEvents.fourth > 0 };
+            }
+            detachedConnectionResult = { browserExited, aliveAfterBrowserExit, receivedWithoutBrowser,
+                decryptedWithoutBrowser, sameConnection: events.length === (replayAfterReconnect ? 2 : 1), acknowledgementSentByFixture: syntheticAckWritten, laterNotificationReceived, replayAfterReconnect };
         }
         if (value.ok && process.env.EDGE_PROBE_RECONNECT === '1') {
             await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
@@ -411,8 +518,8 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, upstreamOpen, containsFixtureCipher, ...metadata } = event;
-            return { ...metadata, fixtureLayout: fixtureLayout(), shape: describe() }; });
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
+            return { ...metadata, fixtureLayout: fixtureLayout(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
