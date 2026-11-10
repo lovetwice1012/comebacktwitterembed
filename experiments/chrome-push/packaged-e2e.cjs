@@ -285,7 +285,7 @@ async function main() {
             if (preview.formatVersion !== 2) throw new Error('FIXTURE_PREVIEW_FAILED');
             const saved = await setup.importFile(actor, { sessionId: session.sessionId, fileText, consent: true });
             let clock = Date.now();
-            let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, serverConfirmations = 0, inspectErrors = 0;
+            let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, serverConfirmations = 0, inspectErrors = 0, activeChromeSocket;
             const inspectOther = process.env.CHROME_FIXTURE_OTHER_DELIVERY === '1';
             const inspectBurst = process.env.CHROME_FIXTURE_BURST === '1';
             if (inspectOther && (!otherSubscription || process.env.CHROME_FIXTURE_RUNTIME !== '1')) throw new Error('FIXTURE_OTHER_CONFIG_INVALID');
@@ -294,6 +294,7 @@ async function main() {
                 rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000,
                 ...(inspectOther || inspectBurst ? { createChromeSocket: () => {
                     const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', rejectUnauthorized: true });
+                    activeChromeSocket = socket;
                     const decoder = require('../../src/automation/chrome-mcs-framing').createFrameDecoder();
                     const write = socket.write.bind(socket);
                     socket.write = (data, ...args) => {
@@ -423,6 +424,60 @@ async function main() {
                         if (serverConfirmations === previousConfirmations || pendingCount > 25) throw new Error('FIXTURE_BURST_CONFIRM_FAILED');
                         console.log(JSON.stringify({ realFcmBurst: count, encryptedReceipts: rows.length, confirmationRequested: true,
                             serverConfirmedDuringBurst: true, pendingCount, allSyntheticPostsRecovered: true }));
+                        if (process.env.CHROME_FIXTURE_BURST_RECONNECT === '1') {
+                            const before = (await testDb.queryDatabase('SELECT last_connected_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
+                            const oldSocket = activeChromeSocket;
+                            if (!oldSocket || oldSocket.destroyed) throw new Error('FIXTURE_RECONNECT_SOCKET_INVALID');
+                            clock = Date.now(); oldSocket.destroy();
+                            let disconnected = false;
+                            for (let i = 0; i < 120 && !disconnected; i++) {
+                                const state = (await testDb.queryDatabase('SELECT state FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
+                                disconnected = runtime.status().sessions === 0 && state?.state !== 'listening';
+                                if (!disconnected) await pause(100);
+                            }
+                            if (!disconnected) throw new Error('FIXTURE_DISCONNECT_TIMEOUT');
+                            await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: 'synthetic-during-disconnect',
+                                url: 'https://x.com/synthetic/status/1234567890123457998', author: { handle: 'synthetic', id: '12345' } }), { TTL: 120 });
+                            let reconnected = false;
+                            for (let i = 0; i < 180 && !reconnected; i++) {
+                                clock = Date.now(); await runtime.tick();
+                                const state = (await testDb.queryDatabase('SELECT state,last_connected_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
+                                reconnected = state?.state === 'listening' && Number(state.last_connected_at_ms) > Number(before.last_connected_at_ms)
+                                    && activeChromeSocket !== oldSocket;
+                                if (!reconnected) await pause(250);
+                            }
+                            if (!reconnected) throw new Error('FIXTURE_BURST_RECONNECT_FAILED');
+                            let offlineRows = [];
+                            for (let i = 0; i < 120 && offlineRows.length < count + 2; i++) {
+                                offlineRows = await testDb.queryDatabase('SELECT data_ciphertext,headers_json FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
+                                if (offlineRows.length < count + 2) await pause(250);
+                            }
+                            if (offlineRows.length !== count + 2 || !offlineRows.some(row =>
+                                decryptNotification(row.data_ciphertext, JSON.parse(row.headers_json), keys).text === 'synthetic-during-disconnect'))
+                                throw new Error('FIXTURE_OFFLINE_RECEIPT_FAILED');
+                            await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: 'synthetic-after-disconnect',
+                                url: 'https://x.com/synthetic/status/1234567890123457999', author: { handle: 'synthetic', id: '12345' } }), { TTL: 60 });
+                            let postReconnectRows = [];
+                            for (let i = 0; i < 120 && postReconnectRows.length < count + 3; i++) {
+                                postReconnectRows = await testDb.queryDatabase('SELECT data_ciphertext,headers_json FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
+                                if (postReconnectRows.length < count + 3) await pause(250);
+                            }
+                            if (postReconnectRows.length !== count + 3 || !postReconnectRows.some(row =>
+                                decryptNotification(row.data_ciphertext, JSON.parse(row.headers_json), keys).text === 'synthetic-after-disconnect'))
+                                throw new Error('FIXTURE_RECONNECT_RECEIPT_FAILED');
+                            clock = Date.now();
+                            await testDb.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?',
+                                [clock - 301000, saved.subscription.id]);
+                            let offlineJobs = 0;
+                            for (let i = 0; i < 40 && offlineJobs === 0; i++) {
+                                await runtime.tick();
+                                const matches = await testDb.queryDatabase("SELECT COUNT(*) n FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE r.event_json LIKE ?", ['%synthetic-during-disconnect%']);
+                                offlineJobs = Number(matches[0].n); if (!offlineJobs) await pause(250);
+                            }
+                            if (offlineJobs !== 1) throw new Error('FIXTURE_OFFLINE_ROUTE_FAILED');
+                            console.log(JSON.stringify({ abruptSocketDisconnect: true, automaticReconnect: true, priorReceiptsPreserved: count + 1,
+                                offlineReceiptAfterReconnect: true, offlineJobCreated: true, newReceiptAfterReconnect: true, duplicateRows: 0, realFcm: true }));
+                        }
                     }
                     if (process.env.CHROME_FIXTURE_REOPEN === '1') {
                         // The dedicated profile alone is reopened. Export closes
