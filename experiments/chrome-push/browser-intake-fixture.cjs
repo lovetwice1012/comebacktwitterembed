@@ -12,9 +12,11 @@ const { dispatch } = require('../../src/automation/api');
 const { createService } = require('../../src/automation/service');
 const { createXSetup } = require('../../src/automation/x-setup');
 const { createTransferPublicSealer } = require('../../src/automation/x-setup-transfer');
+const { fixture: firefoxTransfer } = require('../../scripts/test/helpers/x-push-fixture.cjs');
 const root = path.resolve(__dirname, '../..'), dashboard = path.join(root, 'dashboard');
 const localRequire = createRequire(path.join(dashboard, 'package.json'));
 function transfer(kind) {
+    if (kind === 'firefox') return firefoxTransfer();
     const ecdh = createECDH('prime256v1'); ecdh.generateKeys();
     const point = ecdh.getPublicKey(), privateKey = ecdh.getPrivateKey().toString('hex').padStart(64, '0');
     const push = { deviceId: kind === 'brave' ? '123456790' : '123456789', securityToken: '987654321', appId: `wp:https://x.com/#${randomUUID().toUpperCase().slice(0, -3)}-V2`,
@@ -73,7 +75,7 @@ async function main() {
         if (!Object.hasOwn(executables, renderer)) throw new Error('FIXTURE_BROWSER_INVALID');
         browser = await playwright.chromium.launch({ headless: true, executablePath: executables[renderer] });
         const output = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-intake-ui-'));
-        for (const [kind, width] of [['chrome', 1440], ['brave', 390]]) {
+        for (const [kind, width] of [['firefox', 390], ['chrome', 1440], ['brave', 390]]) {
             console.log(`fixture-stage:${kind}`);
             const file = transfer(kind), context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
             await context.addCookies([{ name: 'fixture', value: token, url: origin, httpOnly: true }]);
@@ -81,10 +83,10 @@ async function main() {
             await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : (++external, route.abort()));
             const page = await context.newPage(); page.on('pageerror', () => errors++); page.setDefaultTimeout(10000);
             await page.goto(origin);
-            if (kind === 'brave') await page.getByRole('button', { name: '受信情報を追加・登録し直す' }).click();
-            await page.getByRole('radio', { name: kind === 'brave' ? 'Brave' : 'Chrome', exact: true }).check();
-            const label = kind === 'brave' ? 'Brave' : 'Chrome';
-            await page.getByRole('link', { name: `${label}用ツールをダウンロード` }).waitFor();
+            if (kind !== 'firefox') await page.getByRole('button', { name: '受信情報を追加・登録し直す' }).click();
+            const label = kind === 'brave' ? 'Brave' : kind === 'chrome' ? 'Chrome' : 'Firefox';
+            await page.getByRole('radio', { name: label, exact: true }).check();
+            await page.getByRole('link', { name: kind === 'firefox' ? '保存ツール（ZIP）をダウンロード' : `${label}用ツールをダウンロード` }).waitFor();
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             await page.screenshot({ path: path.join(output, `${kind}-prepare.png`), fullPage: true });
             await page.getByRole('button', { name: 'ファイルを登録する' }).click();
@@ -119,7 +121,7 @@ async function main() {
             assert.equal(external, 0); assert.equal(errors, 0);
             await context.close();
         }
-        console.log(JSON.stringify({ renderer, chromeDesktop: true, braveMobile: true, realIntakeApi: true, encryptedRecords: 2, externalRequests: 0, pageErrors: 0, screenshots: output }));
+        console.log(JSON.stringify({ renderer, firefoxMobile: true, chromeDesktop: true, braveMobile: true, realIntakeApi: true, encryptedRecords: 3, externalRequests: 0, pageErrors: 0, screenshots: output }));
     } finally {
         if (browser) await browser.close();
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

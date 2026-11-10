@@ -11,4 +11,6 @@ Edge の使い捨てプロファイルで、内蔵クライアントと通知サ
 
 Windows の一般的な通知チャネルはアプリ・利用者・端末にひも付き、有効期限や更新があります（[Microsoft のチャネル説明](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/push-notifications/request-create-save-notification-channel)）。この説明だけから Edge の Web Push 購読に同じ有効期限が適用されるとは断定できませんが、ファイルを一度移すだけで長期運用できると決めつけず、実際の更新と失効も確認する必要があります。
 
+Windows の公開APIでチャネルを作成する方法についても確認しました。[Microsoft の API 説明](https://learn.microsoft.com/en-us/uwp/api/windows.networking.pushnotifications.pushnotificationchannelmanager.createpushnotificationchannelforapplicationasync)では、呼び出し元アプリに結び付くチャネルを作り、別のアプリIDを指定する場合も同じパッケージ内のアプリに限定されます。そのため、別のセットアップツールがこの公開APIを呼ぶだけで、既存の Edge の購読をサーバーへ引き継げる根拠にはなりません。これは API の適用範囲に関する判断であり、Edge の内部接続や別の正式な拡張経路が存在しないことを示すものではありません。
+
 Brave向けのGoogle通知設定はツール専用の新規プロファイルに限定し、利用者の通常プロファイルは読み書きしません。Edgeの直接受信と、その他のChromium系ブラウザーは未対応・調査中です。ブラウザーの系統だけで接続方式を推測せず、実際の通知基盤と鍵の形式を確認してから対応します。
