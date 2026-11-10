@@ -14,6 +14,7 @@ const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
+const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -86,9 +87,27 @@ async function main() {
             const sent = [], received = [];
             event.fixtureCipher = () => {
                 if (!expectedCipher) return null;
+                // Parse the WNS frame without using the known ciphertext as a
+                // delimiter, then compare only this synthetic test payload.
+                const captured = firstFixtureNotification(received);
+                if (!captured?.equals(expectedCipher)) { captured?.fill(0); return null; }
+                return captured;
+            };
+            event.fixtureLayout = () => {
+                if (!expectedCipher) return null;
                 const combined = Buffer.concat(received), offset = combined.indexOf(expectedCipher);
-                const captured = offset < 0 ? null : Buffer.from(combined.subarray(offset, offset + expectedCipher.length));
-                combined.fill(0); return captured;
+                const start = offset < 0 ? -1 : combined.lastIndexOf(Buffer.from('NFY '), offset);
+                if (start < 0) { combined.fill(0); return null; }
+                const prefix = combined.subarray(start, offset).toString('latin1');
+                const allowed = new Set(['context', 'content-type', 'content-length', 'content-encoding', 'encryption', 'crypto-key',
+                    'x-wns-type', 'x-wns-id', 'x-wns-tag', 'ms-cv']);
+                const headerNames = [...prefix.matchAll(/(?:^|\r\n)([A-Za-z][A-Za-z0-9-]{0,63}):/g)]
+                    .map(match => match[1].toLowerCase()).filter(name => allowed.has(name));
+                const separator = combined.indexOf(Buffer.from('\r\n\r\n'), start);
+                const layout = { cipherOffset: offset - start, cipherBytes: expectedCipher.length,
+                    firstHeaderEnd: separator >= start && separator < offset ? separator + 4 - start : null,
+                    headerNames: [...new Set(headerNames)] };
+                combined.fill(0); return layout;
             };
             incoming.on('data', chunk => { event.sentChunks++; event.sentBytes += chunk.length;
                 if (event.sentBytes <= 262144) sent.push(Buffer.from(chunk));
@@ -342,7 +361,8 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, ...metadata } = event; return { ...metadata, shape: describe() }; });
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, ...metadata } = event;
+            return { ...metadata, fixtureLayout: fixtureLayout(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
