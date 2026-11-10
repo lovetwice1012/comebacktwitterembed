@@ -6,7 +6,7 @@ const protocol = require('./chrome-mcs-protobuf');
 const { encodeFrame } = require('./chrome-mcs-framing');
 const error = code => Object.assign(new Error(code), { code });
 
-function createChromeMcsSession({ credentials, route, store, send, onReceipt = () => {}, now = Date.now }) {
+function createChromeMcsSession({ credentials, route, store, send, onReceipt = _receipt => {}, now = Date.now }) {
     if (!credentials || !route || !store || typeof store.pending !== 'function' || typeof store.commit !== 'function'
         || typeof store.confirm !== 'function' || typeof send !== 'function' || typeof onReceipt !== 'function' || typeof now !== 'function')
         throw error('X_CHROME_SESSION_CONFIG_INVALID');

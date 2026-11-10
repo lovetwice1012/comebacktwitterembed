@@ -126,7 +126,7 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
-    async function chromeCheckinState(lease, { authorize } = {}) {
+    async function chromeCheckinState(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             if (authorize) await authorize(query);
@@ -139,7 +139,7 @@ function createXPushStore(db, options = {}) {
             return { checkedAtMs, intervalSeconds };
         });
     }
-    async function recordChromeCheckin(lease, { intervalSeconds }, { authorize } = {}) {
+    async function recordChromeCheckin(lease, { intervalSeconds }, { authorize } = { authorize: undefined }) {
         if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -171,7 +171,7 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
-    async function recordFrame(lease, input, { authorize, mcsPending = false } = {}) {
+    async function recordFrame(lease, input, { authorize, mcsPending = false } = { authorize: undefined }) {
         const headers = validateFrame(input);
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -210,10 +210,10 @@ function createXPushStore(db, options = {}) {
             return { ...inboxDto(row, lease.ownerUserId), duplicate };
         });
     }
-    async function recordMcsFrame(lease, input, { authorize } = {}) {
+    async function recordMcsFrame(lease, input, { authorize } = { authorize: undefined }) {
         return recordFrame(lease, input, { authorize, mcsPending: true });
     }
-    async function recordMcsControl(lease, input, { authorize } = {}) {
+    async function recordMcsControl(lease, input, { authorize } = { authorize: undefined }) {
         if (!input || !['deleted_messages', 'send_error'].includes(input.kind)
             || input.persistentId !== null && (typeof input.persistentId !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.persistentId)))
             fail('X_PUSH_FRAME_INVALID');
@@ -245,7 +245,7 @@ function createXPushStore(db, options = {}) {
             return { duplicate: previous.length > 0 };
         });
     }
-    async function pendingMcs(lease, { authorize } = {}) {
+    async function pendingMcs(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             if (authorize) await authorize(query);
@@ -257,7 +257,7 @@ function createXPushStore(db, options = {}) {
             return rows.map(row => row.persistent_id);
         });
     }
-    async function confirmMcs(lease, ids, { authorize } = {}) {
+    async function confirmMcs(lease, ids, { authorize } = { authorize: undefined }) {
         if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length
             || ids.some(id => typeof id !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(id))) fail('X_PUSH_FRAME_INVALID');
         return locked(lease, async (query, subscription, receiver) => {

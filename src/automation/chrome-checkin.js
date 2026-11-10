@@ -123,7 +123,7 @@ function decodeResponse(buffer, credentials, previousInterval = DEFAULT_INTERVAL
         || (port && port !== '5228' && port !== '443')) throw fault('X_PUSH_CHECKIN_CONFIG_CHANGED');
     return { intervalSeconds: interval };
 }
-function checkin(credentials, { previousInterval = DEFAULT_INTERVAL, timeoutMs = 15000, signal, request = https.request } = {}) {
+function checkin(credentials, { previousInterval = DEFAULT_INTERVAL, timeoutMs = 15000, signal = undefined, request = https.request } = {}) {
     const payload = encodeRequest(credentials);
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120000 || typeof request !== 'function') throw invalid();
     return new Promise((resolve, reject) => {
