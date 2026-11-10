@@ -25,12 +25,13 @@ test('new setup packages recognize profiles created by the previous releases', {
     const archives = [oldFirefox, newFirefox.archive,
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip')),
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip')),
-        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip'))];
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip')),
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip'))];
     const bundles = [];
     for (let i = 0; i < archives.length; i++) {
         const bundle = path.join(directory, `bundle-${i}`); await fs.mkdir(bundle); bundles.push(bundle);
         for (const [name, data] of Object.entries(unzipSync(archives[i]))) {
-            assert.match(name, i === 4 ? /^(?:_app\/)?[^/\\]+$/ : /^[^/\\]+$/);
+            assert.match(name, i >= 4 ? /^(?:_app\/)?[^/\\]+$/ : /^[^/\\]+$/);
             await fs.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
             await fs.writeFile(path.join(bundle, name), data, { flag: 'wx' });
         }
@@ -53,6 +54,7 @@ test('new setup packages recognize profiles created by the previous releases', {
         const owner = await fs.readFile(path.join(owned, 'owner.json'));
         assert.equal(invoke(newScript, ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.equal(invoke(path.join(bundles[4], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
+        assert.equal(invoke(path.join(bundles[5], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.deepEqual(await fs.readFile(path.join(owned, 'owner.json')), owner);
     }
 });

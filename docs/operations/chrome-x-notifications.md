@@ -20,7 +20,7 @@ Chromeの接続情報は同一プロファイル内の通知を共用します�
 
 1. DBバックアップの取得と復元手順を確認し、既存Firefoxの受信設定・通知件数を記録する。
 2. `migrations/20261110_add_x_subscription_browser_kind.sql`、`migrations/20261110_add_chrome_mcs_pending.sql`、`migrations/20261110_add_chrome_checkin.sql`、`migrations/20261110_allow_chrome_mcs_control_pending.sql` をこの順に適用する。既存の受信設定を `firefox` として保持し、未確認の受信IDと端末確認の予定を保存する。最後の変更は通知サービスの制御メッセージにも同じ再送確認を使用するためのもの。
-3. 検証済みZIP `artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip` をダッシュボードの配布物に含め、SHA-256とバイト数が `dashboard/lib/x-chrome-setup-download.ts` の値と一致することを確認する。
+3. 検証済みZIP `artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip` をダッシュボードの配布物に含め、SHA-256とバイト数が `dashboard/lib/x-chrome-setup-download.ts` の値と一致することを確認する。
 4. Webと受信ワーカーの両方で `X_NOTIFICATION_CHROME_ENABLED=1` を設定する。Braveの受付は、すべてのWeb・受信ワーカーがBrave対応版へ更新されたことを確認してから、Web側で `X_NOTIFICATION_BRAVE_ENABLED=1` を設定する。既存の `X_NOTIFICATION_RECEIVER_ENABLED=1`、処理ポリシー、暗号鍵、fleet leaseも必要。支援者限定で公開する場合は `X_NOTIFICATION_ROLLOUT=supporters` を維持し、対象者以外の登録が拒否されることを確認する。
 5. 利用者自身が設定した実際のX通知で、登録画面、接続状態、投稿通知、Discord配信を確認する。接続確認だけで配送成功と判断しない。
 
@@ -47,6 +47,8 @@ Braveの新規受付だけを停止するにはWeb側の `X_NOTIFICATION_BRAVE_E
 preview.3 の追加試験では、Chrome・Braveそれぞれの設定用ブラウザーを再度開いた状態で合成通知を送り、実FCM経由でサーバーが受信する一方、ブラウザーの受信イベントは5秒間観測されませんでした。その後の再保存・再登録で同じ受信設定を維持したまま再接続し、次の通知ジョブも作成できました。これは各1回の限定試験で、長期間の動作や実際のX通知を保証するものではありません。
 
 ダッシュボードの本番用ビルドと型検査が成功し、ダウンロードAPIの実際のビルドトレースに preview.3 のZIPが含まれることを確認しました。ビルド設定と配布メタデータの参照先が一致する自動テストも追加しています。これは本番サーバーへの配置確認ではありません。
+
+preview.4 ではブラウザー補助処理の待受アドレス確認と異常終了時の片付けを追加しました。Chrome・Braveの試験用購読で実FCM受信から模擬Discord配送まで、別途、管理画面からのZIPダウンロードと合成ファイル登録を確認しています。本番用ビルドのトレースにも preview.4 を確認しました。Windowsで最初のビルド切り替えはフォルダー移動の `EPERM` で失敗し、原因は未特定ですが、再試行は成功しました。実際のX・Discord、本番への配置は対象外です。
 
 Chrome・Braveそれぞれの合成購読に実FCMから104件を連続送信した試験では、全件が暗号化された受信記録として保存され、内容を照合できました。連続受信中の確認要求とFCMからの確認を観測し、未確認IDは各1件まで減少しました。これは短時間・各1購読の試験で、長期間の保持、すべての障害時の再送、大規模な処理能力を証明するものではありません。
 

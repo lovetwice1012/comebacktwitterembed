@@ -17,7 +17,7 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         });
         const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
         await fsp.mkdir(bundle);
-        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip'));
+        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip'));
         for (const [name, content] of Object.entries(unzipSync(archive))) {
             assert.match(name, /^(?:_app\/)?[^/\\]+$/); await fsp.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
             await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
@@ -57,7 +57,7 @@ test('Chrome and Brave launchers select the right browser in paths with Japanese
         t.after(async () => { const actual = await fsp.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), parent.toLowerCase());
             assert.match(path.basename(actual), /^cbte-chrome-launch-test-/); await fsp.rm(actual, { recursive: true }); });
         const bundle = path.join(root, '日本語 [folder] & ! $value %literal%'); await fsp.mkdir(bundle);
-        const entries = unzipSync(await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip')));
+        const entries = unzipSync(await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip')));
         for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) await fsp.writeFile(path.join(bundle, name), entries[name]);
         const app = path.join(bundle, '_app'); await fsp.mkdir(app);
         const resultPath = path.join(root, 'launcher-result.json');

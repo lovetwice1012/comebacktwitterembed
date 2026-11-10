@@ -69,9 +69,15 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
         await new Promise(resolve => server.close(resolve));
     }
     chrome.once('exit', () => { if (!busy) void stop(); });
-    try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); }
+    try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen({ port: 0, host: '127.0.0.1' }, () => resolve(undefined)); }); }
     catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
     if (chrome.exitCode !== null) { await stop(); throw fault('X_CHROME_BROKER_INVALID'); }
-    return { port: server.address().port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion, stop, chrome };
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        await stop();
+        if (chrome.exitCode === null) chrome.kill();
+        throw fault('X_CHROME_BROKER_INVALID');
+    }
+    return { port: address.port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion, stop, chrome };
 }
 module.exports = { startChromeBroker };

@@ -49,6 +49,16 @@ test('broker exposes no DevTools TCP interface and requires its private capabili
         assert.deepEqual(await captureFromBroker({ port: broker.port, token: broker.token }), expected);
     } finally { await broker.stop(); }
 });
+test('unavailable listener address closes the listener and stops its own browser', async t => {
+    const chrome = fakeChrome(), create = net.createServer; let server;
+    t.mock.method(net, 'createServer', (...args) => {
+        server = create(...args); server.address = () => null; return server;
+    });
+    await assert.rejects(startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: () => chrome }),
+        { code: 'X_CHROME_BROKER_INVALID' });
+    assert.equal(chrome.exitCode, 1);
+    assert.equal(server.listening, false);
+});
 test('multiple tabs in the same browser profile must expose identical subscriptions', async () => {
     const targets = ['first', 'second'].map(targetId => ({ type: 'page', url: 'https://x.com/home', targetId, browserContextId: 'profile' }));
     const good = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: () => fakeChrome({ targetInfos: targets }) });
