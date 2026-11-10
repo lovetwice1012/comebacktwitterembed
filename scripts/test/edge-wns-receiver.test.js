@@ -30,6 +30,12 @@ test('does not persist or return another site payload', async () => {
     assert.deepEqual(h.calls, ['fence', 'authorize', 'ack']); assert.equal(h.acks.length, 1);
     assert(!h.acks[0].toString().includes('FOREIGN-SENTINEL'));
 });
+test('disconnect drain persists owned frames and discards foreign frames without ACK', async () => {
+    const h = harness();
+    assert.deepEqual(await h.receiver.receive(frame('other-site'), 1, { acknowledge: false }), { state: 'discarded' });
+    assert.deepEqual(await h.receiver.receive(frame(), 1, { acknowledge: false }), { state: 'persisted', inboxId: '1', duplicate: false });
+    assert.equal(h.calls.filter(value => value === 'persist').length, 1); assert.equal(h.acks.length, 0); h.receiver.close();
+});
 test('conflicting duplicate, failed ACK and revoked lease stop the session without a later ACK', async () => {
     const conflict = harness({ recordFrame: async (_lease, entry) => ({ ...lease, ...entry, data: 'different', id: '1', duplicate: true }) });
     await assert.rejects(conflict.receiver.receive(frame(), 5), { code: 'X_EDGE_WNS_RECEIPT_CONFLICT' });

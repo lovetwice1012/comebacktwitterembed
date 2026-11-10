@@ -6,6 +6,8 @@ const { createTestDatabase, grantTestDonor } = require('../lib/automation-test-d
 const { insertSubscription, fixture, encrypted, vault } = require('./helpers/x-push-fixture.cjs');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
 const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
+const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+const { EventEmitter } = require('node:events');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 const skipped = !port;
 function edgeFixture() {
@@ -97,4 +99,30 @@ test('slow delivery callbacks do not block persistence of a burst of Edge notifi
         assert.equal(acks, 25); assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n), 25);
         assert.equal(callbacks, 2); assert.equal(lastInbox.version.length, 64);
     } finally { release(); controller.abort(); }
+}));
+test('disconnect persists buffered owned notifications for the next worker without ACK', { skip: skipped }, async () => setup(async db => {
+    const sub = await insertSubscription(db, edgeFixture()); await db.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [sub.subscriptionId]);
+    const cipher = await encrypted(sub.file, { text: 'recover-after-disconnect' }), socket = new EventEmitter(), sends = [];
+    socket.write = (data, done) => {
+        const command = data.subarray(0, data.indexOf(' ')).toString('ascii'); sends.push(command);
+        const response = command === 'CNT' ? frame('CNT 1 CON', '<connect/>') : command === 'ATH' ? frame('ATH 2 CON')
+            : frame('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>new-token</reconnect-token></wns>');
+        queueMicrotask(() => { done(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => {}; socket.pause = () => {}; socket.resume = () => {};
+    const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, edgeTokenVault: tokenVault(), privateWorkerVault: vault,
+        rolloutMode: 'public', requestTimeoutMs: 3000, createEdgeTransport: ({ signal }) => {
+            const transport = createEdgeWnsTransport({ socketFactory: () => socket, signal, timeoutMs: 3000 }); queueMicrotask(() => socket.emit('secureConnect')); return transport;
+        } });
+    await assert.rejects(gateway.run({ ...sub, workerId: 'edge-disconnect', onSession: () => {
+        socket.emit('data', Buffer.concat([notification('target', cipher, 'one'), notification('other', cipher, 'foreign'), notification('target', cipher, 'two')]));
+        socket.emit('close');
+    } }), { code: 'X_PUSH_RECEIVER_FAILED' });
+    assert(!sends.includes('ACK'));
+    const identity = { subscriptionId: sub.subscriptionId, ownerUserId: sub.ownerUserId };
+    const lease = await gateway.store.claim({ ...identity, workerId: 'edge-recovery' }); assert(lease);
+    try {
+        const inbox = await gateway.store.listInbox(identity); assert.equal(inbox.length, 2);
+        for (const item of inbox) assert.equal((await gateway.decryptInbox(lease, item)).text, 'recover-after-disconnect');
+    } finally { await gateway.store.release(lease); }
 }));

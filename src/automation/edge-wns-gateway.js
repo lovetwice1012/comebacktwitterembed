@@ -4,6 +4,7 @@
 // must abort the signal as soon as the lease or rollout authorization ends.
 const { createEdgeWnsTransport } = require('./edge-wns-transport');
 const { createEdgeWnsSession } = require('./edge-wns-session');
+const { createEdgeWnsReceiver } = require('./edge-wns-receiver');
 const fail = code => Object.assign(new Error(code), { code });
 function validateCredentials(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
@@ -23,7 +24,7 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         || transportFactory !== undefined && typeof transportFactory !== 'function' || !Number.isSafeInteger(waitMs) || waitMs < 100 || waitMs > 60000)
         throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
     if (signal.aborted) return { state: 'stopped' };
-    let recovered, session, transport, token, generation = 0;
+    let recovered, session, transport, token, generation = 0, established = false;
     const stopped = () => signal.aborted;
     function abort() {
         try { session?.close(); } catch { /* Continue closing the transport. */ }
@@ -44,7 +45,7 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         if (!transport || ['connect', 'send', 'next', 'close'].some(name => typeof transport[name] !== 'function')) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
         const guard = async () => { if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); await store.assertLease(lease, { authorize }); if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); };
         const guarded = { async connect() { await guard(); return transport.connect(); }, async send(frame) { await guard(); return transport.send(frame); },
-            next: wait => transport.next(wait), close: () => transport.close() };
+            next: wait => transport.next(wait), close: () => { if (!transport.hasBufferedAfterDisconnect?.()) transport.close(); } };
         session = createEdgeWnsSession({ transport: guarded, store, lease, siteChannel: credentials.siteChannel, authorize,
             saveRotatedToken: async value => {
                 if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
@@ -56,6 +57,7 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
             productKey: credentials.productKey, productId: credentials.productId, authenticationMode: credentials.authenticationMode });
         token.fill(0); token = null;
         await session.start();
+        established = true;
         if (stopped()) return { state: 'stopped' };
         await guard();
         if (onReady) await onReady({ lease });
@@ -72,6 +74,30 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         }
         return { state: 'stopped' };
     } catch (error) {
+        if (stopped()) return { state: 'stopped' };
+        if (established && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_ACK_FAILED'].includes(error?.code)
+            && transport?.hasBufferedAfterDisconnect?.() && typeof transport.takeBufferedAfterDisconnect === 'function') {
+            // The provider may not replay frames after disconnect. Persist only
+            // complete, already-received frames while this lease remains valid;
+            // there is no socket on which to acknowledge them.
+            const frames = transport.takeBufferedAfterDisconnect(); let drain;
+            try {
+                const drainAuthorize = async query => {
+                    if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
+                    await authorize(query);
+                    if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
+                };
+                drain = createEdgeWnsReceiver({ store, lease, channel: credentials.siteChannel, authorize: drainAuthorize, sendAck: async () => {} });
+                for (const frame of frames) {
+                    if (stopped()) break;
+                    await store.assertLease(lease, { authorize: drainAuthorize });
+                    if (stopped()) break;
+                    await drain.receive(frame, 1, { acknowledge: false });
+                }
+            } catch (drainError) {
+                if (/^X_PUSH_(?:LEASE_LOST|ROLLOUT_WITHDRAWN|ROLLOUT_CHECK_FAILED|STORE_TIMEOUT)$/.test(drainError?.code || '')) error = drainError;
+            } finally { drain?.close(); for (const frame of frames) frame.fill(0); }
+        }
         if (stopped()) return { state: 'stopped' };
         if (typeof error?.code === 'string' && /^X_(?:EDGE_WNS|PUSH|SETUP)_[A-Z_]+$/.test(error.code)) throw error;
         throw fail('X_EDGE_WNS_GATEWAY_FAILED');

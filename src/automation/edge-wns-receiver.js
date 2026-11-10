@@ -12,16 +12,17 @@ function createEdgeWnsReceiver({ store, lease, channel, authorize, sendAck }) {
     const ownChannel = Buffer.from(channel); let busy = false, failed = false, closed = false;
     function ensureOpen() { if (failed || closed) throw fail('X_EDGE_WNS_RECEIVER_STOPPED'); }
     return Object.freeze({
-        async receive(frame, sequence) {
+        async receive(frame, sequence, { acknowledge = true } = {}) {
             ensureOpen();
+            if (typeof acknowledge !== 'boolean') throw fail('X_EDGE_WNS_RECEIVER_CONFIG_INVALID');
             if (busy) { failed = true; throw fail('X_EDGE_WNS_RECEIVER_BUSY'); }
             busy = true; let parsed, acknowledgement;
             try {
                 parsed = parseNotification(frame, ownChannel);
-                acknowledgement = createAcknowledgement(parsed.acknowledgement, sequence);
+                if (acknowledge) acknowledgement = createAcknowledgement(parsed.acknowledgement, sequence);
                 if (parsed.kind === 'foreign') {
                     await store.assertLease(lease, { authorize }); ensureOpen();
-                    try { await sendAck(acknowledgement); } catch { throw fail('X_EDGE_WNS_ACK_FAILED'); }
+                    if (acknowledge) try { await sendAck(acknowledgement); } catch { throw fail('X_EDGE_WNS_ACK_FAILED'); }
                     return { state: 'discarded' };
                 }
                 const version = createHash('sha256').update('edge-wns\0').update(ownChannel).update('\0')
@@ -34,7 +35,7 @@ function createEdgeWnsReceiver({ store, lease, channel, authorize, sendAck }) {
                     || saved.revision !== lease.revision || saved.version !== version || saved.data !== data
                     || saved.headers?.encoding !== 'aes128gcm') throw fail('X_EDGE_WNS_RECEIPT_CONFLICT');
                 await store.assertLease(lease, { authorize }); ensureOpen();
-                try { await sendAck(acknowledgement); } catch { throw fail('X_EDGE_WNS_ACK_FAILED'); }
+                if (acknowledge) try { await sendAck(acknowledgement); } catch { throw fail('X_EDGE_WNS_ACK_FAILED'); }
                 return { state: 'persisted', inboxId: saved.id, duplicate: saved.duplicate };
             } catch (error) { failed = true; throw error; }
             finally { acknowledgement?.fill(0); parsed?.data?.fill(0); busy = false; }

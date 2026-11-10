@@ -26,14 +26,14 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
     const connection = new Promise((resolve, reject) => { resolveConnect = resolve; rejectConnect = reject; });
     connection.catch(() => {});
     const timer = setTimeout(() => abort('X_EDGE_WNS_CONNECT_TIMEOUT'), timeoutMs);
-    function abort(code) {
-        if (closed) return;
+    function clearQueue() { for (const frame of queue) frame.fill(0); queue.length = 0; queuedBytes = 0; }
+    function abort(code, preserveQueue = false) {
+        if (closed) { if (!preserveQueue) clearQueue(); return; }
         closed = true; failure = fail(code); clearTimeout(timer);
         rejectConnect(failure);
         if (waiting) { const pending = waiting; waiting = undefined; clearTimeout(pending.timer); pending.reject(failure); }
         if (writePending) { const pending = writePending; writePending = undefined; clearTimeout(pending.timer); pending.reject(failure); }
-        for (const frame of queue) frame.fill(0);
-        queue.length = 0; queuedBytes = 0;
+        if (!preserveQueue) clearQueue();
         try { decoder.finish(); } catch { /* Incomplete buffered data is cleared. */ }
         signal?.removeEventListener('abort', onAbort);
         try { socket.destroy(); } catch { /* The transport is already closed. */ }
@@ -43,8 +43,8 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
         if (closed) return;
         connected = true; clearTimeout(timer); resolveConnect();
     });
-    socket.on('error', () => abort('X_EDGE_WNS_SOCKET_FAILED'));
-    socket.on('close', () => abort('X_EDGE_WNS_SOCKET_CLOSED'));
+    socket.on('error', () => abort('X_EDGE_WNS_SOCKET_FAILED', true));
+    socket.on('close', () => abort('X_EDGE_WNS_SOCKET_CLOSED', true));
     socket.on('data', chunk => {
         if (closed) return;
         let frames;
@@ -69,6 +69,13 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
     }
     return Object.freeze({
         connect: () => connection,
+        hasBufferedAfterDisconnect() {
+            return Boolean(failure && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED'].includes(failure.code) && queue.length);
+        },
+        takeBufferedAfterDisconnect() {
+            if (!failure || !['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED'].includes(failure.code)) return [];
+            const buffered = queue.splice(0); queuedBytes = 0; return buffered;
+        },
         next(waitMs = timeoutMs) {
             if (!Number.isSafeInteger(waitMs) || waitMs < 1 || waitMs > 60000) return Promise.reject(fail('X_EDGE_WNS_TRANSPORT_CONFIG_INVALID'));
             if (failure) return Promise.reject(failure);

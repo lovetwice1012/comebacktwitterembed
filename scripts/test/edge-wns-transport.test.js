@@ -55,6 +55,21 @@ test('stream backpressure retains later chunks until the queue has space', async
     for (let i = 0; i < 24; i++) assert.deepEqual(await transport.next(), frame);
     assert.equal(socket.destroyed, false); transport.close();
 });
+test('a network disconnect retains only complete buffered frames for a bounded drain', async () => {
+    const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
+    socket.emit('data', Buffer.concat([frame, frame, frame.subarray(0, 8)])); socket.emit('close');
+    assert.equal(transport.hasBufferedAfterDisconnect(), true);
+    await assert.rejects(transport.next(), { code: 'X_EDGE_WNS_SOCKET_CLOSED' });
+    const pending = transport.takeBufferedAfterDisconnect(); assert.equal(pending.length, 2);
+    assert.deepEqual(pending[0], frame); assert.deepEqual(pending[1], frame);
+    assert.equal(transport.hasBufferedAfterDisconnect(), false); assert.deepEqual(transport.takeBufferedAfterDisconnect(), []);
+    for (const value of pending) value.fill(0); transport.close();
+});
+test('explicit close discards buffered frames instead of making them recoverable', async () => {
+    const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
+    socket.emit('data', frame); transport.close(); assert.equal(transport.hasBufferedAfterDisconnect(), false);
+    assert.deepEqual(transport.takeBufferedAfterDisconnect(), []);
+});
 test('an idle timeout retains a partially received frame for the next read', async () => {
     const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
     socket.emit('data', frame.subarray(0, 12));
