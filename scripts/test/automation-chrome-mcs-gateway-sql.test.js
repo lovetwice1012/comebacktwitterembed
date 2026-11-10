@@ -6,6 +6,9 @@ const { createTestDatabase } = require('../lib/automation-test-db');
 const { insertSubscription, fixture, encrypted, vault } = require('./helpers/x-push-fixture.cjs');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
 const { createXPushStore } = require('../../src/automation/x-push-store');
+const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
+const { createQueue } = require('../../src/automation/queue');
+const entitlements = require('../../src/automation/entitlements');
 const { encodeFrame } = require('../../src/automation/chrome-mcs-framing');
 function vint(n) { const out = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; out.push(b); } while (n); return Buffer.from(out); }
 function bytes(n, v) { const body = Buffer.isBuffer(v) ? v : Buffer.from(v); return Buffer.concat([vint(n * 8 + 2), vint(body.length), body]); }
@@ -89,7 +92,14 @@ for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFix
     try {
         for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
         const file = makeFile(), subscription = await insertSubscription(db, file);
-        const payload = { notificationType: 'tweet', text: 'recovery-fixture' }, cipher = await encrypted(file, payload);
+        const payload = { notificationType: 'tweet', text: 'recovery-fixture', author: { id: '12345', handle: 'example' },
+            url: 'https://x.com/example/status/1234567890123456789' }, cipher = await encrypted(file, payload);
+        await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
+            { planId: 'free', label: 'fixture', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+        const now = Date.now();
+        const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','fixture',1,'ready','free',?,'bound',1,?,?)",
+            [subscription.ownerUserId, JSON.stringify({ subscriptionId: subscription.subscriptionId }), now, now]);
+        await db.withDatabaseTransaction(query => entitlements.assignSlot(query, subscription.ownerUserId, 'x', String(monitor.insertId)));
         const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
             pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, 'recovery-id'),
             bytes(21, Buffer.from(cipher.data, 'base64url'))]);
@@ -119,17 +129,25 @@ for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFix
                 super.write(wire, done);
             }
         }
-        const second = createXPushGateway(db, { ...options, createChromeSocket: () => secondSocket = new SuccessorSocket(db) });
+        const second = createXPushGateway(db, { ...options, requestTimeoutMs: 10000, createChromeSocket: () => secondSocket = new SuccessorSocket(db) });
+        const queue = createQueue(db, {}, { rolloutMode: 'public' });
+        const runtime = createXPushRuntime(db, queue, { enabled: true, gateway: second, rolloutMode: 'public', processingPolicy: 'batch', assertAllowed() {} });
         const result = await second.run({ ...subscription, workerId: 'second-worker', signal: controller.signal,
             onSession: async ({ lease }) => {
                 assert(secondSocket.writes[0].includes(Buffer.from('recovery-id')));
                 const rows = await db.queryDatabase('SELECT id FROM automation_x_push_inbox');
                 recovered = await second.store.getInbox({ ...lease, id: String(rows[0].id) });
                 assert.deepEqual(await second.decryptInbox(lease, recovered), payload);
+                // Model the configured five-minute window using the isolated
+                // fixture's saved timestamp; production cadence is unchanged.
+                await db.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?', [Date.now() - 301000, subscription.subscriptionId]);
+                assert.equal((await runtime.drain(lease)).processed, 1);
                 secondSocket.emit('data', encodeFrame(8, message));
             }, onReceived: () => replayCallbacks++ });
         assert.equal(result.state, 'stopped'); assert.equal(recovered.status, 'received'); assert.equal(replayCallbacks, 0);
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_jobs'))[0].n), 1);
+        await runtime.stop();
         assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending')).map(row => row.persistent_id), ['recovery-id']);
     } finally { await db.close(); }
 });
