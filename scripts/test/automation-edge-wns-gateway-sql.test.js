@@ -20,8 +20,8 @@ function edgeFixture() {
             applicationServerKey: application.getPublicKey().toString('base64url') } };
 }
 function frame(command, body = '') { const payload = Buffer.from(`MS-CV: synthetic\r\n\r\n${body}`); return Buffer.concat([Buffer.from(`${command} ${payload.length}\r\n`), payload]); }
-function notification(site, cipher) {
-    const payload = Buffer.concat([Buffer.from(`Channel: ${site}\r\nMsg-Id: fixture-${site}\r\nContent-Encoding: aes128gcm\r\n\r\n`), Buffer.from(cipher.data, 'base64url')]);
+function notification(site, cipher, id = site) {
+    const payload = Buffer.concat([Buffer.from(`Channel: ${site}\r\nMsg-Id: fixture-${id}\r\nContent-Encoding: aes128gcm\r\n\r\n`), Buffer.from(cipher.data, 'base64url')]);
     return Buffer.concat([Buffer.from(`NFY 5 WNS\\NOTIF ${payload.length}\r\n`), payload]);
 }
 async function setup(work) { const db = await createTestDatabase(port); try { await work(db); } finally { await db.close(); } }
@@ -72,4 +72,29 @@ test('revoked supporter access stops Edge before persisting or acknowledging a n
     await assert.rejects(gateway.run({ ...sub, workerId: 'edge-fixture',
         onSession: () => db.queryDatabase('UPDATE users SET is_donor=0 WHERE user_id=?', [sub.ownerUserId]) }), { code: 'X_PUSH_ROLLOUT_WITHDRAWN' });
     assert(!sends.includes('ACK')); assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n), 0);
+}));
+test('slow delivery callbacks do not block persistence of a burst of Edge notifications', { skip: skipped }, async () => setup(async db => {
+    const sub = await insertSubscription(db, edgeFixture()); await db.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [sub.subscriptionId]);
+    const cipher = await encrypted(sub.file, { text: 'burst-fixture' }), controller = new AbortController();
+    const incoming = [frame('CNT 1 CON', '<connect/>'), frame('ATH 2 CON'),
+        frame('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>new-token</reconnect-token></wns>'),
+        ...Array.from({ length: 25 }, (_, index) => notification('target', cipher, String(index)))];
+    let callbacks = 0, acks = 0, release, burstDone, lastInbox; const gate = new Promise(resolve => { release = resolve; });
+    const persisted = new Promise(resolve => { burstDone = resolve; });
+    const transport = { async connect() {}, async send(data) {
+        if (data.subarray(0, data.indexOf(' ')).toString('ascii') === 'ACK' && ++acks === 25) burstDone();
+    }, async next() { if (!incoming.length) { await new Promise(resolve => setTimeout(resolve, 10)); throw Object.assign(new Error('timeout'), { code: 'X_EDGE_WNS_RECEIVE_TIMEOUT' }); } return incoming.shift(); }, close() {} };
+    const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, edgeTokenVault: tokenVault(), privateWorkerVault: vault,
+        rolloutMode: 'public', requestTimeoutMs: 3000, createEdgeTransport: () => transport });
+    try {
+        const timer = setTimeout(() => controller.abort(), 4000);
+        const work = gateway.run({ ...sub, workerId: 'edge-burst', signal: controller.signal, onReceived: async ({ inbox }) => {
+            callbacks++; lastInbox = inbox; if (callbacks === 1) await gate; else controller.abort();
+        } });
+        try { await Promise.race([persisted, new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true }))]);
+            assert.equal(acks, 25); assert.equal(callbacks, 1); release(); await work; }
+        finally { clearTimeout(timer); controller.abort(); await work.catch(() => {}); }
+        assert.equal(acks, 25); assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n), 25);
+        assert.equal(callbacks, 2); assert.equal(lastInbox.version.length, 64);
+    } finally { release(); controller.abort(); }
 }));

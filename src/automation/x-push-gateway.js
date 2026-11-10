@@ -264,6 +264,24 @@ function createXPushGateway(db, options = {}) {
                 transport = { abort: () => controller.abort(), close: () => controller.abort() };
                 input.signal?.addEventListener('abort', aborted, { once: true });
                 if (input.signal?.aborted) aborted();
+                // Receipt callbacks are wake-up hints: the runtime also scans
+                // the durable inbox. A slow route must not hold the WNS reader
+                // while more notifications accumulate in its bounded queue.
+                let wakeRunning = false, pendingInbox = null;
+                function wakeFor(inbox) {
+                    if (controller.signal.aborted || typeof input.onReceived !== 'function') return;
+                    pendingInbox = inbox;
+                    if (wakeRunning) return;
+                    wakeRunning = true;
+                    void (async () => {
+                        while (pendingInbox && !controller.signal.aborted) {
+                            const current = pendingInbox; pendingInbox = null;
+                            let payload;
+                            try { payload = decrypt(crypto, file, current); } catch { continue; }
+                            await notify(input.onReceived, { lease, inbox: current, payload }, controller.signal);
+                        }
+                    })().catch(() => {}).finally(() => { wakeRunning = false; if (pendingInbox && !controller.signal.aborted) wakeFor(pendingInbox); });
+                }
                 const edgeStore = Object.fromEntries(['readWnsTokenState', 'saveWnsTokenState', 'assertLease', 'recordFrame', 'getInbox']
                     .map(name => [name, (...args) => deadline(store[name](...args), timeoutMs, 'X_PUSH_STORE_TIMEOUT')]));
                 await withEdgeWnsCredentials(file, credentials => runEdgeWnsGateway({
@@ -276,9 +294,7 @@ function createXPushGateway(db, options = {}) {
                         if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
                     },
                     onReceived: async ({ inbox }) => {
-                        if (typeof input.onReceived !== 'function') return;
-                        const payload = decrypt(crypto, file, inbox);
-                        await notify(input.onReceived, { lease, inbox, payload }, input.signal);
+                        wakeFor(inbox);
                     },
                 }));
                 if (renewalFailure) throw renewalFailure;
