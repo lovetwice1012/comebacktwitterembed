@@ -2,9 +2,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 function fixture(options = {}) {
     const socket = new EventEmitter(); socket.destroyed = false; socket.sent = [];
+    socket.pauseCount = 0; socket.resumeCount = 0;
+    socket.pause = () => { socket.pauseCount++; };
+    socket.resume = () => { socket.resumeCount++; };
     socket.write = (bytes, callback) => { socket.sent.push(Buffer.from(bytes)); if (options.write) return options.write(callback); queueMicrotask(() => callback()); return true; };
     socket.destroy = () => { if (!socket.destroyed) { socket.destroyed = true; socket.emit('close'); } };
     const transport = createEdgeWnsTransport({ socketFactory: () => socket, timeoutMs: 100, ...(options.signal ? { signal: options.signal } : {}) });
@@ -19,13 +23,37 @@ test('receives fragmented and adjacent frames and writes on the same bounded soc
     await assert.rejects(transport.next(), { code: 'X_EDGE_WNS_STOPPED' });
 });
 test('malformed frames and excess queued frames close the socket; idle timeouts remain usable', async () => {
-    for (const input of [Buffer.from('bad\n'), Buffer.from('X 0\r\n'.repeat(17))]) {
+    for (const input of [Buffer.from('bad\n'), Buffer.from('X 0\r\n'.repeat(1025))]) {
         const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect(); socket.emit('data', input);
         assert.equal(socket.destroyed, true); await assert.rejects(transport.next(), error => ['X_EDGE_WNS_FRAME_INVALID', 'X_EDGE_WNS_BACKPRESSURE'].includes(error.code));
     }
     const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
     await assert.rejects(transport.next(10), { code: 'X_EDGE_WNS_RECEIVE_TIMEOUT' }); assert.equal(socket.destroyed, false);
     socket.emit('data', frame); assert.deepEqual(await transport.next(), frame); transport.close();
+});
+test('a multi-frame burst pauses reads and resumes only after the queue drains', async () => {
+    const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
+    const first = transport.next(); socket.emit('data', Buffer.concat(Array(40).fill(frame)));
+    assert.equal(socket.destroyed, false); assert.equal(socket.pauseCount, 1);
+    assert.deepEqual(await first, frame);
+    for (let i = 0; i < 35; i++) assert.deepEqual(await transport.next(), frame);
+    assert.equal(socket.resumeCount, 1);
+    for (let i = 0; i < 4; i++) assert.deepEqual(await transport.next(), frame);
+    assert.equal(socket.destroyed, false); transport.close();
+});
+test('continued input while paused remains bounded and fails closed', async () => {
+    const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
+    socket.emit('data', Buffer.from('X 0\r\n'.repeat(1024))); assert.equal(socket.pauseCount, 1);
+    socket.emit('data', Buffer.from('X 0\r\n'.repeat(17))); assert.equal(socket.destroyed, true);
+    await assert.rejects(transport.next(), { code: 'X_EDGE_WNS_BACKPRESSURE' });
+});
+test('stream backpressure retains later chunks until the queue has space', async () => {
+    const socket = new PassThrough(), transport = createEdgeWnsTransport({ socketFactory: () => socket, timeoutMs: 1000 });
+    socket.emit('secureConnect'); await transport.connect();
+    socket.write(Buffer.concat(Array(12).fill(frame))); assert.equal(socket.isPaused(), true);
+    socket.write(Buffer.concat(Array(12).fill(frame)));
+    for (let i = 0; i < 24; i++) assert.deepEqual(await transport.next(), frame);
+    assert.equal(socket.destroyed, false); transport.close();
 });
 test('an idle timeout retains a partially received frame for the next read', async () => {
     const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
