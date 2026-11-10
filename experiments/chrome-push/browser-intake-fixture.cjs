@@ -67,7 +67,11 @@ async function main() {
             } catch (error) { console.error('FIXTURE_API', /^[A-Z_]+$/.test(error.code || '') ? error.code : 'FAILED'); res.writeHead(Number(error.status) || 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ code: error.code || 'FIXTURE_FAILED' })); }
         });
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
-        browser = await playwright.chromium.launch({ headless: true, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+        const renderer = process.env.CBTE_FIXTURE_BROWSER || 'chrome';
+        const executables = { chrome: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            brave: 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe' };
+        if (!Object.hasOwn(executables, renderer)) throw new Error('FIXTURE_BROWSER_INVALID');
+        browser = await playwright.chromium.launch({ headless: true, executablePath: executables[renderer] });
         const output = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-intake-ui-'));
         for (const [kind, width] of [['chrome', 1440], ['brave', 390]]) {
             console.log(`fixture-stage:${kind}`);
@@ -85,10 +89,21 @@ async function main() {
             await page.screenshot({ path: path.join(output, `${kind}-prepare.png`), fullPage: true });
             await page.getByRole('button', { name: 'ファイルを登録する' }).click();
             await page.getByRole('checkbox', { name: /^サーバーでX通知を受信/ }).check();
-            await page.locator('input[type=file]').setInputFiles({ name: 'synthetic.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+            const input = page.locator('input[type=file]');
+            const selectedFile = { name: 'synthetic.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) };
+            await input.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a transfer file') });
+            await page.getByRole('alert').filter({ hasText: 'JSONファイルを選んでください' }).waitFor();
+            assert.equal(await input.inputValue(), '');
+            await input.setInputFiles(selectedFile);
+            await page.getByText('ファイルを選択しました。「ファイルの内容を確認」で次へ進めます。', { exact: true }).waitFor();
+            assert((await input.inputValue()).endsWith('synthetic.json'));
+            await page.getByRole('button', { name: 'ファイルの選択を取り消す' }).click();
+            assert.equal(await input.inputValue(), '');
+            await input.setInputFiles(selectedFile);
             await page.getByRole('button', { name: 'ファイルの内容を確認' }).click();
             const review = page.getByRole('region', { name: 'X通知ファイルの登録確認' }); await review.waitFor();
             assert((await review.textContent()).includes(`${label} ${file.provenance.browserVersion}`));
+            assert((await input.inputValue()).endsWith('synthetic.json'));
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             await page.screenshot({ path: path.join(output, `${kind}-review.png`), fullPage: true });
             await page.getByRole('button', { name: 'この受信情報を登録' }).click();
@@ -104,7 +119,7 @@ async function main() {
             assert.equal(external, 0); assert.equal(errors, 0);
             await context.close();
         }
-        console.log(JSON.stringify({ chromeDesktop: true, braveMobile: true, realIntakeApi: true, encryptedRecords: 2, externalRequests: 0, pageErrors: 0, screenshots: output }));
+        console.log(JSON.stringify({ renderer, chromeDesktop: true, braveMobile: true, realIntakeApi: true, encryptedRecords: 2, externalRequests: 0, pageErrors: 0, screenshots: output }));
     } finally {
         if (browser) await browser.close();
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

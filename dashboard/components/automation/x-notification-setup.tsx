@@ -47,8 +47,8 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
   const reviewPanel = useRef<HTMLElement>(null), errorMessage = useRef<HTMLParagraphElement>(null), noticeMessage = useRef<HTMLParagraphElement>(null);
   const setupHeading = useRef<HTMLElement>(null), stagePanel = useRef<HTMLElement>(null), focusStage = useRef(embedded);
   enabled.current = active;
-  const clearFile = useCallback(() => { fileEpoch.current++; fileText.current = null; session.current = null;
-    if (input.current) input.current.value = "";
+  const clearFile = useCallback((clearInput = true) => { fileEpoch.current++; fileText.current = null; session.current = null;
+    if (clearInput && input.current) input.current.value = "";
     if (mounted.current) { setFileReady(false); setPreview(null); }
   }, []);
   const load = useCallback(async (afterId?: string) => {
@@ -80,16 +80,16 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
   }, [stage, adding, loading, status, embedded]);
   const canUpload = Boolean(active && status?.available && consent && !busy && !loading && !finished.current);
   async function choose(file: File | undefined) {
-    clearFile(); setError(""); setNotice("");
-    if (!file || !canUpload) return;
-    if (!file.name.toLowerCase().endsWith(".json") || file.size === 0) { setError("保存ツールで作成したJSONファイルを選んでください。"); return; }
-    if (file.size > Math.min(status?.maxFileBytes ?? X_SETUP_MAX_FILE_BYTES, X_SETUP_MAX_FILE_BYTES)) { setError(xSetupFeedback({ code: "X_SETUP_FILE_TOO_LARGE" })); return; }
+    clearFile(false); setError(""); setNotice("");
+    if (!file || !canUpload) { clearFile(); return; }
+    if (!file.name.toLowerCase().endsWith(".json") || file.size === 0) { clearFile(); setError("保存ツールで作成したJSONファイルを選んでください。"); return; }
+    if (file.size > Math.min(status?.maxFileBytes ?? X_SETUP_MAX_FILE_BYTES, X_SETUP_MAX_FILE_BYTES)) { clearFile(); setError(xSetupFeedback({ code: "X_SETUP_FILE_TOO_LARGE" })); return; }
     const version = fileEpoch.current;
     setBusy(true);
     try {
       const text = await readFile(file);
       if (mounted.current && enabled.current && version === fileEpoch.current) { fileText.current = text; setFileReady(true); }
-    } catch { if (mounted.current && enabled.current && version === fileEpoch.current) setError("ファイルを読み取れませんでした。保存ツールで作成したUTF-8のJSONファイルを選び直してください。"); }
+    } catch { if (mounted.current && enabled.current && version === fileEpoch.current) { clearFile(); setError("ファイルを読み取れませんでした。保存ツールで作成したUTF-8のJSONファイルを選び直してください。"); } }
     finally { if (mounted.current) setBusy(false); }
   }
   async function validate() {
