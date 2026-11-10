@@ -141,7 +141,20 @@ async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [], exchangeShapes = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
-    let probeStage = 'setup', previousServerNonce = null; const nativePfx = [];
+    let probeStage = 'setup', previousServerNonce = null, peerAuthorizationCount = 0, peerRejectionCount = 0, browserStartTicks = null; const nativePfx = [];
+    function startFixtureBrowser(args) {
+        const child = spawn(edge, args, { windowsHide: true, stdio: 'ignore' });
+        if (process.env.EDGE_PROBE_PEER_AUTH === '1') {
+            const expected = edge.replace(/'/g, "''");
+            const command = `$ErrorActionPreference='Stop'; $p=Get-Process -Id ${child.pid}; try {if ([IO.Path]::GetFullPath($p.Path) -ine '${expected}') {exit 1}; $p.StartTime.ToUniversalTime().Ticks.ToString()} finally {$p.Dispose()}`;
+            const output = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+                { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            const ticks = (output.stdout || '').trim();
+            if (output.status !== 0 || !/^\d{18}$/.test(ticks)) { child.kill(); throw new Error('PROBE_PEER_AUTH_FAILED'); }
+            browserStartTicks = ticks;
+        }
+        return child;
+    }
     try {
         if (testIndependent && !testSkipChallenge || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
         const createCertificate = () => {
@@ -171,6 +184,17 @@ async function main() {
         relay = tls.createServer({ ...tlsConfig, ALPNProtocols: ['h2', 'http/1.1'] }, incoming => {
             incoming.pause();
             sockets.add(incoming); incoming.once('close', () => sockets.delete(incoming));
+            if (process.env.EDGE_PROBE_PEER_AUTH === '1') {
+                if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32' || !browser || !Number.isInteger(browser.pid) || !/^\d{18}$/.test(browserStartTicks || '')
+                    || !Number.isInteger(incoming.remotePort) || !Number.isInteger(relay.address()?.port)) { incoming.destroy(); return; }
+                const helper = path.resolve(__dirname, '../../client/angelic-setup/EdgePeerIdentity.ps1').replace(/'/g, "''");
+                const executable = edge.replace(/'/g, "''");
+                const command = `$ErrorActionPreference='Stop'; . '${helper}'; if (-not (Test-XEdgeOwnedLoopbackPeer -ClientPort ${incoming.remotePort} -ServerPort ${relay.address().port} -BrowserPid ${browser.pid} -BrowserStartTicks ([long]'${browserStartTicks}') -BrowserExecutable '${executable}')) {exit 1}; exit 0`;
+                const checked = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+                    { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+                if (checked.status !== 0 || incoming.destroyed) { peerRejectionCount++; incoming.destroy(); return; }
+                peerAuthorizationCount++;
+            }
             const upstream = tls.connect({ host: 'client.wns.windows.com', port: 443, servername: 'client.wns.windows.com',
                 rejectUnauthorized: true, ALPNProtocols: incoming.alpnProtocol ? [incoming.alpnProtocol] : ['http/1.1'] });
             sockets.add(upstream); upstream.once('close', () => sockets.delete(upstream));
@@ -494,9 +518,9 @@ async function main() {
         // Trust only this ephemeral relay key. Ordinary X HTTPS connections
         // retain normal certificate verification in the dedicated profile.
         const endpointArgs = noRelay ? [] : [`--ignore-certificate-errors-spki-list=${relaySpki}`, `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`];
-        browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
+        browser = startFixtureBrowser(['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
             ...endpointArgs,
-            '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+            '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank']);
         let port;
         for (let i = 0; i < 120 && !port; i++) {
             try { port = Number((await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); }
@@ -527,6 +551,17 @@ async function main() {
         if (value.ok) {
             expectedCipher = await sendFixture(value.subscription, 'synthetic-wns-probe');
             for (let i = 0; i < 80 && !browserReceived; i++) await wait(100);
+        }
+        if (process.env.EDGE_PROBE_PEER_ATTACK === '1') {
+            if (process.env.EDGE_PROBE_PEER_AUTH !== '1' || process.env.EDGE_PROBE_NATIVE_CERT !== '1' || !browserReceived) throw new Error('PROBE_MODE_INVALID');
+            const before = events.length, rejections = peerRejectionCount;
+            await new Promise((resolve, reject) => {
+                const client = tls.connect({ host: '127.0.0.1', port: relay.address().port, servername: 'localhost', ca: new X509Certificate(cert.certificate).toString() });
+                const timer = setTimeout(() => { client.destroy(); reject(new Error('PROBE_PEER_TIMEOUT')); }, 15000);
+                client.once('error', () => {});
+                client.once('close', () => { clearTimeout(timer); resolve(); });
+            });
+            if (peerRejectionCount !== rejections + 1 || events.length !== before) throw new Error('PROBE_PEER_AUTH_FAILED');
         }
         if (testTwoSites) {
             if (!value.ok || !browserEvents.initial) throw new Error('PROBE_TWO_SITE_INITIAL_FAILED');
@@ -695,9 +730,9 @@ async function main() {
             if (process.env.EDGE_PROBE_ACK_RECONNECT === '1' && laterNotificationReceived) {
                 initial.closeFixtureConnection();
                 await fs.rm(path.join(profile, 'DevToolsActivePort'), { force: true });
-                browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
+                browser = startFixtureBrowser(['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
                     ...endpointArgs,
-                    '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+                    '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank']);
                 let reopenedPort;
                 for (let i = 0; i < 120 && !reopenedPort; i++) {
                     try { reopenedPort = Number((await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); }
@@ -818,9 +853,9 @@ async function main() {
                 }
             } else if (copyProfile) await fs.cp(profile, reopenProfile, { recursive: true, errorOnExist: true, force: false });
             if (copyProfile) await fs.rm(path.join(reopenProfile, 'DevToolsActivePort'), { force: true });
-            browser = spawn(edge, ['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, ...featureArgs,
+            browser = startFixtureBrowser(['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, ...featureArgs,
                 ...endpointArgs,
-                '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+                '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank']);
             const originalCount = events.length;
             if (!noRelay) for (let i = 0; i < 120 && events.length <= originalCount; i++) await wait(100);
             await wait(3000);
@@ -1226,7 +1261,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult, noRelayVerified: noRelay && events.length === 0 && endpointArgs.length === 0 }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, peerAuthorizationCount, peerRejectionCount, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         const safeCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : null;
