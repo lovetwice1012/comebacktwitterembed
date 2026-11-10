@@ -9,7 +9,7 @@ const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
-const { createHmac, createHash, createCipheriv, createPrivateKey, generateKeyPairSync, randomInt, X509Certificate } = require('node:crypto');
+const { createHmac, createHash, createCipheriv, createPrivateKey, generateKeyPairSync, randomBytes, randomInt, X509Certificate } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
@@ -853,6 +853,7 @@ async function main() {
                 await new Promise((resolve, reject) => process.send({ channelFingerprint: fingerprint, protocolFingerprint }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
             } finally { salt.fill(0); for (const frame of Object.values(frames)) frame.fill(0); }
         }
+        let snapshotIoVerified = false;
         if (testIndependent) {
             if (events.length !== 2 || !copiedProfileResult?.sameSubscription || !copiedProfileResult?.receivedAfterCopy || !deviceFields?.[2] || !deviceFields?.[3] || !independentWebPush)
                 throw new Error('PROBE_DIRECT_PREREQUISITE_FAILED');
@@ -879,6 +880,40 @@ async function main() {
                 clientMetadata = { channel, protocolVersion, clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
             }
             const frames = generatedHandshake ? null : events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
+            if (process.env.EDGE_PROBE_SNAPSHOT_IO === '1') {
+                if (!testSession || !testTwoSites || !testXSelector || !testSkipChallenge || !clientMetadata) throw new Error('PROBE_MODE_INVALID');
+                const snapshotToken = randomBytes(16).toString('hex'), snapshotPath = path.join(root, `edge-snapshot-${snapshotToken}`);
+                const snapshotDir = path.join(snapshotPath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+                await fs.mkdir(path.dirname(snapshotDir), { recursive: true });
+                await fs.cp(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'), snapshotDir, { recursive: true, errorOnExist: true, force: false });
+                await fs.writeFile(path.join(snapshotPath, 'snapshot-owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-snapshot-v1', token: snapshotToken }), { flag: 'wx' });
+                // Rewrite only the disposable localhost target's origin in the
+                // copied DB so the fixed-X selector can be tested end to end.
+                const copied = new ClassicLevel(snapshotDir, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+                let rewriteKey, rewriteValue;
+                try {
+                    await copied.open();
+                    for await (const [candidateKey, stored] of copied.iterator({ limit: 128 })) {
+                        if (stored.includes(Buffer.from(origin)) && stored.includes(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
+                            && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
+                            if (rewriteKey) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
+                            rewriteKey = Buffer.from(candidateKey); rewriteValue = rewriteSyntheticOrigin(stored, `${origin}/`);
+                        }
+                    }
+                    if (!rewriteKey) throw new Error('PROBE_SUBSCRIPTION_MISSING');
+                    await copied.put(rewriteKey, rewriteValue);
+                } finally { rewriteKey?.fill(0); rewriteValue?.fill(0); await copied.close().catch(() => {}); }
+                const expected = { endpoint: value.subscription.endpoint, publicKey: Buffer.from(value.subscription.keys.p256dh, 'base64url'),
+                    auth: Buffer.from(value.subscription.keys.auth, 'base64url'), applicationServerKey: Buffer.from(vapid.publicKey, 'base64url') };
+                try {
+                    const result = await require('../../src/automation/edge-wns-snapshot-io').readEdgeSnapshot({ snapshotPath, token: snapshotToken, expected,
+                        browserVersion: '157.0.0.0', agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' }, client: clientMetadata,
+                        dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
+                    if (result.file.push.deviceKey !== key.toString('base64url') || result.file.push.siteChannel !== independentChannel.toString('ascii')
+                        || result.otherSubscriptionCount !== 1 || result.unclassifiedRecordCount < 1 || !result.otherNotificationsPossible) throw new Error('PROBE_TRANSFER_INVALID');
+                    snapshotIoVerified = true;
+                } finally { for (const name of ['publicKey', 'auth', 'applicationServerKey']) expected[name].fill(0); }
+            }
             if (process.env.EDGE_PROBE_TRANSFER === '1') {
                 if (!testSession || !testTwoSites || !testSkipChallenge || !clientMetadata || !independentChannel) throw new Error('PROBE_MODE_INVALID');
                 const { normalizeEdgeTransfer } = require('../../src/automation/edge-wns-transfer');
@@ -1172,7 +1207,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         const safeCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : null;
