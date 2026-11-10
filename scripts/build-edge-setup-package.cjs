@@ -7,7 +7,7 @@ const { rejectLinks } = require('./build-angelic-setup-package.cjs');
 const { buildChromeBundles } = require('./build-chrome-setup-bundles.cjs');
 const { resolveProjectNode, NODE_EXE_SHA256 } = require('./run-project-node.cjs');
 const ROOT = path.resolve(__dirname, '..'), SOURCE = path.join(ROOT, 'client', 'angelic-setup');
-const VERSION = '0.1.0-edge-preview.3';
+const VERSION = '0.1.0-edge-preview.4';
 const SOURCES = Object.freeze({ 'EdgeShared.ps1': 'EdgeShared.ps1', 'EdgeSetup.ps1': 'EdgeSetup.ps1', 'Start-EdgeSetup.ps1': 'Start-EdgeSetup.ps1',
     'EdgeSnapshot.ps1': 'EdgeSnapshot.ps1', 'EdgeExport.ps1': 'EdgeExport.ps1', 'EdgeCalibration.ps1': 'EdgeCalibration.ps1',
     'EdgeCalibrationJob.ps1': 'EdgeCalibrationJob.ps1', 'EdgeEphemeralCertificate.ps1': 'EdgeEphemeralCertificate.ps1',

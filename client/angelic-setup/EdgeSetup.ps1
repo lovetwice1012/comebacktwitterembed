@@ -15,7 +15,7 @@ $ErrorActionPreference='Stop'
 $request=[pscustomobject]@{ action=$Action; privateRoot=$PrivateRoot; outputPath=$OutputPath;
     prompt=[bool]$PromptForOtherNotifications; allow=[bool]$AllowOtherNotifications }
 $packageRoot=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$packageVersion='0.1.0-edge-preview.3'
+$packageVersion='0.1.0-edge-preview.4'
 function Assert-EdgeBootstrapPath([string]$Path) {
     $current=[IO.Path]::GetPathRoot($Path)
     foreach($part in $Path.Substring($current.Length).Split([char]92)) {
@@ -88,6 +88,22 @@ try {
         if($Action -ceq 'Open'){
             if($null -eq $owner){Fail-Safely 'X_EDGE_NOT_PREPARED' '最初にブラウザーの準備を行ってください。'}
             if($null -ne (Get-ActiveLaunch $owner)){Fail-Safely 'X_EDGE_BUSY' '設定用ブラウザーはすでに開いています。'}
+            # X の購読がすでにある場合は、この設定用ブラウザー側の
+            # 受信接続を止め、サーバーの受信接続が奪われないようにします。
+            # 初回は購読を作る必要があるため、通常どおり接続します。
+            $suppressReceive=$false
+            $store=[IO.Path]::Combine($script:Profile,'Default','EdgePushStorageWithConnectTokenAndKey')
+            Assert-SafePath $store;$storeAttributes=Get-PathAttributes $store
+            if($null -ne $storeAttributes){
+                if(-not ($storeAttributes -band [IO.FileAttributes]::Directory)){Fail-Safely 'X_EDGE_INSPECT_FAILED' '通知設定を確認できませんでした。'}
+                . ([IO.Path]::Combine($script:PackageRoot,'EdgeSnapshot.ps1'))
+                $snapshot=Copy-XEdgeSnapshot -ProfileRoot $script:Profile -PrivateRoot $script:Root
+                try {
+                    $inspection=Invoke-Helper 'EdgeReader.cjs' ([ordered]@{mode='inspect';snapshotPath=$snapshot.path;token=$snapshot.token})
+                    if($inspection.ok -ne $true -or $inspection.hasXSubscription -isnot [bool]){Fail-Safely 'X_EDGE_INSPECT_FAILED' '通知設定を確認できませんでした。'}
+                    $suppressReceive=$inspection.hasXSubscription
+                } finally {Remove-XEdgeSnapshot -Snapshot $snapshot.path -Token $snapshot.token -PrivateRoot $script:Root}
+            }
             $relative='Microsoft\Edge\Application\msedge.exe';$edge=$null
             foreach($base in @(${env:ProgramFiles(x86)},$env:ProgramFiles,$env:LOCALAPPDATA)){
                 if([string]::IsNullOrWhiteSpace($base)){continue};$candidate=[IO.Path]::Combine($base,$relative)
@@ -104,7 +120,7 @@ try {
             foreach($name in @('NODE_OPTIONS','NODE_PATH','NODE_REPL_EXTERNAL_MODULE')){$info.EnvironmentVariables.Remove($name)}
             $process=[Diagnostics.Process]::Start($info);$success=$false
             try {
-                $bytes=$script:Utf8.GetBytes(([ordered]@{edgePath=$edge;profilePath=$script:Profile}|ConvertTo-Json -Compress))
+                $bytes=$script:Utf8.GetBytes(([ordered]@{edgePath=$edge;profilePath=$script:Profile;suppressReceive=[bool]$suppressReceive}|ConvertTo-Json -Compress))
                 try{$process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length);$process.StandardInput.Close()}finally{[Array]::Clear($bytes,0,$bytes.Length)}
                 $line=$process.StandardOutput.ReadLineAsync();if(-not $line.Wait(20000)){throw 'Broker timeout'};$ready=$line.GetAwaiter().GetResult()|ConvertFrom-Json
                 Assert-PropertyNames $ready @('ok','port','token','pid','browserPid','engineVersion')

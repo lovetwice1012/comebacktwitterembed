@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord } = require('../../src/automation/edge-wns-record');
+const { selectXRecord, selectDeviceRecord, hasXSiteRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord } = require('../../src/automation/edge-wns-record');
 const { buildEdgeTransfer, buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-snapshot');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function bytes(field, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); }
@@ -58,6 +58,11 @@ test('selects a bounded device token and canonical key, rejecting ambiguous reco
     for (const bad of [Buffer.concat([raw, bytes(2, 'duplicate')]), Buffer.concat([raw, bytes(3, secret.toString('base64'))]),
         Buffer.concat([bytes(2, '<bad>'), bytes(3, secret.toString('base64'))]), Buffer.concat([bytes(2, 'ok'), bytes(3, 'not-base64')]),
         Buffer.concat([raw, Buffer.from([0x80])]), Buffer.alloc(65537)]) invalid(() => selectDeviceRecord(bad));
+});
+test('subscription presence check returns only a boolean and rejects ambiguous X records', () => {
+    const x = fixture(), other = fixture('https://other.example/');
+    assert.equal(hasXSiteRecord([]), false); assert.equal(hasXSiteRecord([Buffer.alloc(8), other.record]), false); assert.equal(hasXSiteRecord([other.record, x.record]), true);
+    invalid(() => hasXSiteRecord([x.record, x.record])); invalid(() => hasXSiteRecord([Buffer.concat([x.record, Buffer.from([0x80])])]));
 });
 test('builds only the selected X transfer from matching browser records', async () => {
     const target = fixture(), other = fixture('https://other.example/'), secret = randomBytes(32);

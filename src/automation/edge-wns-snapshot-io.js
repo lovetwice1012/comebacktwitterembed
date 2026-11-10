@@ -7,6 +7,7 @@ const path = require('node:path');
 const { TextDecoder } = require('node:util');
 const { parseUniqueJson } = require('./strict-json');
 const { buildEdgeTransferFromStore } = require('./edge-wns-snapshot');
+const { hasXSiteRecord } = require('./edge-wns-record');
 const invalid = () => Object.assign(new Error('X_EDGE_WNS_SNAPSHOT_INVALID'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
 async function checked(root, parts, directory) {
     let current = root;
@@ -39,7 +40,7 @@ async function verifyLeveldb(directory) {
         if (stat.size > 64 * 1024 * 1024 || total > 128 * 1024 * 1024) throw invalid();
     }
 }
-async function readEdgeSnapshot({ snapshotPath, token, expected, browserVersion, agent, client, dbFactory }) {
+async function readSnapshot({ snapshotPath, token, expected, browserVersion, agent, client, dbFactory, inspectOnly = false }) {
     let store; const records = [];
     try {
         if (typeof snapshotPath !== 'string' || !path.isAbsolute(snapshotPath) || typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)
@@ -60,8 +61,10 @@ async function readEdgeSnapshot({ snapshotPath, token, expected, browserVersion,
                 records.push(Buffer.from(item[1]));
             } finally { if (Array.isArray(item) && Buffer.isBuffer(item[1])) item[1].fill(0); }
         }
-        return await buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client });
+        return inspectOnly ? { hasXSubscription: hasXSiteRecord(records) } : await buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client });
     } catch { throw invalid(); }
     finally { for (const record of records) record.fill(0); if (store) await store.close().catch(() => {}); }
 }
-module.exports = { readEdgeSnapshot };
+function readEdgeSnapshot(options) { return readSnapshot(options); }
+function inspectEdgeSnapshot(options) { return readSnapshot({ ...options, inspectOnly: true }); }
+module.exports = { readEdgeSnapshot, inspectEdgeSnapshot };

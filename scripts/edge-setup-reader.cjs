@@ -3,7 +3,7 @@
 // Local-only helper. Standard input and output belong to the setup process;
 // this program opens neither a network connection nor an upload destination.
 const { ClassicLevel } = require('classic-level');
-const { readEdgeSnapshot } = require('../src/automation/edge-wns-snapshot-io');
+const { readEdgeSnapshot, inspectEdgeSnapshot } = require('../src/automation/edge-wns-snapshot-io');
 const { parseUniqueJson } = require('../src/automation/strict-json');
 const invalid = () => Object.assign(new Error('X_EDGE_READER_INPUT_INVALID'), { code: 'X_EDGE_READER_INPUT_INVALID' });
 function exact(value, names) {
@@ -22,6 +22,12 @@ async function main() {
             size += chunk.length; if (size > 32768) throw invalid(); chunks.push(chunk);
         }
         combined = Buffer.concat(chunks); const input = parseUniqueJson(combined.toString('utf8'));
+        if (input?.mode === 'inspect') {
+            exact(input, ['snapshotPath', 'token', 'mode']);
+            const result = await inspectEdgeSnapshot({ snapshotPath: input.snapshotPath, token: input.token,
+                dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
+            process.stdout.write(JSON.stringify({ ok: true, ...result })); return;
+        }
         exact(input, ['snapshotPath', 'token', 'expected', 'browserVersion', 'agent', 'client']);
         exact(input.expected, ['endpoint', 'publicKey', 'auth', 'applicationServerKey']);
         const take = (value, length) => { const result = decode(value, length); decoded.push(result); return result; };

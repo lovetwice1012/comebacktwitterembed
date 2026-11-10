@@ -67,6 +67,28 @@ function validExpected(expected) {
 function clearRecord(record) {
     if (record) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) record[name]?.fill(0);
 }
+// Detect only whether X already has a subscription; no keys or other origins
+// leave this function. An ambiguous X-bearing record must not be guessed.
+function hasXSiteRecord(records) {
+    if (!Array.isArray(records) || records.length > 128 || records.some(raw => !Buffer.isBuffer(raw) || raw.length > 65536)) throw fail();
+    let count = 0;
+    try {
+        for (const raw of records) {
+            let origins = [];
+            try {
+                for (const item of fields(raw).filter(field => field.number === 8)) {
+                    if (item.wire !== 2) throw fail();
+                    const pair = fields(item.value), name = text(one(pair, 1, 2));
+                    if (name === 'origin') origins.push(text(one(pair, 2, 2)));
+                }
+            } catch { if (raw.includes(Buffer.from(SCOPE))) throw fail(); continue; }
+            if (origins.includes(SCOPE)) {
+                if (origins.length !== 1 || ++count > 1) throw fail();
+            } else if (raw.includes(Buffer.from(SCOPE))) throw fail();
+        }
+        return count === 1;
+    } catch { throw fail(); }
+}
 // Inspect only each record's origin metadata. If any site record cannot be
 // classified, fail closed instead of understating the other-site count.
 function countOtherSiteRecords(records) {
@@ -183,4 +205,4 @@ function selectXRecord(records, expected) {
         return selected;
     } catch { clearRecord(selected); throw fail(); }
 }
-module.exports = { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord };
+module.exports = { selectXRecord, selectDeviceRecord, hasXSiteRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord };

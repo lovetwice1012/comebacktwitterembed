@@ -5,6 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
+const { ClassicLevel } = require('classic-level');
 const { unzipSync } = require('fflate');
 const { buildArchive } = require('../build-edge-setup-package.cjs');
 const { buildArchive: buildChromeArchive } = require('../build-chrome-setup-package.cjs');
@@ -83,6 +85,37 @@ test('Chrome package built from shared setup code still prepares its own profile
     const status = run('Status'); assert.equal(status.status, 0, status.stderr); assert.equal(JSON.parse(status.stdout).prepared, false);
     const prepare = run('Prepare'); assert.equal(prepare.status, 0, prepare.stderr); assert.equal(JSON.parse(prepare.stdout).prepared, true);
     assert((await fs.stat(path.join(owned, 'chrome-profile'))).isDirectory());
+});
+test('Edge setup permits initial subscription but suppresses browser reception when X is already configured', { skip: process.platform !== 'win32', timeout: 90000 }, async t => {
+    const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-open-test-'));
+    t.after(async () => { const actual = await fs.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), temp.toLowerCase());
+        assert.match(path.basename(actual), /^cbte-edge-open-test-/); await fs.rm(actual, { recursive: true }); });
+    const bundle = path.join(root, 'package'), owned = path.join(root, 'owned'), trace = path.join(root, 'trace.json'); await fs.mkdir(bundle);
+    for (const [name, bytes] of Object.entries(unzipSync((await buildArchive({ nodeExecutable: process.execPath })).archive))) {
+        assert.match(name, /^(?:_app\/)?[^/\\]+$/); const file = path.join(bundle, name); await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, bytes, { flag: 'wx' });
+    }
+    const app = path.join(bundle, '_app'), brokerPath = path.join(app, 'EdgeBroker.cjs'), manifestPath = path.join(app, 'package-manifest.json');
+    // Replace only the test copy with a recorder; the setup and snapshot reader
+    // remain the packaged production code, and no real X page is opened.
+    const recorder = Buffer.from("let s='';process.stdin.on('data',b=>s+=b);process.stdin.on('end',()=>{const v=JSON.parse(s);require('node:fs').writeFileSync(process.env.X_EDGE_FIXTURE_TRACE,JSON.stringify({suppressReceive:v.suppressReceive}));process.stdout.write('{\\\"ok\\\":false}\\n')});");
+    await fs.writeFile(brokerPath, recorder); const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    manifest.files['EdgeBroker.cjs'] = createHash('sha256').update(recorder).digest('hex'); await fs.writeFile(manifestPath, JSON.stringify(manifest));
+    const invoke = action => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(app, 'EdgeSetup.ps1'), '-Action', action, '-PrivateRoot', owned],
+        { encoding: 'utf8', windowsHide: true, timeout: 30000, env: { ...process.env, X_EDGE_FIXTURE_TRACE: trace } });
+    const prepared = invoke('Prepare'); assert.equal(prepared.status, 0, prepared.stderr);
+    assert.equal(invoke('Open').status, 1); assert.equal(JSON.parse(await fs.readFile(trace, 'utf8')).suppressReceive, false);
+    const store = path.join(owned, 'edge-profile', 'Default', 'EdgePushStorageWithConnectTokenAndKey'); await fs.mkdir(store, { recursive: true });
+    const field = (n, value) => { const b = Buffer.from(value); assert(b.length < 128); return Buffer.concat([Buffer.from([n * 8 + 2, b.length]), b]); };
+    const x = field(8, Buffer.concat([field(1, 'origin'), field(2, 'https://x.com/')]));
+    const db = new ClassicLevel(store, { keyEncoding: 'buffer', valueEncoding: 'buffer' });
+    try { await db.put(Buffer.from('other'), field(8, Buffer.concat([field(1, 'origin'), field(2, 'https://other.example/')]))); } finally { await db.close(); }
+    assert.equal(invoke('Open').status, 1); assert.equal(JSON.parse(await fs.readFile(trace, 'utf8')).suppressReceive, false);
+    const withX = new ClassicLevel(store, { keyEncoding: 'buffer', valueEncoding: 'buffer' });
+    try { await withX.put(Buffer.from('site'), x); } finally { await withX.close(); }
+    assert.equal(invoke('Open').status, 1); assert.equal(JSON.parse(await fs.readFile(trace, 'utf8')).suppressReceive, true);
+    await fs.writeFile(trace, 'unchanged'); const corrupt = new ClassicLevel(store, { keyEncoding: 'buffer', valueEncoding: 'buffer' });
+    try { await corrupt.put(Buffer.from('site'), Buffer.concat([x, Buffer.from([0x80])])); } finally { await corrupt.close(); }
+    assert.equal(invoke('Open').status, 1); assert.equal(await fs.readFile(trace, 'utf8'), 'unchanged');
 });
 test('Edge launcher opens its own interface from a path with Japanese characters and symbols', { skip: process.platform !== 'win32', timeout: 90000 }, async t => {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-launch-test-'));

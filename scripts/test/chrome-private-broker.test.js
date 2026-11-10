@@ -112,6 +112,12 @@ test('private broker transports optional Edge key only when explicitly enabled',
     finally { await broker.stop(); }
     assert(launchArgs.includes('--remote-debugging-pipe'));
     assert(!launchArgs.some(arg => arg.startsWith('--gcm-mcs-endpoint=') || arg.startsWith('--host-resolver-rules=')));
+    const suppressed = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        suppressReceive: true, spawnChrome: (_exe, args) => { launchArgs = args; return fakeChrome({ subscriptions: { target: value }, product: 'Edg/157.0.1.1' }); } });
+    try { assert.deepEqual(await captureFromEdgeBroker({ port: suppressed.port, token: suppressed.token, includeApplicationServerKey: true }), value); }
+    finally { await suppressed.stop(); }
+    assert(launchArgs.includes('--edge-wns-push-server-url=https://127.0.0.1:1'));
+    await assert.rejects(startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', suppressReceive: true, spawnChrome: () => fakeChrome() }), { code: 'X_CHROME_BROKER_INVALID' });
     await assert.rejects(startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', spawnChrome: () => fakeChrome() }), { code: 'X_CHROME_BROKER_INVALID' });
 });
 test('browser version handshake accepts only the selected browser family', async () => {

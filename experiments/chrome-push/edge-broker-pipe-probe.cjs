@@ -22,20 +22,25 @@ async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
     const realWns = process.env.EDGE_PROBE_REAL_WNS === '1';
     const calibrate = process.env.EDGE_PROBE_RELAY_CALIBRATION === '1';
+    const takeover = process.env.EDGE_PROBE_TAKEOVER === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
+    if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-    let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx;
+    let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
     try {
         const vapid = webpush.generateVAPIDKeys();
         server = http.createServer((request, response) => {
-            if (request.url === '/sw.js') { response.writeHead(200, { 'content-type': 'application/javascript' }); response.end('self.addEventListener("push",e=>e.waitUntil(self.registration.showNotification("fixture")))'); }
+            if (request.url === '/sw.js') { response.writeHead(200, { 'content-type': 'application/javascript' }); response.end('self.addEventListener("push",e=>e.waitUntil(Promise.all([fetch("/seen",{method:"POST"}),self.registration.showNotification("fixture")])))'); }
+            else if (request.url === '/seen' && request.method === 'POST') { browserEvents++; response.writeHead(204); response.end(); }
             else { response.writeHead(200, { 'content-type': 'text/html' }); response.end(`<script>window.key=${JSON.stringify(vapid.publicKey)}</script>`); }
         });
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
         const origin = `http://127.0.0.1:${server.address().port}`;
-        chrome = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'],
+        const blockFirst = process.env.EDGE_PROBE_BLOCK_FIRST === '1';
+        chrome = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+            ...(blockFirst ? ['--edge-wns-push-server-url=https://127.0.0.1:1'] : []), '--no-first-run', '--no-default-browser-check', 'about:blank'],
             { windowsHide: true, stdio: 'ignore' });
         let port;
         for (let i = 0; i < 120 && !port; i++) { try { port = Number((await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); } }
@@ -46,15 +51,18 @@ async function main() {
             console.error('PROBE_BROWSER_PRODUCT', browserProduct);
         await cdp.Browser.grantPermissions({ origin, permissions: ['notifications'] }); await cdp.Page.enable();
         const loaded = new Promise(resolve => cdp.Page.loadEventFired(resolve)); await cdp.Page.navigate({ url: origin }); await loaded;
-        const response = await cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+        let subscribeTimer;
+        const response = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
             const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
-            const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});return s.toJSON()})()` });
+            const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});return s.toJSON()})()` }),
+            new Promise((_resolve, reject) => { subscribeTimer = setTimeout(() => reject(new Error('PROBE_SUBSCRIPTION_TIMEOUT')), 30000); })]).finally(() => clearTimeout(subscribeTimer));
         if (response.exceptionDetails || !response.result?.value?.endpoint) throw new Error('PROBE_SUBSCRIPTION_FAILED');
         const expected = response.result.value;
         const exit = chrome.exitCode === null ? once(chrome, 'exit') : Promise.resolve();
         await cdp.Browser.close(); await cdp.close(); cdp = null; await exit; chrome = null;
         stage = 'broker';
-        broker = await startChromeBroker({ chromePath: edge, profilePath: profile, origin, browserMode: 'edge', includeApplicationServerKey: true, extraArgs: ['--headless=new'] });
+        broker = await startChromeBroker({ chromePath: edge, profilePath: profile, origin, browserMode: 'edge', includeApplicationServerKey: true,
+            extraArgs: ['--headless=new', ...(blockFirst ? ['--edge-wns-push-server-url=https://127.0.0.1:1'] : [])] });
         let captured;
         stage = 'capture';
         for (let i = 0; i < 50 && !captured; i++) {
@@ -189,7 +197,7 @@ async function main() {
         const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
         const wire = encryptFixture(cryptoKeys, JSON.stringify({ text: 'synthetic' }));
         if (decryptNotification(wire.data, wire.headers, cryptoKeys)?.text !== 'synthetic') throw new Error('PROBE_DECRYPT_FAILED');
-        let databaseRecovery = false, realWnsWorkerTested = false;
+        let databaseRecovery = false, realWnsWorkerTested = false, takeoverResult = null;
         if (process.env.EDGE_PROBE_DATABASE === '1') {
             if (Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621) throw new Error('PROBE_MODE_INVALID');
             stage = 'database';
@@ -213,18 +221,46 @@ async function main() {
                 const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
                 const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, privateWorkerVault: vault,
                     edgeTokenVault: createWnsTokenWorkerVault(config), rolloutMode: 'public' });
-                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000); let received;
+                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), takeover ? 60000 : 30000); let received;
                 webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
                 try {
-                    await wnsGateway.run({ ...identity, workerId: 'synthetic-edge-wns', signal: controller.signal,
-                        onSession: async () => { await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-real-wns' }), { TTL: 60 }); },
-                        onReceived: async event => { received = event; controller.abort(); } });
-                    if (received?.payload?.text !== 'synthetic-real-wns') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                    if (takeover) {
+                        let ready; const started = new Promise(resolve => { ready = resolve; }); const events = []; let outcome;
+                        const running = wnsGateway.run({ ...identity, workerId: 'synthetic-edge-wns', signal: controller.signal,
+                            onSession: async () => ready(), onReceived: async event => { events.push(event); } })
+                            .then(() => { outcome = 'stopped'; }, error => { outcome = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'failed'; });
+                        await Promise.race([started, running]);
+                        if (outcome) throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-before-reopen' }), { TTL: 60 });
+                        for (let i = 0; i < 120 && !events.length && !outcome; i++) await wait(100);
+                        if (events[0]?.payload?.text !== 'synthetic-before-reopen') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        received = events[0];
+                        const blockWns = process.env.EDGE_PROBE_BLOCK_WNS === '1';
+                        broker = await startChromeBroker({ chromePath: edge, profilePath: profile, origin, browserMode: 'edge', includeApplicationServerKey: true,
+                            suppressReceive: blockWns, extraArgs: ['--headless=new'] });
+                        await wait(3000); const before = browserEvents;
+                        await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-reopen' }), { TTL: 60 });
+                        for (let i = 0; i < 100 && !events.some(item => item.payload?.text === 'synthetic-after-reopen') && browserEvents === before; i++) await wait(100);
+                        takeoverResult = { receivedBeforeReopen: true, wnsBlockedInReopenedBrowser: blockWns,
+                            workerReceivedAfterReopen: events.some(item => item.payload?.text === 'synthetic-after-reopen'),
+                            browserReceivedAfterReopen: browserEvents > before, workerStoppedDuringReopen: Boolean(outcome) };
+                        controller.abort(); await running;
+                        try {
+                            const refreshed = await captureFromBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true });
+                            takeoverResult.subscriptionRemainsSame = refreshed.endpoint === expected.endpoint && refreshed.keys.p256dh === expected.keys.p256dh
+                                && refreshed.keys.auth === expected.keys.auth;
+                        } catch (error) { takeoverResult.captureError = /^X_CHROME_CAPTURE_[A-Z_]+$/.test(error?.code || '') ? error.code : 'OTHER'; }
+                    } else {
+                        await wnsGateway.run({ ...identity, workerId: 'synthetic-edge-wns', signal: controller.signal,
+                            onSession: async () => { await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-real-wns' }), { TTL: 60 }); },
+                            onReceived: async event => { received = event; controller.abort(); } });
+                    }
+                    if (received?.payload?.text !== (takeover ? 'synthetic-before-reopen' : 'synthetic-real-wns')) throw new Error('PROBE_WNS_PIPELINE_FAILED');
                     const recovery = await wnsGateway.store.claim({ ...identity, workerId: 'synthetic-edge-recovery' });
                     if (!recovery) throw new Error('PROBE_WNS_PIPELINE_FAILED');
                     try {
                         const restoredReceipt = await wnsGateway.store.getInbox({ ...identity, id: received.inbox.id });
-                        if ((await wnsGateway.decryptInbox(recovery, restoredReceipt))?.text !== 'synthetic-real-wns') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                        if ((await wnsGateway.decryptInbox(recovery, restoredReceipt))?.text !== (takeover ? 'synthetic-before-reopen' : 'synthetic-real-wns')) throw new Error('PROBE_WNS_PIPELINE_FAILED');
                     } finally { await wnsGateway.store.release(recovery); }
                     realWnsWorkerTested = true;
                 } finally { clearTimeout(timer); controller.abort(); }
@@ -232,7 +268,7 @@ async function main() {
         }
         for (const field of Object.values(cryptoKeys)) field.fill(0);
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
-            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested };
+            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));
     } finally {

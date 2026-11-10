@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createECDH, generateKeyPairSync, randomBytes } = require('node:crypto');
 const { ClassicLevel } = require('classic-level');
 const { spawnSync } = require('node:child_process');
-const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
+const { readEdgeSnapshot, inspectEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function field(number, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(number * 8 + 2), varint(data.length), data]); }
 function site(scope) {
@@ -39,6 +39,7 @@ test('reads a marked snapshot and reports foreign and uncertain records', async 
     const { options } = await setup(t), result = await readEdgeSnapshot(options);
     assert.equal(result.file.version, 3); assert.equal(result.otherSubscriptionCount, 1); assert.equal(result.unclassifiedRecordCount, 1);
     assert.equal(result.otherNotificationsPossible, true); assert(!JSON.stringify(result).includes('other.example'));
+    assert.deepEqual(await inspectEdgeSnapshot(options), { hasXSubscription: true });
 });
 test('rejects an invalid marker or unexpected store files before opening LevelDB', async t => {
     const { options, directory } = await setup(t); let opens = 0;
@@ -66,6 +67,8 @@ test('local reader returns selected X settings and safe errors over standard str
     const bad = run(JSON.stringify({ ...input, expected: { ...input.expected, auth: 'private-sentinel' } }));
     assert.notEqual(bad.status, 0); assert.deepEqual(JSON.parse(bad.stdout), { ok: false, errorCode: 'X_EDGE_READER_INPUT_INVALID' });
     assert(!bad.stdout.includes('private-sentinel')); assert.equal(bad.stderr, '');
+    const presence = run(JSON.stringify({ mode: 'inspect', snapshotPath: input.snapshotPath, token: input.token }));
+    assert.equal(presence.status, 0, presence.stderr); assert.deepEqual(JSON.parse(presence.stdout), { ok: true, hasXSubscription: true });
 });
 test('bundled Edge reader works without a locally installed dependency', { skip: process.platform !== 'win32' }, async t => {
     const { options } = await setup(t), root = path.dirname(options.snapshotPath);

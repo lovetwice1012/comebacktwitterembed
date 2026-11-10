@@ -6,8 +6,10 @@ async function main() {
     try {
         for await (const chunk of process.stdin) { length += chunk.length; if (length > 8192) throw new Error(); chunks.push(chunk); }
         combined = Buffer.concat(chunks); const input = parseUniqueJson(combined.toString('utf8'));
-        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).sort().join(',') !== 'edgePath,profilePath') throw new Error();
-        const broker = await startChromeBroker({ chromePath: input.edgePath, profilePath: input.profilePath, browserMode: 'edge', includeApplicationServerKey: true });
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).sort().join(',') !== 'edgePath,profilePath,suppressReceive'
+            || typeof input.suppressReceive !== 'boolean') throw new Error();
+        const broker = await startChromeBroker({ chromePath: input.edgePath, profilePath: input.profilePath, browserMode: 'edge', includeApplicationServerKey: true,
+            suppressReceive: input.suppressReceive });
         process.stdout.write(JSON.stringify({ ok: true, port: broker.port, token: broker.token, pid: broker.pid, browserPid: broker.browserPid, engineVersion: broker.engineVersion }) + '\n');
     } finally { combined?.fill(0); for (const chunk of chunks) chunk.fill(0); }
 }
