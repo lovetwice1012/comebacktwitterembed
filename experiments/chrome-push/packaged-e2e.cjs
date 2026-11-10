@@ -314,6 +314,31 @@ async function main() {
                     }
                     if (jobs !== 1) throw new Error('FIXTURE_RUNTIME_ROUTE_FAILED');
                     console.log(JSON.stringify({ registeredChromeRuntimeRouted: true, queuedJobs: jobs, isolatedDatabase: true, realFcm: true }));
+                    if (process.env.CHROME_FIXTURE_DELIVERY === '1') {
+                        const { createTransport } = require('../../src/automation/transport');
+                        const { createRunner } = require('../../src/automation/runtime');
+                        const { DeliveryGateError } = require('../../src/automation/delivery-gate');
+                        const delivered = [], channelId = '444444444444444444', messageId = '555555555555555555';
+                        const transport = createTransport(testDb, {}, { options: { jsonTransformer: value => value } }, {
+                            clock: () => clock, safety: { assertNotification: async () => {} },
+                            rest: { post: async (route, args) => {
+                                if (route === '/users/@me/channels') return { id: channelId, recipients: [{ id: actor.userId }] };
+                                if (route !== `/channels/${channelId}/messages`) throw new Error('FIXTURE_DELIVERY_ROUTE_INVALID');
+                                delivered.push(args.body); return { id: messageId, channel_id: channelId };
+                            } },
+                            beforeSubmit: async job => {
+                                const current = await queue.check(job, clock);
+                                if (current.state !== 'ready') throw new DeliveryGateError(current.state, current.code, current.dueAtMs);
+                            },
+                        });
+                        const runner = createRunner(testDb, queue, transport, { clock: () => clock, assertAllowed() {}, notificationAllowed: () => true,
+                            sleep: async ms => { clock += ms; } });
+                        const sent = await runner.tick();
+                        if (sent.state !== 'sent' || delivered.length !== 1 || !delivered[0].content?.includes('https://x.com/synthetic/status/1234567890123456789')
+                            || delivered[0].allowed_mentions?.parse?.length !== 0 || delivered[0].enforce_nonce !== true) throw new Error('FIXTURE_DELIVERY_FAILED');
+                        if ((await runner.tick()).state !== 'idle' || delivered.length !== 1) throw new Error('FIXTURE_DELIVERY_DUPLICATED');
+                        console.log(JSON.stringify({ mockDiscordDmDelivered: true, actualDiscordRequests: 0, duplicateDelivery: false }));
+                    }
                     if (process.env.CHROME_FIXTURE_REOPEN === '1') {
                         // The dedicated profile alone is reopened. Export closes
                         // it again, after which the same imported receiver must
