@@ -52,6 +52,23 @@ test('dormant capacity settings stay visible but make no extra requests until op
     } finally { await f.close(); }
 });
 
+test('archived plans stay hidden in both plan and capacity sections until explicitly requested', async () => {
+    const plans = [plan('free'), plan('supporter'), plan('basic'), plan('old_plus', { label: '旧プラス', enabled: false })];
+    const f = await fixture({ plans, integrated: true, respond: async (route, method) => {
+        if (route === 'plans' && method === 'GET') return { items: plans, legacyDonorCutover: true };
+        if (route === 'push-capacity/plans/old_plus') return paidPolicy({ planId: 'old_plus', label: '旧プラス', planEnabled: false });
+    } });
+    try {
+        assert.equal(f.container.querySelector('[aria-label="旧プラスの通知設定"]'), null);
+        assert.equal(f.container.querySelector('[aria-label="旧プラスの自動展開特殊枠"]'), null);
+        assert.equal(f.calls.some(call => call.route === 'push-capacity/plans/old_plus'), false);
+        await f.click('停止中のプランを表示'); await f.settle();
+        assert(f.container.querySelector('[aria-label="旧プラスの通知設定"]'));
+        assert(f.container.querySelector('[aria-label="旧プラスの自動展開特殊枠"]'));
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
 test('shared free50/supporter100 values come from the server, use X-account units, and keep rollout separate from plan settings', async () => {
     const f = await fixture();
     try {
