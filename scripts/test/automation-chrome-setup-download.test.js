@@ -46,6 +46,14 @@ test('Windows release rebuild matches the pinned Chrome download', { skip: proce
     const built = await require('../build-chrome-setup-package.cjs').buildArchive();
     assert.equal(built.version, meta.version); assert.equal(built.sha256, meta.sha256); assert.equal(built.archive.length, meta.bytes);
 });
+test('production file tracing includes the pinned Chrome download', () => {
+    const meta = load('dashboard/lib/x-chrome-setup-download.ts', { 'server-only': {}, 'node:crypto': { createHash },
+        'node:fs/promises': {}, 'node:path': path, '@/lib/env': { repoRoot: () => root } }).X_CHROME_SETUP_DOWNLOAD;
+    const config = load('dashboard/next.config.ts', { 'node:path': path },
+        { process: { env: {}, cwd: () => path.join(root, 'dashboard') } }).default;
+    const entries = config.outputFileTracingIncludes['/api/automation/x-setup/download-chrome'];
+    assert(entries.includes(`../artifacts/angelic-setup/${meta.filename}`));
+});
 test('Chrome download authenticates first, respects rollout flag and returns private headers', async () => {
     class ApiError extends Error { constructor(status) { super(); this.status = status; } }
     let loggedIn = false, reads = 0;
