@@ -14,6 +14,11 @@ const SCRIPTS = Object.freeze({
     keychain: `display dialog "通知情報を読むため、ChromeのKeychainへのアクセスを許可してください。\nこの鍵は普段のChromeとも共有され、他の情報の読み取りにも使えます。このツールでは通知情報の読み取りにだけ使います。" with title "Keychainへのアクセス" buttons {"やめる", "許可して進む"} default button "許可して進む" cancel button "やめる"\nreturn "yes"`,
     other: `display dialog "X以外の通知も含まれています。\nX以外の通知もサーバーに届くため取得可能ですが、現在は保存・利用せず破棄します。内容を確認し、このままファイルを作成しますか？" with title "ほかの通知について" buttons {"やめる", "確認して進む"} default button "確認して進む" cancel button "やめる"\nreturn "yes"`,
     destination: `set chosenFile to choose file name with prompt "登録用ファイルの保存先を選んでください。" default name "X通知の登録ファイル.json"\nreturn POSIX path of chosenFile`,
+    saved: `display dialog "登録用ファイルを保存しました。\n登録画面を開き、保存したファイルを選んでください。" with title "保存しました" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
+    failed: `display dialog "準備を完了できませんでした。もう一度お試しください。改善しない場合はサポートにご相談ください。" with title "準備を確認" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
+    browserMissing: `display dialog "Chromeを確認できませんでした。Chromeをインストールまたは更新してから、もう一度お試しください。" with title "Chromeを確認" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
+    busy: `display dialog "専用Chromeまたは準備ツールが使用中です。終了してから、もう一度お試しください。" with title "使用中です" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
+    recovery: `display dialog "保存済みの設定を確認できませんでした。既存の設定を削除せずに、サポートにご相談ください。" with title "保存済みの設定を確認" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
 });
 
 function createMacChromeDialogs() {
@@ -33,6 +38,13 @@ function createMacChromeDialogs() {
         confirmNotifications: () => yes(SCRIPTS.notifications),
         retryCapture: () => yes(SCRIPTS.retry),
         confirmKeychain: () => yes(SCRIPTS.keychain),
+        async showSaved() { await show(SCRIPTS.saved); },
+        async showError(code) {
+            const script = code === 'X_CHROME_MAC_BROWSER_INVALID' ? SCRIPTS.browserMissing
+                : ['X_CHROME_MAC_BROKER_BUSY', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_REGISTRY_BUSY'].includes(code) ? SCRIPTS.busy
+                    : ['X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED', 'X_CHROME_MAC_PROFILE_INVALID'].includes(code) ? SCRIPTS.recovery : SCRIPTS.failed;
+            await show(script);
+        },
         async confirmSave({ otherSubscriptionCount }) {
             if (!Number.isInteger(otherSubscriptionCount) || otherSubscriptionCount < 0 || otherSubscriptionCount > 63)
                 throw fail('X_CHROME_MAC_DIALOG_FAILED');
