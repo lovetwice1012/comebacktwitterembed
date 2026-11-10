@@ -7,6 +7,7 @@ const os = require('node:os');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { createPrivateKey, createPublicKey } = require('node:crypto');
+const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
@@ -56,6 +57,7 @@ async function main() {
             await fs.writeFile(path.join(profile, 'Default', 'Preferences'), JSON.stringify({ brave: { gcm: { channel_status: true } } }));
         }
         const vapid = webpush.generateVAPIDKeys();
+        webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
         server = http.createServer((req, res) => {
             if (req.url === '/sw.js') { res.writeHead(200, { 'content-type': 'application/javascript' }); res.end("self.addEventListener('push',e=>e.waitUntil(self.registration.showNotification('fixture'))) "); }
             else { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<script>window.key=${JSON.stringify(vapid.publicKey)}</script>`); }
@@ -139,15 +141,28 @@ async function main() {
                         const marker = (data, expected) => typeof expected === 'string' && expected.length > 0 && data.includes(Buffer.from(expected));
                         const containsKey = encoded => typeof encoded === 'string' && encoded.length > 0 && value.includes(Buffer.from(encoded, 'base64url'));
                         const keyMarker = containsKey(syntheticSubscription?.keys?.p256dh), authMarker = containsKey(syntheticSubscription?.keys?.auth);
-                        let privatePublic = null;
+                        let privatePublic = null, fixtureDecrypts = false, otherDecrypts = false, crossSiteRejected = false;
                         if ((keyMarker && authMarker) || (containsKey(otherSubscription?.keys?.p256dh) && containsKey(otherSubscription?.keys?.auth))) {
                             try {
-                                const fields = protobufBytes(value, 7);
-                                if (fields.length === 1) {
-                                    const key = createPrivateKey({ key: fields[0], format: 'der', type: 'pkcs8' });
+                                const fields = protobufBytes(value, 7), authFields = protobufBytes(value, 6);
+                                if (fields.length === 1 && authFields.length === 1) {
+                                    const key = createPrivateKey({ key: fields[0], format: 'der', type: 'pkcs8' }), privateJwk = key.export({ format: 'jwk' });
                                     const jwk = createPublicKey(key).export({ format: 'jwk' });
                                     const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
                                     privatePublic = point.toString('base64url');
+                                    const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                                    const testDecrypt = subscription => {
+                                        if (!subscription) return false;
+                                        const expected = Buffer.from('synthetic-edge-decryption-check');
+                                        const request = webpush.generateRequestDetails(subscription, expected, { TTL: 60, contentEncoding: 'aes128gcm' });
+                                        try {
+                                            const decoded = decryptEce(request.body, { encoding: 'aes128gcm' }, { public_key: [...point],
+                                                private_key: [...Buffer.from(privateJwk.d, 'base64url')], auth_secret: [...authFields[0]] });
+                                            return decoded.equals(expected);
+                                        } catch { return false; }
+                                    };
+                                    fixtureDecrypts = testDecrypt(syntheticSubscription); otherDecrypts = testDecrypt(otherSubscription);
+                                    crossSiteRejected = Boolean(otherSubscription && fixtureDecrypts !== otherDecrypts);
                                 }
                             } catch { /* This Edge version may use another representation. */ }
                         }
@@ -155,9 +170,11 @@ async function main() {
                             fixtureOriginInKey: marker(key, origin), fixtureOriginInValue: marker(value, origin),
                             fixtureEndpointInValue: marker(value, syntheticSubscription?.endpoint), fixturePublicKeyInValue: keyMarker, fixtureAuthInValue: authMarker,
                             fixturePrivateKeyMatches: Boolean(privatePublic && privatePublic === syntheticSubscription?.keys?.p256dh),
+                            fixtureDecrypts, crossSiteRejected,
                             otherOriginInValue: marker(value, otherOrigin), otherEndpointInValue: marker(value, otherSubscription?.endpoint),
                             otherPublicKeyInValue: containsKey(otherSubscription?.keys?.p256dh), otherAuthInValue: containsKey(otherSubscription?.keys?.auth),
                             otherPrivateKeyMatches: Boolean(privatePublic && privatePublic === otherSubscription?.keys?.p256dh),
+                            otherDecrypts,
                             osCryptV10: value.subarray(0, 3).toString('ascii') === 'v10', osCryptV20: value.subarray(0, 3).toString('ascii') === 'v20' });
                     }
                     stores.push({ name, records });
