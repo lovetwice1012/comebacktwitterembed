@@ -8,7 +8,7 @@ const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const { rewriteSyntheticChallenge } = require('./edge-fixture-challenge.cjs');
 const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const { syntheticRecipientMatches } = require('./edge-fixture-routing.cjs');
-const { createFrameDecoder } = require('../../src/automation/edge-wns-framing');
+const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { parseNotification, createAcknowledgement } = require('../../src/automation/edge-wns-notification');
 const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
 const wnsProtocol = require('../../src/automation/edge-wns-protocol');
@@ -158,29 +158,20 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
     const nonce = wnsProtocol.createNonce();
     const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
-    const prelude = generated || (generatedPrelude ? syntheticPrelude() : null), socket = connect();
-    const decoder = createFrameDecoder();
-    let waiting = null, failure = null, closed = false; const queue = [];
-    const abort = code => { if (failure) return; failure = fail(code); if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.reject(failure); } };
-    socket.on('error', () => abort('PROBE_DIRECT_SOCKET_FAILED'));
-    socket.on('close', () => { closed = true; abort('PROBE_DIRECT_SOCKET_CLOSED'); });
-    socket.on('data', chunk => {
-        try {
-            const frames = decoder.push(chunk);
-            if (queue.length + frames.length > 16) { for (const frame of frames) frame.fill(0); throw fail('PROBE_DIRECT_FRAME_INVALID'); }
-            for (const frame of frames) {
-                queue.push(frame);
-                if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.resolve(queue.shift()); }
-            }
-        } catch { abort('PROBE_DIRECT_FRAME_INVALID'); socket.destroy(); }
-    });
-    function next(waitMs = timeoutMs) {
-        if (failure) return Promise.reject(failure);
-        if (queue.length) return Promise.resolve(queue.shift());
-        return new Promise((resolve, reject) => { const timer = setTimeout(() => { waiting = null; reject(fail('PROBE_DIRECT_TIMEOUT')); }, waitMs); waiting = { resolve, reject, timer }; });
+    const prelude = generated || (generatedPrelude ? syntheticPrelude() : null);
+    const transport = createEdgeWnsTransport({ socketFactory: connect, timeoutMs });
+    async function next(waitMs = timeoutMs) {
+        try { return await transport.next(waitMs); }
+        catch (error) {
+            throw fail(error?.code === 'X_EDGE_WNS_RECEIVE_TIMEOUT' ? 'PROBE_DIRECT_TIMEOUT'
+                : error?.code === 'X_EDGE_WNS_SOCKET_CLOSED' ? 'PROBE_DIRECT_SOCKET_CLOSED' : 'PROBE_DIRECT_SOCKET_FAILED');
+        }
+    }
+    async function send(frame) {
+        try { await transport.send(frame); } catch { throw fail('PROBE_DIRECT_WRITE_FAILED'); }
     }
     async function exchange(frame, verb, destination = 'CON') {
-        await new Promise((resolve, reject) => socket.write(frame, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve()));
+        await send(frame);
         const response = await next();
         try {
             const end = response.indexOf('\r\n'), parts = response.subarray(0, end).toString('ascii').split(' ');
@@ -213,11 +204,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
         } finally { response.fill(0); }
     }
     try {
-        await new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { socket.destroy(); reject(fail('PROBE_DIRECT_TIMEOUT')); }, timeoutMs);
-            socket.once('secureConnect', () => { clearTimeout(timer); resolve(); });
-            socket.once('error', () => { clearTimeout(timer); reject(fail('PROBE_DIRECT_SOCKET_FAILED')); });
-        });
+        try { await transport.connect(); } catch { throw fail('PROBE_DIRECT_SOCKET_FAILED'); }
         await exchange(prelude?.cnt || frames.cnt, 'CNT'); await exchange(prelude?.ath || frames.ath, 'ATH');
         const response = await exchange(bind, 'BND');
         const result = { cntResponse: true, athResponse: true, bindResponse: true,
@@ -268,7 +255,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                         try { if (!ciphertext?.equals(expectedOther)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID'); }
                         finally { ciphertext?.fill(0); }
                         const acknowledgement = createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++);
-                        try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
+                        try { await send(acknowledgement); }
                         finally { acknowledgement.fill(0); }
                         Object.assign(result, { otherReceived: true, otherCipherMatched: true, otherDiscardedBeforeDecrypt: true, otherAckWritten: true });
                     } finally { other.fill(0); }
@@ -294,7 +281,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                         if ((!ackAndFollowup && !ackSingle) || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
                         const acknowledgement = parsed ? createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++)
                             : syntheticNotificationAck(notification, acknowledgementSequence++);
-                        try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
+                        try { await send(acknowledgement); }
                         finally { acknowledgement.fill(0); }
                         if (ackSingle) {
                             if (ackSettleMs) await new Promise(resolve => setTimeout(resolve, ackSettleMs));
@@ -320,13 +307,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
         }
         return result;
     } finally {
-        if (!closed) {
-            let timer;
-            const done = new Promise(resolve => { socket.once('close', resolve); timer = setTimeout(resolve, 2000); });
-            socket.destroy(); await done; clearTimeout(timer);
-        }
-        try { decoder.finish(); } catch { /* An aborted connection can end mid-frame; clear its buffered bytes. */ }
-        for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
+        transport.close(); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
     }
 }
 module.exports = { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticPrelude, syntheticClientMetadata, syntheticHandshake, independentSyntheticReconnect };
