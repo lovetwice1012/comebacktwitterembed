@@ -15,6 +15,7 @@ const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
 const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
+const { workerSource, acceptedCase } = require('./edge-fixture-notification.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -69,9 +70,12 @@ n=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'127.0.0.1')])
 c=x509.CertificateBuilder().subject_name(n).issuer_name(n).public_key(k.public_key()).serial_number(x509.random_serial_number()).not_valid_before(datetime.now(timezone.utc)-timedelta(days=1)).not_valid_after(datetime.now(timezone.utc)+timedelta(days=1)).add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]),critical=False).sign(k,hashes.SHA256())
 print(json.dumps({'key':k.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.TraditionalOpenSSL,serialization.NoEncryption()).decode(),'cert':c.public_bytes(serialization.Encoding.PEM).decode()}))`;
 async function main() {
+    const featureArgs = process.env.EDGE_PROBE_SYSTEM_DEFAULT === '1' ? [] : ['--disable-features=msPushWinrt'];
+    const noRelay = process.env.EDGE_PROBE_NO_RELAY === '1';
+    if (noRelay && featureArgs.length) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
-    const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0 };
+    const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
@@ -343,14 +347,15 @@ async function main() {
         await new Promise(resolve => relay.listen(0, '127.0.0.1', resolve));
         const vapid = webpush.generateVAPIDKeys(); webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
         pageServer = http.createServer((req, res) => {
-            if (req.url === '/sw.js') { res.writeHead(200, { 'content-type': 'application/javascript' }); res.end("self.addEventListener('push',e=>{const text=e.data?.text();const kind=text==='synthetic-wns-probe'?'initial':text==='synthetic-after-browser-exit'?'second':text==='synthetic-after-node-ack'?'third':text==='synthetic-after-reconnect'?'fourth':'unknown';e.waitUntil(Promise.all([fetch('/seen?case='+kind,{method:'POST'}),self.registration.showNotification('fixture')]))}) "); }
-            else if (/^\/seen\?case=(initial|second|third|fourth)$/.test(req.url || '') && req.method === 'POST') { const kind = req.url.slice('/seen?case='.length); browserEvents[kind]++; browserReceived = true; res.writeHead(204); res.end(); }
+            if (req.url === '/sw.js') { res.writeHead(200, { 'content-type': 'application/javascript' }); res.end(workerSource); }
+            else if (acceptedCase(req.url, req.method)) { const kind = acceptedCase(req.url, req.method); browserEvents[kind]++; browserReceived = true; res.writeHead(204); res.end(); }
             else { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<script>window.key=${JSON.stringify(vapid.publicKey)}</script>`); }
         });
         await new Promise(resolve => pageServer.listen(0, '127.0.0.1', resolve));
         const origin = `http://127.0.0.1:${pageServer.address().port}`, profile = path.join(root, 'profile');
-        browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--disable-features=msPushWinrt',
-            '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
+        const endpointArgs = noRelay ? [] : ['--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`];
+        browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
+            ...endpointArgs,
             '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
         let port;
         for (let i = 0; i < 120 && !port; i++) {
@@ -425,8 +430,8 @@ async function main() {
             if (process.env.EDGE_PROBE_ACK_RECONNECT === '1' && laterNotificationReceived) {
                 initial.closeFixtureConnection();
                 await fs.rm(path.join(profile, 'DevToolsActivePort'), { force: true });
-                browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--disable-features=msPushWinrt',
-                    '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
+                browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
+                    ...endpointArgs,
                     '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
                 let reopenedPort;
                 for (let i = 0; i < 120 && !reopenedPort; i++) {
@@ -510,8 +515,8 @@ async function main() {
                 }
             } else if (copyProfile) await fs.cp(profile, reopenProfile, { recursive: true, errorOnExist: true, force: false });
             if (copyProfile) await fs.rm(path.join(reopenProfile, 'DevToolsActivePort'), { force: true });
-            browser = spawn(edge, ['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, '--disable-features=msPushWinrt',
-                '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
+            browser = spawn(edge, ['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, ...featureArgs,
+                ...endpointArgs,
                 '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
             const originalCount = events.length;
             for (let i = 0; i < 120 && events.length <= originalCount; i++) await wait(100);
@@ -543,7 +548,10 @@ async function main() {
         const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
-        console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
+        const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
+            if (error.code === 'ENOENT') return false; throw error;
+        });
+        console.log(JSON.stringify({ syntheticProfile: true, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
