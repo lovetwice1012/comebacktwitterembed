@@ -3,17 +3,22 @@
 // Experimental local-only calibration for an isolated Edge profile. The
 // caller creates a protected empty calibration directory and ephemeral TLS
 // identity; this module neither opens a user's profile nor saves a transfer.
-const { verifyInstalledEdge } = require('./edge-mac-broker');
+const { readVerifiedMacEdgeVersion } = require('./edge-mac-browser-version');
 const { createMacEdgePeerVerifier } = require('./edge-mac-peer');
 const { runEdgeCalibration } = require('./edge-calibration-runner');
 const { withMacEdgeEphemeralCertificate } = require('./edge-mac-ephemeral-certificate');
 
 async function runMacEdgeCalibration({ rootPath, token, pfx, passphrase, certificate,
     identityPath, identitySha256, peerPath, peerSha256, signal }) {
-    const edgePath = await verifyInstalledEdge();
+    const browser = await readVerifiedMacEdgeVersion();
     const verifier = createMacEdgePeerVerifier({ identityPath, identitySha256, peerPath, peerSha256 });
-    return runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, signal, platform: 'macos',
+    const result = await runEdgeCalibration({ rootPath, token, edgePath: browser.executable, pfx, passphrase, certificate, signal, platform: 'macos',
         captureIdentity: verifier.captureIdentity, authorizePeer: verifier.authorizePeer });
+    const after = await readVerifiedMacEdgeVersion();
+    if (result.browserVersion !== browser.browserVersion || after.browserVersion !== browser.browserVersion
+        || after.executable !== browser.executable)
+        throw Object.assign(new Error('X_EDGE_CALIBRATION_BROWSER_CHANGED'), { code: 'X_EDGE_CALIBRATION_BROWSER_CHANGED' });
+    return result;
 }
 async function runMacEdgeCalibrationWithEphemeralCertificate(options) {
     return withMacEdgeEphemeralCertificate(material => runMacEdgeCalibration({ ...options, ...material }));
