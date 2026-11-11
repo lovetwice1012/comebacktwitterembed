@@ -188,6 +188,15 @@ async function main() {
             }
             if (!rewriteKey) throw new Error('PROBE_SUBSCRIPTION_FAILED');
             await db.put(rewriteKey, rewriteValue);
+            // Simulate another origin and an unclassified record only in the
+            // disposable copy, to exercise the exporter's consent gate.
+            const field = (number, value) => {
+                const bytes = Buffer.from(value);
+                if (bytes.length >= 128) throw new Error('PROBE_FIXTURE_INVALID');
+                return Buffer.concat([Buffer.from([number * 8 + 2, bytes.length]), bytes]);
+            };
+            await db.put(Buffer.from('fixture-other-site'), field(8, Buffer.concat([field(1, 'origin'), field(2, 'https://other.example/')])));
+            await db.put(Buffer.from('fixture-unknown-record'), Buffer.from([8, 1]));
         } finally { rewriteKey?.fill(0); rewriteValue?.fill(0); await db.close().catch(() => {}); }
         const observed = { endpoint: captured.endpoint, publicKey: Buffer.from(captured.keys.p256dh, 'base64url'), auth: Buffer.from(captured.keys.auth, 'base64url'),
             applicationServerKey: Buffer.from(captured.applicationServerKey, 'base64url') };
@@ -199,6 +208,8 @@ async function main() {
                     clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
+        if (result.otherSubscriptionCount < 1 || result.unclassifiedRecordCount < 1 || result.otherNotificationsPossible !== true)
+            throw new Error('PROBE_OTHER_SITE_FAILED');
         // The copied fixture store contains a test-only origin rewrite. Use a
         // second dedicated profile so the packaged exporter can make its own
         // snapshot without altering the live fixture browser's subscription.
@@ -220,15 +231,36 @@ async function main() {
             + `$script:Root=$env:CBTE_EDGE_EXPORT_ROOT; $script:Profile=[IO.Path]::Combine($script:Root,'edge-profile'); `
             + `. '${packageExport}'; $inputData=[Console]::In.ReadToEnd()|ConvertFrom-Json; `
             + `Export-XEdgeTransfer -Capture $inputData.capture -Agent $inputData.agent -Client $inputData.client `
-            + `-BrowserVersion $inputData.browserVersion -OutputPath $env:CBTE_EDGE_EXPORT_FILE -AllowOtherNotifications`;
+            + `-BrowserVersion $inputData.browserVersion -OutputPath $env:CBTE_EDGE_EXPORT_FILE`;
         const exportInput = JSON.stringify({ capture: { ...captured, scope: 'https://x.com/' },
             agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
             client: calibrationMetadata || { channel: process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || 'abc',
                 protocolVersion: process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
             browserVersion: browserProduct.split('/')[1] });
-        const packaged = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
-            Buffer.from(exportCommand, 'utf16le').toString('base64')], { input: exportInput, encoding: 'utf8', windowsHide: true, timeout: 45000,
+        const invokeExport = command => require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+            Buffer.from(command, 'utf16le').toString('base64')], { input: exportInput, encoding: 'utf8', windowsHide: true, timeout: 45000,
             env: { ...process.env, CBTE_EDGE_EXPORT_ROOT: exportRoot, CBTE_EDGE_EXPORT_FILE: outputPath } });
+        const otherKey = Buffer.from('fixture-other-site'), unknownKey = Buffer.from('fixture-unknown-record');
+        const openExportStore = () => new ClassicLevel(exportStore, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+        let exportDb = openExportStore(), otherRecord, unknownRecord;
+        try { otherRecord = await exportDb.get(otherKey); unknownRecord = await exportDb.get(unknownKey); }
+        finally { await exportDb.close(); }
+        try {
+            for (const scenario of ['other', 'unknown', 'both']) {
+                exportDb = openExportStore();
+                try {
+                    await exportDb.batch([
+                        scenario === 'unknown' ? { type: 'del', key: otherKey } : { type: 'put', key: otherKey, value: otherRecord },
+                        scenario === 'other' ? { type: 'del', key: unknownKey } : { type: 'put', key: unknownKey, value: unknownRecord },
+                    ]);
+                } finally { await exportDb.close(); }
+                const refused = invokeExport(exportCommand);
+                if (refused.status === 0 || !refused.stderr.includes('X_EDGE_OTHER_CONSENT_REQUIRED')) throw new Error('PROBE_CONSENT_FAILED');
+                try { await fs.lstat(outputPath); throw new Error('PROBE_CONSENT_FAILED'); }
+                catch (error) { if (error?.code !== 'ENOENT') throw error; }
+            }
+        } finally { otherRecord?.fill(0); unknownRecord?.fill(0); }
+        const packaged = invokeExport(exportCommand + ' -AllowOtherNotifications');
         if (packaged.status !== 0) throw new Error('PROBE_PACKAGE_EXPORT_FAILED');
         let exported;
         try { exported = JSON.parse(await fs.readFile(outputPath, 'utf8')); } catch { throw new Error('PROBE_PACKAGE_EXPORT_FAILED'); }
@@ -359,7 +391,7 @@ async function main() {
         }
         for (const field of Object.values(cryptoKeys)) field.fill(0);
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
-            snapshotSelected: true, packagedExport: true, packagedSnapshotCleaned: true, ownerBoundVault: true, fixtureDecrypted: true,
+            snapshotSelected: true, packagedExport: true, packagedSnapshotCleaned: true, otherSiteConsentRequired: true, ownerBoundVault: true, fixtureDecrypted: true,
             databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));

@@ -38,7 +38,7 @@ try {
     if ($job.ExitCode -ne 0) { throw 'SYNTHETIC_PROBE_FAILED' }
     $result = ConvertFrom-Json -InputObject $text
     if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true -or
-        $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+        $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true -or $result.otherSiteConsentRequired -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     Write-Output $text
 } finally {
     try { $job.Stop() } finally { $job.Dispose() }
