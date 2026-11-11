@@ -14,6 +14,7 @@ const { ClassicLevel } = require('classic-level');
 const { startChromeBroker } = require('../../src/automation/edge-private-broker');
 const { captureFromBroker } = require('../../src/automation/edge-broker-client');
 const { rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
+const { assertSuppressedTakeover } = require('./edge-fixture-assertions.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -244,10 +245,13 @@ async function main() {
                         await wait(3000); const before = browserEvents;
                         await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-reopen' }), { TTL: 60 });
                         for (let i = 0; i < 100 && !events.some(item => item.payload?.text === 'synthetic-after-reopen') && browserEvents === before; i++) await wait(100);
+                        // Keep observing briefly after worker delivery for a delayed duplicate in Edge.
+                        if (blockWns) await wait(3000);
                         takeoverResult = { receivedBeforeReopen: true, wnsBlockedInReopenedBrowser: blockWns,
                             workerReceivedAfterReopen: events.some(item => item.payload?.text === 'synthetic-after-reopen'),
                             browserReceivedAfterReopen: browserEvents > before, workerStoppedDuringReopen: Boolean(outcome) };
                         controller.abort(); await running;
+                        if (blockWns) assertSuppressedTakeover(takeoverResult);
                         try {
                             const refreshed = await captureFromBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true });
                             takeoverResult.subscriptionRemainsSame = refreshed.endpoint === expected.endpoint && refreshed.keys.p256dh === expected.keys.p256dh
