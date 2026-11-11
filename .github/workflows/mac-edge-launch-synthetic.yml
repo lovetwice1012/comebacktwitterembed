@@ -1,0 +1,43 @@
+name: macOS Edge isolated launch validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-edge-launch-synthetic.yml
+      - src/automation/edge-mac-broker.js
+      - src/automation/edge-private-broker.js
+      - src/automation/edge-cdp-pipe.js
+      - src/automation/chrome-mac-profile*.js
+      - src/automation/chrome-mac-process-group.js
+      - scripts/native-test/edge-mac-broker-hosted.test.cjs
+      - scripts/test/edge-mac-broker.test.js
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install signed Edge in disposable runner
+        run: |
+          if [ ! -x '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge' ]; then
+            brew install --cask --no-quarantine microsoft-edge
+          fi
+      - name: Test dedicated Edge launch
+        env:
+          CBTE_MAC_EDGE_HOSTED: '1'
+        run: node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/test/edge-mac-broker.test.js

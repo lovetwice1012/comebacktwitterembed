@@ -24,7 +24,7 @@ async function verifyInstalledEdge() {
         if (!bundle.isDirectory() || bundle.isSymbolicLink() || !binary.isFile() || binary.isSymbolicLink()
             || await fs.realpath(APP) !== APP || await fs.realpath(EXECUTABLE) !== EXECUTABLE) throw new Error();
         await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', REQUIREMENT, APP],
-            { timeout: 30000, maxBuffer: 16384, windowsHide: true });
+            { timeout: 120000, maxBuffer: 16384, windowsHide: true });
         return EXECUTABLE;
     } catch { throw fail('X_EDGE_MAC_BROWSER_INVALID'); }
 }
