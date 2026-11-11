@@ -26,7 +26,7 @@ function base64url(value, size) {
     if (result.length !== size || result.toString('base64url') !== value) throw INVALID();
     return result;
 }
-function normalizeChromeTransfer(file, { allowMac = true } = {}) {
+function normalizeChromeTransfer(file, { allowMac = true, allowBraveMac = false } = {}) {
     try {
         object(file, ['format', 'version', 'provenance', 'push']);
         if (file.format !== 'x-notification-subscription' || file.version !== 2) throw INVALID();
@@ -44,7 +44,7 @@ function normalizeChromeTransfer(file, { allowMac = true } = {}) {
         const push = file.push;
         decimal(push.deviceId); decimal(push.securityToken);
         if (typeof push.appId !== 'string' || !APP_ID.test(push.appId)
-            || !(isBrave ? push.productCategory === 'com.brave.windows'
+            || !(isBrave ? push.productCategory === 'com.brave.windows' || allowMac === true && allowBraveMac === true && push.productCategory === 'com.brave.macosx'
                 : push.productCategory === 'com.chrome.windows' || allowMac === true && push.productCategory === 'com.chrome.macosx') || push.scope !== 'https://x.com/'
             || typeof push.authorizedEntity !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(push.authorizedEntity)) throw INVALID();
         const publicKey = base64url(push.p256dhPublicKey, 65);

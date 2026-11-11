@@ -16,11 +16,11 @@ const nextConfig: NextConfig = {
     "/api/automation/x-setup/download-edge": [
       "../src/**/*.js",
       "../packages/angelic-angel/dist/**",
-      "../artifacts/angelic-setup/edge-setup-0.1.0-edge-preview.5.zip",
+      "../artifacts/angelic-setup/edge-setup-0.1.0-edge-preview.6.zip",
     ],
     "/api/automation/x-setup/download-chrome": [
       "../src/providers/_loader.js",
-      "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.5.zip",
+      "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.6.zip",
     ],
     "/api/automation/x-setup/download": [
       // repoRoot() uses this existing directory as its runtime layout marker.

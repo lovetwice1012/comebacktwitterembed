@@ -24,7 +24,7 @@ Chromeの接続情報は同一プロファイル内の通知を共用します�
 
 1. DBバックアップの取得と復元手順を確認し、既存Firefoxの受信設定・通知件数を記録する。
 2. 実行対象のDBとバックアップを確認し、サービスと同じDB接続設定を使用して `node scripts/migrate-chromium-schema.cjs --check` を実行する。問題がなければ `node scripts/migrate-chromium-schema.cjs --apply` を実行する。既存の受信設定を `firefox` として保持し、未確認の受信IDと端末確認の予定を保存する。既定の移行管理を使うため、SQLファイルを単独で繰り返し実行しない。この手順では未接続のEdge研究用トークンを将来保存するためのNULL許容列も追加するが、Edgeの受付・受信は有効にならない。
-3. 配布対象のZIP `artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.5.zip` をダッシュボードの配布物に含め、SHA-256とバイト数が `dashboard/lib/x-chrome-setup-download.ts` の値と一致することを確認する。preview.5の本番反映はまだ行っていない。
+3. 配布対象のZIP `artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.6.zip` をダッシュボードの配布物に含め、SHA-256とバイト数が `dashboard/lib/x-chrome-setup-download.ts` の値と一致することを確認する。preview.6の本番反映はまだ行っていない。
 4. Webと受信ワーカーの両方で `X_NOTIFICATION_CHROME_ENABLED=1` を設定する。Braveの受付は、すべてのWeb・受信ワーカーがBrave対応版へ更新されたことを確認してから、Web側で `X_NOTIFICATION_BRAVE_ENABLED=1` を設定する。既存の `X_NOTIFICATION_RECEIVER_ENABLED=1`、処理ポリシー、暗号鍵、fleet leaseも必要。支援者限定で公開する場合は `X_NOTIFICATION_ROLLOUT=supporters` を維持し、対象者以外の登録が拒否されることを確認する。
 5. 利用者自身が設定した実際のX通知で、登録画面、接続状態、投稿通知、Discord配信を確認する。接続確認だけで配送成功と判断しない。
 

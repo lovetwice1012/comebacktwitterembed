@@ -3,6 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
 const { buildChromeTransfer } = require('../../src/automation/chrome-snapshot-reader');
+const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
+const { normalizeChromeTransfer } = require('../../src/automation/chrome-x-transfer');
 function vint(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
 function field(n, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([vint(n * 8 + 2), vint(data.length), data]); }
 function fixture() {
@@ -31,6 +33,22 @@ test('Brave snapshot retains its real browser and Chromium engine versions separ
     assert.equal(result.file.provenance.engineVersion, '157.0.8103.39');
     assert.equal(result.file.push.productCategory, 'com.brave.windows');
     delete f.engineVersion; assert.throws(() => buildChromeTransfer(f), /X_CHROME_SNAPSHOT_INVALID/);
+});
+test('experimental Brave macOS candidate requires explicit local opt-in and stays rejected by server intake', () => {
+    const f = fixture(); f.preferences.gcm.product_category_for_subtypes = 'com.brave.macosx';
+    f.browserVersion = '157.1.99.55'; f.engineVersion = '157.0.8103.39';
+    assert.throws(() => buildChromeTransfer(f), /X_CHROME_SNAPSHOT_UNSUPPORTED/);
+    assert.throws(() => buildChromeTransfer({ ...f, allowMac: true }), /X_CHROME_SNAPSHOT_UNSUPPORTED/);
+    assert.throws(() => buildChromeTransfer({ ...f, allowMac: false, allowBraveMac: true }), /X_CHROME_SNAPSHOT_UNSUPPORTED/);
+    assert.throws(() => buildChromeTransfer({ ...f, allowMac: true, allowBraveMac: 'true' }), /X_CHROME_SNAPSHOT_UNSUPPORTED/);
+    const result = buildChromeTransfer({ ...f, allowMac: true, allowBraveMac: true });
+    assert.equal(result.file.provenance.kind, 'brave-gcm');
+    assert.equal(result.file.push.productCategory, 'com.brave.macosx');
+    assert.equal(result.otherSubscriptionCount, 1);
+    assert.throws(() => normalizeChromeTransfer(result.file), /X_CHROME_TRANSFER_INVALID/);
+    assert.throws(() => parseTransferFile(JSON.stringify(result.file)), error => error.code === 'X_SETUP_INVALID_FILE');
+    assert.deepEqual(normalizeChromeTransfer(result.file, { allowMac: true, allowBraveMac: true }), result.file);
+    assert.throws(() => normalizeChromeTransfer(result.file, { allowMac: false, allowBraveMac: true }), /X_CHROME_TRANSFER_INVALID/);
 });
 test('rejects ambiguous X subscriptions, mismatched keys and foreign endpoint or scope', () => {
     for (const mutate of [f => f.preferences.gcm.push_messaging_application_id_map['second'] = 'https://x.com/#456',

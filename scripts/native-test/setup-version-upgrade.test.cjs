@@ -27,7 +27,8 @@ test('new setup packages recognize profiles created by the previous releases', {
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip')),
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip')),
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip')),
-        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.5.zip'))];
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.5.zip')),
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.6.zip'))];
     const bundles = [];
     for (let i = 0; i < archives.length; i++) {
         const bundle = path.join(directory, `bundle-${i}`); await fs.mkdir(bundle); bundles.push(bundle);
@@ -57,6 +58,7 @@ test('new setup packages recognize profiles created by the previous releases', {
         assert.equal(invoke(path.join(bundles[4], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.equal(invoke(path.join(bundles[5], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.equal(invoke(path.join(bundles[6], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
+        assert.equal(invoke(path.join(bundles[7], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.deepEqual(await fs.readFile(path.join(owned, 'owner.json')), owner);
     }
 });
