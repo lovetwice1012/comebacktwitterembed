@@ -26,7 +26,7 @@ test('Edge reimport fences the old receiver and preserves the newer server token
         const sealer = createTransferPublicSealer({ activeKeyId: 'test', publicKeys: { test: keys.publicKey } });
         const vault = createTransferPrivateWorkerVault({ activeKeyId: 'test', privateKeys: { test: keys.privateKey } });
         const tokenVault = createWnsTokenWorkerVault({ activeKeyId: 'test', privateKeys: { test: keys.privateKey } });
-        const service = createXSetup(db, { sealer, rolloutMode: 'public', receiverEnabled: true, edgeEnabled: true }), file = fixture();
+        const service = createXSetup(db, { sealer, rolloutMode: 'public', receiverEnabled: true, edgeEnabled: true, edgeConnectV2Enabled: true }), file = fixture();
         const disabled = createXSetup(db, { sealer, rolloutMode: 'public', receiverEnabled: true, edgeEnabled: false });
         await assert.rejects(disabled.importFile(owner, await payload(disabled, owner, file)), { code: 'X_SETUP_EDGE_NOT_READY' });
         const body = await payload(service, owner, file), preview = await service.validate(owner, { sessionId: body.sessionId, fileText: body.fileText });
@@ -38,12 +38,12 @@ test('Edge reimport fences the old receiver and preserves the newer server token
         const lease = await store.claim({ ...identity, workerId: 'old-edge-worker' });
         await store.saveWnsTokenState(lease, { vault: tokenVault, authorize: async () => {}, token: Buffer.from('rotated-token'), expectedGeneration: 0 });
         await store.recordFrame(lease, { version: 'fixture', data: Buffer.from('cipher').toString('base64url'), headers: { encoding: 'aes128gcm' }, status: 'received', ackCode: 100 });
-        const fresh = structuredClone(file); fresh.push.reconnectToken = 'fresh-token'; fresh.push.client.clientVersion = '2.3.4.5';
+        const fresh = structuredClone(file); fresh.push.reconnectToken = 'fresh-token'; fresh.push.client.clientVersion = '2.3.4.5'; fresh.push.connectVersion = '2';
         const failingDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
             if (sql.startsWith("UPDATE automation_x_push_receivers SET state='awaiting'")) throw new Error('synthetic database failure');
             return query(sql, params);
         })) };
-        const failingService = createXSetup(failingDb, { sealer, rolloutMode: 'public', receiverEnabled: true, edgeEnabled: true });
+        const failingService = createXSetup(failingDb, { sealer, rolloutMode: 'public', receiverEnabled: true, edgeEnabled: true, edgeConnectV2Enabled: true });
         await assert.rejects(failingService.importFile(owner, await payload(failingService, owner, fresh)), /synthetic database failure/);
         await store.assertLease(lease);
         const prior = await store.readWnsTokenState(lease, { vault: tokenVault, authorize: async () => {} });

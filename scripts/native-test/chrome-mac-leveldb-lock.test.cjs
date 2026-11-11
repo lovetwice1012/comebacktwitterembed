@@ -367,7 +367,7 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
         assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
     };
     await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, experimental: false, confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_INVALID' });
-    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, connectVersion: '2', confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED' });
+    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, connectVersion: '3', confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED' });
     let invokedGetter = false;
     const hostile = { ...flow.subscription };
     Object.defineProperty(hostile, 'keys', { enumerable: true, get() { invokedGetter = true; throw new Error('private'); } });
@@ -384,6 +384,13 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
     assert.equal(saved.state, 'saved'); assert.equal(saved.uploaded, false); assert.equal(saved.encrypted, false);
     const savedFile = require('../../src/automation/x-setup-transfer').parseTransferFile(await fs.readFile(path.join(base, 'edge-notifications.json'), 'utf8'));
     assert.equal(savedFile.push.scope, 'https://x.com/'); assert.equal(savedFile.provenance.browserVersion, '157.0.0.1');
+    assert.equal(Object.hasOwn(savedFile.push, 'connectVersion'), false);
+    const v2 = await exportExperimentalMacEdgeNotifications({ ...flow, connectVersion: '2', confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: true, directory: base, filename: 'edge-v2.json' };
+    } });
+    assert.equal(v2.state, 'saved');
+    const v2File = require('../../src/automation/x-setup-transfer').parseTransferFile(await fs.readFile(path.join(base, 'edge-v2.json'), 'utf8'));
+    assert.equal(v2File.push.connectVersion, '2');
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
     await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {} }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
     assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));

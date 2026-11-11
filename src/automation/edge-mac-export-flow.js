@@ -19,9 +19,8 @@ async function exportExperimentalMacEdgeNotifications({ rootPath, profileId, hel
     browserVersion, connectVersion, agent, client, confirmSave, experimental, signal = undefined }) {
     if (experimental !== true || typeof confirmSave !== 'function' || signal !== undefined && !(signal instanceof AbortSignal))
         throw fail('X_EDGE_MAC_FLOW_INVALID');
-    // The current transferable format replays connect version 1. Never
-    // silently downgrade an observed version 2 handshake into that format.
-    if (connectVersion !== '1') throw fail('X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED');
+    // Preserve the observed version; never silently downgrade an unknown one.
+    if (!['1', '2'].includes(connectVersion)) throw fail('X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED');
     function check() { if (signal?.aborted) throw fail('X_EDGE_MAC_FLOW_CANCELLED'); }
     const allocated = [];
     function decode(value, size) {
@@ -42,6 +41,7 @@ async function exportExperimentalMacEdgeNotifications({ rootPath, profileId, hel
         data = await withMacEdgeSnapshot({ rootPath, profileId, helperPath, expectedSha256, work: async snapshot => {
             check(); if (snapshot.signal.aborted) throw fail('X_EDGE_MAC_FLOW_CANCELLED');
             const result = await readEdgeSnapshot({ ...snapshot, expected, browserVersion, agent, client,
+                ...(connectVersion === '2' ? { connectVersion: '2' } : {}),
                 dbFactory: directory => new ClassicLevel(directory, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
             check(); if (snapshot.signal.aborted) throw fail('X_EDGE_MAC_FLOW_CANCELLED');
             return result;

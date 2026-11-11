@@ -28,7 +28,9 @@ function normalizeEdgeTransfer(file) {
             || provenance.readMethod !== 'edge-wns-snapshot' || typeof provenance.browserVersion !== 'string'
             || !/^[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(provenance.browserVersion)) throw invalid();
         const p = file.push;
-        exact(p, ['scope', 'siteChannel', 'deviceKey', 'reconnectToken', 'agent', 'client', 'p256dhPublicKey', 'authenticationSecret', 'p256dhPrivateKey', 'applicationServerKey']);
+        const hasVersion = p && Object.hasOwn(p, 'connectVersion');
+        exact(p, ['scope', 'siteChannel', 'deviceKey', 'reconnectToken', 'agent', 'client', 'p256dhPublicKey', 'authenticationSecret', 'p256dhPrivateKey', 'applicationServerKey', ...(hasVersion ? ['connectVersion'] : [])]);
+        if (hasVersion && p.connectVersion !== '2') throw invalid();
         if (p.scope !== 'https://x.com/' || typeof p.siteChannel !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(p.siteChannel)
             || typeof p.reconnectToken !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(p.reconnectToken) || /[<>&]/.test(p.reconnectToken)) throw invalid();
         const device = take(p.deviceKey, 32), token = Buffer.from(p.reconnectToken, 'ascii'); allocated.push(token);
@@ -48,7 +50,8 @@ function normalizeEdgeTransfer(file) {
         return { format: file.format, version: 3, provenance: { ...provenance }, push: {
             scope: p.scope, siteChannel: p.siteChannel, deviceKey: p.deviceKey, reconnectToken: p.reconnectToken,
             agent: { ...p.agent }, client: { ...p.client }, p256dhPublicKey: p.p256dhPublicKey,
-            authenticationSecret: p.authenticationSecret, p256dhPrivateKey: { ...jwk }, applicationServerKey: p.applicationServerKey } };
+            authenticationSecret: p.authenticationSecret, p256dhPrivateKey: { ...jwk }, applicationServerKey: p.applicationServerKey,
+            ...(hasVersion ? { connectVersion: '2' } : {}) } };
     } catch { throw invalid(); } finally { packet?.fill(0); for (const item of allocated) item.fill(0); }
 }
 function identifyEdgeTransfer(file) {
@@ -57,7 +60,7 @@ function identifyEdgeTransfer(file) {
     // The browser rotates the WNS reconnect token and updates client metadata.
     // Those changes must not turn the same cryptographic subscription into a
     // different identity or block a safe owner-confirmed refresh.
-    const { reconnectToken: _token, agent: _agent, client: _client, ...stable } = push;
+    const { reconnectToken: _token, agent: _agent, client: _client, connectVersion: _connectVersion, ...stable } = push;
     return { deviceHash: hash(`edge-device\0${push.deviceKey}`), channelHash: hash(`edge-channel\0${push.deviceKey}\0${push.siteChannel}`),
         contentHash: hash(JSON.stringify(stable)) };
 }

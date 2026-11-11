@@ -378,7 +378,8 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
         const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
         const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
-            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', edgeEnabled, edgeTokenVault });
+            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', edgeEnabled,
+            edgeConnectV2Enabled: env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1', edgeTokenVault });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
             maxConnections, drainConcurrency,
             useLegacyUserInterval: env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',

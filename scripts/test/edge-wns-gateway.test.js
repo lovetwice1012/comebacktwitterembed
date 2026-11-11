@@ -11,7 +11,8 @@ function harness(overrides = {}) {
     const controller = new AbortController(), calls = [], received = [], savedToken = Buffer.from('previous-token'); let inbox;
     const queue = [envelope('CNT 1 CON', '<connect/>'), envelope('ATH 2 CON'),
         envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>rotated-token</reconnect-token></wns>'), envelope('PUT 4 WNS'), notification('other'), notification('target')];
-    const transport = { async connect() { calls.push('connect'); }, async send(bytes) { calls.push(`send:${bytes.subarray(0, bytes.indexOf(' ')).toString()}`); },
+    const frames = [];
+    const transport = { async connect() { calls.push('connect'); }, async send(bytes) { frames.push(Buffer.from(bytes)); calls.push(`send:${bytes.subarray(0, bytes.indexOf(' ')).toString()}`); },
         async next() { if (!queue.length) throw Object.assign(new Error('idle'), { code: 'X_EDGE_WNS_RECEIVE_TIMEOUT' }); return queue.shift(); }, close() { calls.push('close'); } };
     const store = { async readWnsTokenState(_lease, { authorize }) { await authorize(); calls.push('read-state'); return { generation: 2, token: savedToken }; },
         async saveWnsTokenState(_lease, { authorize, token, expectedGeneration }) { await authorize(); calls.push(`save:${expectedGeneration}`); assert.equal(token.toString(), 'rotated-token'); return { generation: expectedGeneration + 1 }; },
@@ -24,8 +25,17 @@ function harness(overrides = {}) {
         productId: Buffer.from('fedcba9876543210'), siteChannel: Buffer.from('target') };
     const options = { store, lease, vault: {}, authorize: async () => {}, credentials, signal: controller.signal,
         transportFactory: () => transport, onReady: async () => calls.push('ready'), onReceived: async value => { received.push(value); controller.abort(); }, ...overrides.options };
-    return { options, controller, calls, received, savedToken, queue };
+    return { options, controller, calls, received, savedToken, queue, frames };
 }
+test('gateway preserves version 2 and rejects unknown versions before connecting', async () => {
+    const h = harness(); h.options.credentials.connectVersion = '2';
+    try { assert.deepEqual(await runEdgeWnsGateway(h.options), { state: 'stopped' });
+        assert(h.frames[0].includes(Buffer.from('<connect><ver>2</ver>')));
+    } finally { h.frames.forEach(frame => frame.fill(0)); }
+    const invalid = harness(); invalid.options.credentials.connectVersion = '3';
+    await assert.rejects(runEdgeWnsGateway(invalid.options), { code: 'X_EDGE_WNS_GATEWAY_CONFIG_INVALID' });
+    assert(!invalid.calls.includes('connect'));
+});
 test('recovers encrypted token generation and routes only the owned receipt', async () => {
     const h = harness(); assert.deepEqual(await runEdgeWnsGateway(h.options), { state: 'stopped' });
     assert(h.savedToken.every(byte => byte === 0)); assert(h.calls.indexOf('save:2') < h.calls.indexOf('send:PUT'));

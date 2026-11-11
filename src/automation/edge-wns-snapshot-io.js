@@ -40,7 +40,7 @@ async function verifyLeveldb(directory) {
         if (stat.size > 64 * 1024 * 1024 || total > 128 * 1024 * 1024) throw invalid();
     }
 }
-async function readSnapshot({ snapshotPath, token, expected, browserVersion, agent, client, dbFactory, inspectOnly = false }) {
+async function readSnapshot({ snapshotPath, token, expected, browserVersion, agent, client, connectVersion, dbFactory, inspectOnly = false }) {
     let store; const records = [];
     try {
         if (typeof snapshotPath !== 'string' || !path.isAbsolute(snapshotPath) || typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)
@@ -61,7 +61,7 @@ async function readSnapshot({ snapshotPath, token, expected, browserVersion, age
                 records.push(Buffer.from(item[1]));
             } finally { if (Array.isArray(item) && Buffer.isBuffer(item[1])) item[1].fill(0); }
         }
-        return inspectOnly ? { hasXSubscription: hasXSiteRecord(records) } : await buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client });
+        return inspectOnly ? { hasXSubscription: hasXSiteRecord(records) } : await buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client, connectVersion });
     } catch { throw invalid(); }
     finally { for (const record of records) record.fill(0); if (store) await store.close().catch(() => {}); }
 }

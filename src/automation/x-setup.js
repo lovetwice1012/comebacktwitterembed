@@ -69,6 +69,7 @@ function createXSetup(db, options = {}) {
     // process understands its browser kind and transfer metadata.
     const braveEnabled = chromeEnabled && (options.braveEnabled === undefined ? process.env.X_NOTIFICATION_BRAVE_ENABLED === '1' : options.braveEnabled === true);
     const edgeEnabled = options.edgeEnabled === undefined ? process.env.X_NOTIFICATION_EDGE_ENABLED === '1' : options.edgeEnabled === true;
+    const edgeConnectV2Enabled = options.edgeConnectV2Enabled === undefined ? process.env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1' : options.edgeConnectV2Enabled === true;
     async function subscriptionRows(query, owner, filter = {}) {
         return query(`SELECT s.id,s.revision,s.browser_kind,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,r.reason_code,r.retry_at_ms,r.subscription_revision,
             EXISTS (SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
@@ -138,6 +139,7 @@ function createXSetup(db, options = {}) {
         await checkSession(db.queryDatabase, actor, input.sessionId);
         const file = parseTransferFile(input.fileText);
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
+        if (file.version === 3 && file.push.connectVersion === '2' && !edgeConnectV2Enabled) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.push.productCategory === 'com.chrome.macosx' && !chromeMacEnabled) fail('X_SETUP_CHROME_MAC_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
@@ -152,6 +154,7 @@ function createXSetup(db, options = {}) {
         await checkSession(db.queryDatabase, actor, input.sessionId);
         const file = parseTransferFile(input.fileText);
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
+        if (file.version === 3 && file.push.connectVersion === '2' && !edgeConnectV2Enabled) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.push.productCategory === 'com.chrome.macosx' && !chromeMacEnabled) fail('X_SETUP_CHROME_MAC_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');

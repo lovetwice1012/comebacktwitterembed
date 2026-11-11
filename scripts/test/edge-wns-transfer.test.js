@@ -31,6 +31,21 @@ test('normalizes a valid bound Edge file and generates stable device and site id
     rotated.push.authenticationSecret = randomBytes(16).toString('base64url');
     assert.notEqual(identifyEdgeTransfer(rotated).contentHash, identity.contentHash);
 });
+test('version 2 survives validation, vault and worker borrowing without changing subscription identity', async () => {
+    const old = fixture(), file = structuredClone(old); file.push.connectVersion = '2';
+    assert.deepEqual(normalizeEdgeTransfer(file), file);
+    assert.deepEqual(identifyEdgeTransfer(file), identifyEdgeTransfer(old));
+    assert.deepEqual(parseTransferFile(JSON.stringify(file)), file);
+    const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
+    const sealer = createTransferPublicSealer({ activeKeyId: 'test', publicKeys: { test: keys.publicKey } });
+    const vault = createTransferPrivateWorkerVault({ activeKeyId: 'test', privateKeys: { test: keys.privateKey } });
+    const context = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+    const restored = vault.open(sealer.seal(file, context), context);
+    assert.deepEqual(restored, file);
+    await withEdgeWnsCredentials(restored, async credentials => assert.equal(credentials.connectVersion, '2'));
+    for (const invalid of ['1', '3', 2, null]) { const bad = structuredClone(file); bad.push.connectVersion = invalid;
+        assert.throws(() => normalizeEdgeTransfer(bad), { code: 'X_EDGE_TRANSFER_INVALID' }); }
+});
 test('rejects malformed and unsafe transfer data', () => {
     const mutations = [
         f => { f.version = 2; }, f => { f.push.scope = 'https://example.com/'; }, f => { f.push.siteChannel = ''; },
@@ -69,6 +84,16 @@ test('Edge enrollment stays closed unless independently enabled', async () => {
     const service = createXSetup(db, { rolloutMode: 'public', sealer: { seal() { throw new Error('unexpected seal'); } },
         receiverEnabled: true, chromeEnabled: true, braveEnabled: true, edgeEnabled: false });
     const input = { sessionId: token, fileText: JSON.stringify(fixture()) };
+    await assert.rejects(service.validate({ userId: '123456789' }, input), { code: 'X_SETUP_EDGE_NOT_READY' });
+    await assert.rejects(service.importFile({ userId: '123456789' }, { ...input, consent: true }), { code: 'X_SETUP_EDGE_NOT_READY' });
+    assert.equal(writes, 0);
+});
+test('version 2 intake remains closed by default even when Edge is enabled', async () => {
+    const token = 'a'.repeat(64), tokenHash = createHash('sha256').update(token).digest('hex'); let writes = 0;
+    const db = { queryDatabase: async () => [{ token_hash: tokenHash, consent_version: 1, consumed_at_ms: null, expires_at_ms: Date.now() + 60000 }],
+        withDatabaseTransaction: async () => { writes++; throw new Error('unexpected write'); } };
+    const service = createXSetup(db, { rolloutMode: 'public', sealer: { seal() {} }, receiverEnabled: true, edgeEnabled: true, edgeConnectV2Enabled: false });
+    const file = fixture(); file.push.connectVersion = '2'; const input = { sessionId: token, fileText: JSON.stringify(file) };
     await assert.rejects(service.validate({ userId: '123456789' }, input), { code: 'X_SETUP_EDGE_NOT_READY' });
     await assert.rejects(service.importFile({ userId: '123456789' }, { ...input, consent: true }), { code: 'X_SETUP_EDGE_NOT_READY' });
     assert.equal(writes, 0);

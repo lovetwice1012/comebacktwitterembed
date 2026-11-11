@@ -12,8 +12,10 @@ function validateCredentials(value) {
     const bound = descriptors.authenticationMode && Object.hasOwn(descriptors.authenticationMode, 'value') && descriptors.authenticationMode.value === 'bound';
     const names = bound ? ['agent', 'client', 'deviceKey', 'reconnectToken', 'siteChannel', 'authenticationMode']
         : ['agent', 'client', 'deviceKey', 'reconnectToken', 'productKey', 'productId', 'siteChannel'];
+    if (Object.hasOwn(descriptors, 'connectVersion')) names.push('connectVersion');
     const keys = Reflect.ownKeys(descriptors);
     if (keys.length !== names.length || keys.some(key => typeof key !== 'string' || !names.includes(key) || !Object.hasOwn(descriptors[key], 'value'))) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
+    if (Object.hasOwn(descriptors, 'connectVersion') && descriptors.connectVersion.value !== '2') throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
 }
 /** @param {{store:any, lease:any, vault:any, authorize:Function, credentials:any, signal:AbortSignal, onReady?:Function, onReceived?:Function, transportFactory?:Function, waitMs?:number}} options */
 async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, signal, onReady, onReceived, transportFactory, waitMs = 15000 }) {
@@ -54,7 +56,8 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
                 generation = result.generation;
             },
             agent: credentials.agent, client: credentials.client, deviceKey: credentials.deviceKey, reconnectToken: token,
-            productKey: credentials.productKey, productId: credentials.productId, authenticationMode: credentials.authenticationMode });
+            productKey: credentials.productKey, productId: credentials.productId, authenticationMode: credentials.authenticationMode,
+            ...(credentials.connectVersion === '2' ? { connectVersion: '2' } : {}) });
         token.fill(0); token = null;
         await session.start();
         established = true;

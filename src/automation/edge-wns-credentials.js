@@ -15,7 +15,7 @@ async function withEdgeWnsCredentials(file, callback) {
     const siteChannel = Buffer.from(p.siteChannel, 'ascii');
     try {
         return await callback({ authenticationMode: 'bound', agent: { ...p.agent }, client: { ...p.client },
-            deviceKey, reconnectToken, siteChannel });
+            deviceKey, reconnectToken, siteChannel, ...(p.connectVersion === '2' ? { connectVersion: '2' } : {}) });
     } finally { deviceKey.fill(0); reconnectToken.fill(0); siteChannel.fill(0); }
 }
 module.exports = { withEdgeWnsCredentials };

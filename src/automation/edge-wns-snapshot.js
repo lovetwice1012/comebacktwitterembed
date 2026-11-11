@@ -5,7 +5,7 @@
 const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord } = require('./edge-wns-record');
 const { normalizeEdgeTransfer } = require('./edge-wns-transfer');
 const invalid = () => Object.assign(new Error('X_EDGE_WNS_SNAPSHOT_INVALID'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
-async function buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client }) {
+async function buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client, connectVersion }) {
     let selected, device;
     try {
         const otherSubscriptionCount = countOtherSiteRecords(siteRecords);
@@ -18,15 +18,16 @@ async function buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserV
                 reconnectToken: device.reconnectToken.toString('ascii'), agent, client, p256dhPublicKey: pub.toString('base64url'),
                 authenticationSecret: selected.auth.toString('base64url'), p256dhPrivateKey: { kty: 'EC', crv: 'P-256',
                     x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33).toString('base64url'), d: selected.privateKey.toString('base64url') },
-                applicationServerKey: selected.applicationServerKey.toString('base64url') } });
+                applicationServerKey: selected.applicationServerKey.toString('base64url'),
+                ...(connectVersion === undefined ? {} : { connectVersion }) } });
         return { file, otherSubscriptionCount };
     } catch { throw invalid(); }
     finally { clearRecord(selected); device?.deviceKey.fill(0); device?.reconnectToken.fill(0); }
 }
-async function buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client }) {
+async function buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client, connectVersion }) {
     try {
         const { siteRecords, deviceRecord, unknownCount } = partitionStoreRecords(records);
-        const result = await buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client });
+        const result = await buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client, connectVersion });
         return { ...result, unclassifiedRecordCount: unknownCount,
             otherNotificationsPossible: result.otherSubscriptionCount > 0 || unknownCount > 0 };
     } catch { throw invalid(); }

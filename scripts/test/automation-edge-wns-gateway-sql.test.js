@@ -38,6 +38,28 @@ test('Edge worker is gated before opening an Edge or Firefox connection', { skip
         createSocket: () => { opened++; throw new Error('unexpected Firefox connection'); }, createEdgeTransport: () => { opened++; throw new Error('unexpected Edge connection'); } });
     await assert.rejects(gateway.run({ ...sub, workerId: 'edge-fixture' }), { code: 'X_PUSH_PROTOCOL_INVALID' }); assert.equal(opened, 0);
 }));
+test('version 2 worker is separately gated and uses its persisted version when enabled', { skip: skipped }, async () => setup(async db => {
+    const file = edgeFixture(); file.push.connectVersion = '2';
+    const sub = await insertSubscription(db, file); await db.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [sub.subscriptionId]);
+    let opened = 0, connectPacket, received; const controller = new AbortController(), cipher = await encrypted(file, { text: 'fixture-v2' });
+    const incoming = [frame('CNT 1 CON', '<connect/>'), frame('ATH 2 CON'),
+        frame('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>new-token</reconnect-token></wns>'), notification('target', cipher)];
+    const transport = { async connect() {}, async send(data) { if (!connectPacket) connectPacket = Buffer.from(data); },
+        async next() { return incoming.shift(); }, close() {} };
+    const opts = { enabled: true, edgeEnabled: true, edgeTokenVault: tokenVault(), privateWorkerVault: vault,
+        rolloutMode: 'public', requestTimeoutMs: 3000, createEdgeTransport: () => { opened++; return transport; } };
+    const gated = createXPushGateway(db, opts);
+    await assert.rejects(gated.run({ ...sub, workerId: 'edge-v2-gated' }), { code: 'X_PUSH_PROTOCOL_INVALID' });
+    assert.equal(opened, 0);
+    const gateway = createXPushGateway(db, { ...opts, edgeConnectV2Enabled: true });
+    try {
+        const result = await gateway.run({ ...sub, workerId: 'edge-v2-enabled', signal: controller.signal,
+            onReceived: event => { received = event; controller.abort(); } });
+        assert.deepEqual(result, { state: 'stopped', reasonCode: null });
+        assert(connectPacket.includes(Buffer.from('<connect><ver>2</ver>')));
+        assert.equal(received.payload.text, 'fixture-v2');
+    } finally { connectPacket?.fill(0); }
+}));
 test('Edge worker commits ciphertext before ACK and routes a decrypted owned notification', { skip: skipped }, async () => setup(async db => {
     const sub = await insertSubscription(db, edgeFixture()); await db.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [sub.subscriptionId]);
     const expected = { notificationType: 'tweet', text: 'fixture' }, cipher = await encrypted(sub.file, expected), controller = new AbortController();

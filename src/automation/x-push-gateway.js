@@ -258,6 +258,7 @@ function createXPushGateway(db, options = {}) {
                 if (options.edgeEnabled !== true || !options.edgeTokenVault
                     || typeof options.edgeTokenVault.seal !== 'function' || typeof options.edgeTokenVault.open !== 'function')
                     throw fault('X_PUSH_PROTOCOL_INVALID');
+                if (file.push.connectVersion === '2' && options.edgeConnectV2Enabled !== true) throw fault('X_PUSH_PROTOCOL_INVALID');
                 const { runEdgeWnsGateway } = require('./edge-wns-gateway');
                 const { withEdgeWnsCredentials } = require('./edge-wns-credentials');
                 const controller = new AbortController();
