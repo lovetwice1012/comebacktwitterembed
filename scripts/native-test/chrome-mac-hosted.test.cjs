@@ -8,7 +8,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
@@ -38,7 +38,20 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
         });
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
         const origin = `http://127.0.0.1:${server.address().port}`;
-        const profile = await createMacChromeProfile(base), executable = await verifyInstalledChrome();
+        const profile = await createMacChromeProfile(base);
+        let executable;
+        try { executable = await verifyInstalledChrome(); }
+        catch (error) {
+            const app = '/Applications/Google Chrome.app', binary = path.join(app, 'Contents/MacOS/Google Chrome');
+            for (const filename of [app, binary]) {
+                try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} canonical=${await fs.realpath(filename) === filename}`); }
+                catch (reason) { t.diagnostic(`installed ${path.basename(filename)}: ${reason.code}`); }
+            }
+            const check = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"', app],
+                { encoding: 'utf8', timeout: 120000 });
+            t.diagnostic(`codesign status=${check.status} signal=${check.signal} error=${check.error?.code || 'none'} stderr=${(check.stderr || '').slice(0, 2048)}`);
+            throw error;
+        }
         const spawnOwned = (file, args, options) => {
             child = spawn(file, args, options);
             child.once('close', () => { closed = true; resolveClosed(); });
