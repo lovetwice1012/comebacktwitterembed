@@ -10,6 +10,7 @@ const webpush = require('web-push');
 const { createFrameDecoder } = require('../../src/automation/chrome-mcs-framing');
 const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
 const { loginResponse } = require('../../src/automation/chrome-mcs-protobuf');
+const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 
 async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443 }) {
     if (port !== 443 && port !== 5228) throw new Error('FIXTURE_MCS_PORT_INVALID');
@@ -52,14 +53,14 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                         if (result.state === 'listening' && !sent) {
                             sent = true; stage = 'send';
                             try { await webpush.sendNotification(subscription, marker, { TTL: 60 }); }
-                            catch (error) { throw new Error(`FIXTURE_MCS_SEND_FAILED_${Number.isInteger(error?.statusCode) ? error.statusCode : 'UNKNOWN'}`); }
+                            catch (error) { throw new Error(`FIXTURE_MCS_SEND_FAILED_${classifyPushError(error)}`); }
                             stage = 'receive';
                         }
                         if (result.state === 'received' && received) { resolve(); return; }
                     }
                 }).catch(error => {
                     const code = typeof error?.code === 'string' && /^X_CHROME_[A-Z_]+$/.test(error.code) ? error.code
-                        : typeof error?.message === 'string' && /^FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)$/.test(error.message) ? error.message : 'UNKNOWN';
+                        : typeof error?.message === 'string' && /^FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)_(?:UNREGISTERED|INVALID_TOKEN|EXPIRED|NOT_FOUND|OTHER)$/.test(error.message) ? error.message : 'UNKNOWN';
                     reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}_${loginDetail}`));
                 });
             });

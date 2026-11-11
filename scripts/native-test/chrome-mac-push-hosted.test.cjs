@@ -26,6 +26,7 @@ const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs'
 const { checkin } = require('../../src/automation/chrome-checkin');
 const { verifySyntheticMacTransfer } = require('./chrome-mac-synthetic-transfer.cjs');
 const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
+const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -123,7 +124,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
         try { await webpush.sendNotification(value, 'preflight', { TTL: 60 }); }
-        catch (error) { throw new Error(`FIXTURE_PREFLIGHT_SEND_${Number.isInteger(error?.statusCode) ? error.statusCode : 'UNKNOWN'}`); }
+        catch (error) { throw new Error(`FIXTURE_PREFLIGHT_SEND_${classifyPushError(error)}`); }
         for (let attempt = 0; attempt < 100 && !preflightReceived; attempt++) await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(preflightReceived, true, 'browser did not receive the synthetic preflight push');
         t.diagnostic('browser received synthetic preflight push before shutdown');
