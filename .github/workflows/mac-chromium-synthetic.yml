@@ -47,6 +47,17 @@ jobs:
       # Do not perform this operation on a user's installed application.
       - name: Prepare hosted Chrome metadata
         run: sudo xattr -cr '/Applications/Google Chrome.app'
+      # This keychain and password are synthetic and exist only on the hosted
+      # runner. They must never be used to change a user's normal keychain.
+      - name: Prepare synthetic hosted keychain
+        run: |
+          keychain="$RUNNER_TEMP/cbte-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
       - name: Run synthetic profile and LevelDB checks
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
