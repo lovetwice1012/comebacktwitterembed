@@ -9,13 +9,18 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
-const { createECDH } = require('node:crypto');
+const { createECDH, createHash } = require('node:crypto');
+const { ClassicLevel } = require('classic-level');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
 const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
+const { withMacChromeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
+const { withMacChromeKeychainPassword } = require('../../src/automation/chrome-mac-keychain');
+const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-mac-token-crypto');
+const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -109,6 +114,34 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000); })]);
         clearTimeout(timer); assert.equal(stopped, true, 'first browser did not stop');
         assert.equal(await waitForMacProcessGroupExit(child.pid), true, 'first browser group did not stop');
+        const helper = process.env.MAC_LOCK_HELPER; assert.equal(typeof helper, 'string');
+        const expectedSha256 = createHash('sha256').update(await fs.readFile(helper)).digest('hex');
+        await withMacChromeKeychainPassword({ confirmed: true, work: password => withMacChromeSnapshot({
+            rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper, expectedSha256,
+            work: async snapshot => {
+                const preferences = JSON.parse(await fs.readFile(path.join(snapshot.snapshotPath, 'Default/Preferences'), 'utf8'));
+                assert.equal(preferences.gcm?.product_category_for_subtypes, 'com.chrome.macosx');
+                const entries = Object.entries(preferences.gcm?.push_messaging_application_id_map || {})
+                    .filter(([, scope]) => typeof scope === 'string' && scope.split('#')[0] === origin + '/');
+                assert.equal(entries.length, 1, 'local subscription mapping was not unique');
+                const appId = entries[0][0], store = path.join(snapshot.snapshotPath, 'Default/GCM Store');
+                const devices = new ClassicLevel(store, { createIfMissing: false, keyEncoding: 'utf8', valueEncoding: 'buffer' });
+                const keys = new ClassicLevel(path.join(store, 'Encryption'), { createIfMissing: false, keyEncoding: 'utf8', valueEncoding: 'buffer' });
+                try {
+                    await devices.open(); await keys.open();
+                    const device = (await devices.get('device_aid_key')).toString('utf8');
+                    const token = decryptMacChromiumDeviceToken(await devices.get('device_token_key'), password);
+                    assert.ok(/^[1-9][0-9]*$/.test(device) && /^[1-9][0-9]*$/.test(token), 'invalid device credentials');
+                    const records = [];
+                    for await (const [recordKey, record] of keys.iterator({ gte: appId, lt: appId + '\uffff', limit: 5 })) records.push({ recordKey, record });
+                    assert.equal(records.length, 1, 'local subscription key was not unique');
+                    const found = readEncryptionData(records[0].record, { expectedAppId: appId,
+                        expectedPublicKey: Buffer.from(value.keys.p256dh, 'base64url'), expectedAuthSecret: Buffer.from(value.keys.auth, 'base64url') });
+                    assert.ok(records[0].recordKey === `${appId},${found.authorizedEntity}`, 'subscription key did not match');
+                } finally { await keys.close().catch(() => {}); await devices.close().catch(() => {}); }
+            }
+        }) });
+        t.diagnostic('synthetic device token and subscription keys matched the isolated snapshot; credentials omitted');
         broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin,
             extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
         let captured;
