@@ -20,6 +20,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [実通知サーバーを使った追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42983613388)では、Apple Siliconの使い捨てChromeで作成したローカル試験サイトの購読を使い、ブラウザー終了後にMCSセッションで試験通知を受信・復号した。試験用Keychainとインメモリーの受信記録を使っており、DB永続化、サーバーの常駐運用、実XやDiscord配送の証明ではない。別の実行ではMCSログイン失敗が発生しており原因は未確定。この実行でも別のChrome終了試験はプロセスグループ消滅を確認できず、Intelでは署名検証エラーで停止したため、全体として試験失敗である。
 
+[後続試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42984923388)では、受信試験を他の起動試験より先に実行し、Apple Silicon・Intelの両方で試験通知の初回ログイン、受信と復号、および残りのプロファイル・ロック試験が成功した。ログイン拒否時の端末確認と再試行を試験コードに用意したが、この実行では拒否されず、その経路は実行されていない。過去の断続的なログイン失敗とChrome更新時の署名エラーが解消したという証拠ではなく、DB永続化・利用者のKeychain同意・実X・Discord配送も未検証。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
