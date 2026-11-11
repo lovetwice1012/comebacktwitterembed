@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
+const { createHash } = require('node:crypto');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const exec = promisify(execFile);
 
@@ -32,9 +33,14 @@ test('ad-hoc hardened Mac preview can load its native database',
         const sign = async (name, options = []) => exec('/usr/bin/codesign', ['--force', '--sign', '-', ...options, name], { timeout: 30000 });
         await sign(path.join(bin, 'MacLevelDB.node'));
         await sign(path.join(bin, 'MacNode'), ['--options', 'runtime', '--entitlements', entitlements]);
-        await sign(path.join(bin, 'MacStoreLock'), ['--options', 'runtime']);
+        // The manifest pins the helper bytes, so it must be signed before
+        // packaging and must not be re-signed after the manifest is generated.
         await sign(app, ['--options', 'runtime']);
         await exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { timeout: 30000 });
+        await exec('/usr/bin/codesign', ['--verify', '--strict', path.join(bin, 'MacStoreLock')], { timeout: 30000 });
+        const manifest = JSON.parse(await fs.readFile(path.join(app, 'Contents', 'Resources', 'MacSetup-manifest.json'), 'utf8'));
+        const helperHash = createHash('sha256').update(await fs.readFile(path.join(bin, 'MacStoreLock'))).digest('hex');
+        assert.equal(helperHash, manifest.lockSha256, 'signing changed the helper after the manifest was created');
         const probe = `require(${JSON.stringify(path.join(app, 'Contents', 'Resources', 'MacSetup.cjs'))});` +
             `const addon=require(${JSON.stringify(path.join(bin, 'MacLevelDB.node'))});` +
             `(async()=>{const db=addon.db_init();await addon.db_open(db,${JSON.stringify(path.join(root, 'synthetic-db'))},{createIfMissing:true});` +
