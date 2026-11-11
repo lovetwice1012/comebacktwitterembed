@@ -4,18 +4,47 @@
  * directory, sanitize the environment, and stop the entire child process tree.
  * This script does not upload or log the subscription data.
  */
-/* global Cc, Ci, Cu, Services, ChromeUtils, quit */
+/* global Cc, Ci, Cu, Services, ChromeUtils, quit, readline, atob, btoa */
 'use strict';
+function readConfiguration() {
+    if (Services.env.get('CBTE_GECKO_INPUT') !== 'stdin-v1') return {
+        snapshotPath: Services.env.get('CBTE_GECKO_SNAPSHOT'), resultPath: Services.env.get('CBTE_GECKO_RESULT'),
+        readerPath: Services.env.get('CBTE_GECKO_READER'), readerSha256: Services.env.get('CBTE_GECKO_READER_SHA256'),
+        uaid: Services.env.get('CBTE_GECKO_UAID'), browserVersion: Services.env.get('CBTE_GECKO_VERSION'),
+    };
+    const count = readline();
+    if (typeof count !== 'string' || !/^(?:[1-9]|[1-5][0-9]|6[0-4])$/.test(count)) throw new Error('X_FIREFOX_MAC_READER_INVALID');
+    let encoded = '';
+    for (let index = 0; index < Number(count); index++) {
+        const line = readline();
+        if (typeof line !== 'string' || !/^[A-Za-z0-9+/=]{1,512}$/.test(line)) throw new Error('X_FIREFOX_MAC_READER_INVALID');
+        encoded += line;
+    }
+    let bytes;
+    try {
+        const binary = atob(encoded);
+        if (!binary.length || binary.length > 24576 || btoa(binary) !== encoded) throw new Error();
+        bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        Cu.importGlobalProperties(['TextDecoder']);
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        if (!value || typeof value !== 'object' || Array.isArray(value)
+            || Object.keys(value).sort().join(',') !== 'browserVersion,readerPath,readerSha256,resultPath,snapshotPath,uaid'
+            || Object.values(value).some(item => typeof item !== 'string')) throw new Error();
+        return value;
+    } catch { throw new Error('X_FIREFOX_MAC_READER_INVALID'); }
+    finally { bytes?.fill(0); }
+}
+const configuration = readConfiguration();
 const localFile = value => {
     const file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
     file.initWithPath(value); return file;
 };
-const snapshot = localFile(Services.env.get('CBTE_GECKO_SNAPSHOT'));
-const resultFile = localFile(Services.env.get('CBTE_GECKO_RESULT'));
-const readerFile = localFile(Services.env.get('CBTE_GECKO_READER'));
-const expectedReaderHash = Services.env.get('CBTE_GECKO_READER_SHA256');
-const uaid = Services.env.get('CBTE_GECKO_UAID');
-const browserVersion = Services.env.get('CBTE_GECKO_VERSION');
+const snapshot = localFile(configuration.snapshotPath);
+const resultFile = localFile(configuration.resultPath);
+const readerFile = localFile(configuration.readerPath);
+const expectedReaderHash = configuration.readerSha256;
+const uaid = configuration.uaid;
+const browserVersion = configuration.browserVersion;
 const token = /^firefox-snapshot-([0-9a-f]{32})$/.exec(snapshot.leafName);
 if (!token || !snapshot.parent || !resultFile.parent || !resultFile.parent.equals(snapshot.parent)
     || resultFile.leafName !== `firefox-result-${token[1]}.json` || readerFile.leafName !== 'Read-PushSubscription.js'

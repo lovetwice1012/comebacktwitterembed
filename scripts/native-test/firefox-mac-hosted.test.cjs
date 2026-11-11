@@ -11,19 +11,22 @@ const http = require('node:http');
 const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
+const { encodeMacFirefoxReaderInput } = require('../../src/automation/firefox-mac-reader-protocol');
 
 test('signed macOS Firefox reads a synthetic Push database with XPCShell',
     { skip: process.platform !== 'darwin', timeout: 480000 }, async t => {
         const temp = await fs.realpath(os.tmpdir()), token = randomBytes(16).toString('hex');
-        const root = path.join(temp, `cbte-xpcshell-isolated-${token}`); await fs.mkdir(root, { mode: 0o700 });
+        const parent = path.join(temp, `cbte-通知-${token}`), root = path.join(parent, `cbte-xpcshell-isolated-${token}`);
+        await fs.mkdir(parent, { mode: 0o700 }); await fs.mkdir(root, { mode: 0o700 });
         let preserveRoot = false;
         t.after(async () => {
             // If the process group cannot be proven empty, leave only this
             // synthetic root for the disposable hosted VM to clean up.
             if (preserveRoot) return;
-            const real = await fs.realpath(root);
-            assert.equal(path.dirname(real), temp); assert.match(path.basename(real), /^cbte-xpcshell-isolated-[0-9a-f]{32}$/);
-            await fs.rm(real, { recursive: true });
+            const real = await fs.realpath(root), realParent = await fs.realpath(parent);
+            assert.equal(path.dirname(realParent), temp); assert.match(path.basename(realParent), /^cbte-通知-[0-9a-f]{32}$/);
+            assert.equal(path.dirname(real), realParent); assert.match(path.basename(real), /^cbte-xpcshell-isolated-[0-9a-f]{32}$/);
+            await fs.rm(realParent, { recursive: true });
         });
         const browser = await verifyInstalledMacFirefox();
         assert.equal(browser.executable, '/Applications/Firefox.app/Contents/MacOS/firefox');
@@ -35,13 +38,17 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
             : [browser.executable, args];
         const options = { cwd: root, input: script, encoding: 'utf8', timeout: 30000,
             env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } };
-        async function runSynthetic(source, env, resultReady, sandbox = useSandbox) {
+        async function runSynthetic(source, env, resultReady, sandbox = useSandbox, privateInput = undefined) {
             const [executable, args] = command(['-xpcshell', '-e', source], sandbox);
             const child = spawn(executable, args,
-                { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+                { cwd: root, env, detached: true, stdio: [privateInput ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
             let stdout = '', stderr = '', settled = false, timer, polling = false, stopForResult = false;
             child.stdout.on('data', chunk => { if (stdout.length < 2000) stdout += chunk.toString('utf8').slice(0, 2000 - stdout.length); });
             child.stderr.on('data', chunk => { if (stderr.length < 2000) stderr += chunk.toString('utf8').slice(0, 2000 - stderr.length); });
+            if (privateInput) {
+                child.stdin.on('error', () => { privateInput.fill(0); });
+                child.stdin.end(privateInput, () => { privateInput.fill(0); });
+            }
             const exited = new Promise(resolve => {
                 child.once('error', error => { if (!settled) { settled = true; resolve({ error: error.code || 'ERROR' }); } });
                 child.once('exit', (code, signal) => { if (!settled) { settled = true; resolve({ code, signal }); } });
@@ -68,7 +75,7 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
                 }
                 if (groupAlive || !settled) preserveRoot = true;
                 return { status, stdout, stderr, groupAlive, stopForResult };
-            } finally { clearInterval(poll); clearTimeout(timer); child.stdout.destroy(); child.stderr.destroy(); }
+            } finally { clearInterval(poll); clearTimeout(timer); child.stdin?.destroy(); privateInput?.fill(0); child.stdout.destroy(); child.stderr.destroy(); }
         }
         const execute = (args, opts) => { const [executable, actualArgs] = command(args); return spawnSync(executable, actualArgs, opts); };
         const child = execute(['-xpcshell', '-f', '-'], options);
@@ -167,13 +174,13 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         try { await fs.cp(path.join(source, `${stem}.files`), path.join(target, `${stem}.files`), { recursive: true, errorOnExist: true, force: false }); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         const resultPath = path.join(root, `firefox-result-${token}.json`);
-        const readerEnv = { ...options.env, CBTE_GECKO_SNAPSHOT: snapshot, CBTE_GECKO_RESULT: resultPath,
-            CBTE_GECKO_READER: readerPath, CBTE_GECKO_READER_SHA256: readerHash,
-            CBTE_GECKO_UAID: '22222222-2222-4222-8222-222222222222', CBTE_GECKO_VERSION: browser.version };
+        const readerEnv = { ...options.env, CBTE_GECKO_INPUT: 'stdin-v1' };
+        const readerInput = encodeMacFirefoxReaderInput({ snapshotPath: snapshot, resultPath, readerPath,
+            readerSha256: readerHash, uaid: '22222222-2222-4222-8222-222222222222', browserVersion: browser.version });
         const read = await runSynthetic(bootstrap, readerEnv, async () => {
             try { const value = JSON.parse(await fs.readFile(resultPath, 'utf8')); return value.ok === true && value.export?.push?.scope === 'https://x.com/'; }
             catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error; }
-        });
+        }, useSandbox, readerInput);
         t.diagnostic(`reader: status=${JSON.stringify(read.status)} groupAlive=${read.groupAlive} stderr=${read.stderr}`);
         assert(read.status.code === 0 || read.stopForResult && read.status.signal === 'SIGTERM', 'synthetic reader process failed');
         assert.equal(read.groupAlive, false);
