@@ -14,12 +14,13 @@ const prepared = new WeakMap();
 const UAID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/;
 const VERSION = /^[0-9A-Za-z._+-]{1,64}$/;
 
-async function prepareMacFirefoxReaderResult({ rootPath, profileId, snapshotPath, expectedUaid, expectedVersion }) {
+async function prepareMacFirefoxReaderResult({ rootPath, profileId, snapshotPath, expectedUaid, expectedVersion, expectedNonce }) {
     try {
         if (process.platform === 'win32' || typeof process.getuid !== 'function' || !constants.O_NOFOLLOW
             || typeof snapshotPath !== 'string' || !path.isAbsolute(snapshotPath)
             || typeof expectedUaid !== 'string' || !UAID.test(expectedUaid)
-            || typeof expectedVersion !== 'string' || !VERSION.test(expectedVersion)) throw new Error();
+            || typeof expectedVersion !== 'string' || !VERSION.test(expectedVersion)
+            || expectedNonce !== undefined && (typeof expectedNonce !== 'string' || !/^[0-9a-f]{64}$/.test(expectedNonce))) throw new Error();
         const profile = await verifyMacFirefoxProfile(rootPath, profileId), snapshot = path.resolve(snapshotPath);
         const match = /^firefox-snapshot-([0-9a-f]{32})$/.exec(path.basename(snapshot));
         if (!match || path.dirname(snapshot) !== profile.rootPath || await fs.realpath(snapshot) !== snapshot) throw new Error();
@@ -30,7 +31,7 @@ async function prepareMacFirefoxReaderResult({ rootPath, profileId, snapshotPath
         try { await fs.lstat(resultPath); throw new Error('occupied'); }
         catch (error) { if (error?.code !== 'ENOENT') throw error; }
         const capability = Object.freeze({});
-        prepared.set(capability, { rootPath, profileId, snapshot, identity, resultPath, expectedUaid, expectedVersion, used: false });
+        prepared.set(capability, { rootPath, profileId, snapshot, identity, resultPath, expectedUaid, expectedVersion, expectedNonce, used: false });
         return capability;
     } catch { throw fail('X_FIREFOX_MAC_RESULT_INVALID'); }
 }
@@ -59,7 +60,8 @@ async function consumeMacFirefoxReaderResult(capability) {
         const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, offset));
         const output = parseUniqueJson(text, 32);
         if (!output || typeof output !== 'object' || Array.isArray(output)
-            || Object.keys(output).sort().join(',') !== 'export,ok,otherSubscriptionCount' || output.ok !== true
+            || Object.keys(output).sort().join(',') !== (state.expectedNonce === undefined ? 'export,ok,otherSubscriptionCount' : 'export,ok,otherSubscriptionCount,proof')
+            || state.expectedNonce !== undefined && output.proof !== state.expectedNonce || output.ok !== true
             || !Number.isInteger(output.otherSubscriptionCount) || output.otherSubscriptionCount < 0 || output.otherSubscriptionCount > 63)
             throw new Error();
         const file = parseTransferFile(JSON.stringify(output.export));
@@ -75,10 +77,10 @@ async function consumeMacFirefoxReaderResult(capability) {
                     const current = await fs.lstat(state.resultPath);
                     if (current.dev !== identity.dev || current.ino !== identity.ino || !current.isFile()
                         || current.isSymbolicLink() || current.uid !== process.getuid() || current.nlink !== 1)
-                        throw fail('X_FIREFOX_MAC_RESULT_CLEANUP_FAILED');
+                        throw fail('X_FIREFOX_MAC_RESULT_CLEANUP_FAILED'); // eslint-disable-line no-unsafe-finally
                     await fs.unlink(state.resultPath);
                 }
-            } catch { throw fail('X_FIREFOX_MAC_RESULT_CLEANUP_FAILED'); }
+            } catch { throw fail('X_FIREFOX_MAC_RESULT_CLEANUP_FAILED'); } // eslint-disable-line no-unsafe-finally
             finally { await handle.close(); }
         }
     }

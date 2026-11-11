@@ -4,6 +4,7 @@
 // report stopped until the entire reader process tree has actually exited.
 // The distribution does not call this flow until that guarantee is verified.
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('./firefox-mac-browser');
 const { readVerifiedMacFirefoxScript } = require('./firefox-mac-reader-script');
 const { withMacFirefoxSnapshot } = require('./firefox-mac-snapshot');
@@ -26,8 +27,9 @@ async function exportExperimentalMacFirefoxNotifications({ rootPath, profileId, 
         const data = await withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expectedSha256, signal,
             experimentalReaderArtifacts: true, work: async snapshot => withExperimentalMacFirefoxReaderDirectory({
                 rootPath, profileId, experimental: true, signal: snapshot.signal, work: async cwd => {
+                    const resultNonce = randomBytes(32).toString('hex');
                     const capability = await prepareMacFirefoxReaderResult({ rootPath, profileId, snapshotPath: snapshot.snapshotPath,
-                        expectedUaid: snapshot.uaid, expectedVersion: browser.version });
+                        expectedUaid: snapshot.uaid, expectedVersion: browser.version, expectedNonce: resultNonce });
                     const token = /^firefox-snapshot-([0-9a-f]{32})$/.exec(path.basename(snapshot.snapshotPath));
                     if (!token) throw fail('X_FIREFOX_MAC_FLOW_INVALID');
                     const releaseSnapshot = snapshot.holdForReader(); let releaseCwd;
@@ -37,7 +39,7 @@ async function exportExperimentalMacFirefoxNotifications({ rootPath, profileId, 
                         const outcome = await runReader({ executable: browser.executable, browserVersion: browser.version,
                             snapshotPath: snapshot.snapshotPath, cwd: cwd.directory, uaid: snapshot.uaid,
                             resultPath: path.join(rootPath, `firefox-result-${token[1]}.json`), bootstrapBytes: bootstrap,
-                            readerPath, readerSha256, signal: snapshot.signal });
+                            readerPath, readerSha256, resultNonce, signal: snapshot.signal });
                         if (!outcome || Object.keys(outcome).sort().join(',') !== 'stopped,success'
                             || outcome.stopped !== true || typeof outcome.success !== 'boolean') throw fail('X_FIREFOX_MAC_FLOW_UNCONFIRMED');
                         stopped = true;

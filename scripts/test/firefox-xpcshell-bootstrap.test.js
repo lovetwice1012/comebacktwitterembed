@@ -62,7 +62,7 @@ test('Gecko bootstrap rejects unsafe file identities and malformed metadata befo
 test('Gecko private stdin validates framing before opening the profile', () => {
     const input = { snapshotPath: defaults.CBTE_GECKO_SNAPSHOT, resultPath: defaults.CBTE_GECKO_RESULT,
         readerPath: defaults.CBTE_GECKO_READER, readerSha256: defaults.CBTE_GECKO_READER_SHA256,
-        uaid: defaults.CBTE_GECKO_UAID, browserVersion: defaults.CBTE_GECKO_VERSION };
+        uaid: defaults.CBTE_GECKO_UAID, browserVersion: defaults.CBTE_GECKO_VERSION, resultNonce: 'b'.repeat(64) };
     const encoded = encodeMacFirefoxReaderInput(input), lines = encoded.toString('ascii').trimEnd().split('\n'); encoded.fill(0);
     const valid = invoke({ CBTE_GECKO_INPUT: 'stdin-v1' }, false, false, lines);
     assert.match(String(valid.failure), /SYNTHETIC_VALIDATION_REACHED/); assert.equal(valid.touchedProfile, true);

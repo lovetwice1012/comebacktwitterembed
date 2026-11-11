@@ -5,7 +5,7 @@ const { encodeMacFirefoxReaderInput } = require('../../src/automation/firefox-ma
 
 function fixture() {
     return { snapshotPath: '/tmp/日本語/通知', resultPath: '/tmp/日本語/result.json', readerPath: '/app/Read-PushSubscription.js',
-        readerSha256: 'a'.repeat(64), uaid: '22222222-2222-4222-8222-222222222222', browserVersion: '160.0' };
+        readerSha256: 'a'.repeat(64), uaid: '22222222-2222-4222-8222-222222222222', browserVersion: '160.0', resultNonce: 'b'.repeat(64) };
 }
 test('reader stdin uses bounded ASCII chunks and round-trips Unicode paths', () => {
     const input = fixture(); input.snapshotPath += '/あ'.repeat(400);
@@ -17,7 +17,7 @@ test('reader stdin uses bounded ASCII chunks and round-trips Unicode paths', () 
 });
 test('reader stdin rejects unknown fields, getters, malformed values and oversized paths', () => {
     for (const value of [
-        { ...fixture(), unexpected: true }, { ...fixture(), uaid: 'bad' }, { ...fixture(), readerSha256: 'A'.repeat(64) },
+        { ...fixture(), unexpected: true }, { ...fixture(), uaid: 'bad' }, { ...fixture(), readerSha256: 'A'.repeat(64) }, { ...fixture(), resultNonce: 'invalid' },
         { ...fixture(), snapshotPath: 'relative' }, { ...fixture(), resultPath: '/tmp/\nother' },
         { ...fixture(), browserVersion: '160.0\nother' }, { ...fixture(), readerPath: '/' + 'a'.repeat(4097) },
         Object.defineProperty(fixture(), 'uaid', { enumerable: true, get() { throw new Error('getter must not run'); } }),

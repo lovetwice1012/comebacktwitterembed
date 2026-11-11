@@ -28,8 +28,8 @@ function readConfiguration() {
         Cu.importGlobalProperties(['TextDecoder']);
         const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
         if (!value || typeof value !== 'object' || Array.isArray(value)
-            || Object.keys(value).sort().join(',') !== 'browserVersion,readerPath,readerSha256,resultPath,snapshotPath,uaid'
-            || Object.values(value).some(item => typeof item !== 'string')) throw new Error();
+            || Object.keys(value).sort().join(',') !== 'browserVersion,readerPath,readerSha256,resultNonce,resultPath,snapshotPath,uaid'
+            || Object.values(value).some(item => typeof item !== 'string') || !/^[0-9a-f]{64}$/.test(value.resultNonce)) throw new Error();
         return value;
     } catch { throw new Error('X_FIREFOX_MAC_READER_INVALID'); }
     finally { bytes?.fill(0); }
@@ -101,7 +101,7 @@ Object.defineProperty(Services, 'appinfo', { value: { OS: osName, version: brows
 const ReadPushSubscription = new Function(`${readerSource}\nreturn ReadPushSubscription;`)();
 readerSource = null;
 function writeResult(value) {
-    const text = JSON.stringify(value);
+    const text = JSON.stringify(configuration.resultNonce ? { ...value, proof: configuration.resultNonce } : value);
     if (text.length > 32768) throw new Error('X_FIREFOX_MAC_READER_INVALID');
     const stream = Cc['@mozilla.org/network/file-output-stream;1'].createInstance(Ci.nsIFileOutputStream);
     stream.init(resultFile, 0x8a, 0o600, 0);

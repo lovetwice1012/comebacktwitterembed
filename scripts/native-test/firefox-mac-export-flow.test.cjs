@@ -57,7 +57,7 @@ test('experimental Firefox composition preserves consent and uncertain-process b
         assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-')));
         const runReader = async input => {
             cwdPaths.push(input.cwd); assert.deepEqual(await fs.readdir(input.cwd), []); assert.deepEqual(input.bootstrapBytes, script);
-            await fs.writeFile(input.resultPath, JSON.stringify({ ok: true, export: file, otherSubscriptionCount: 1 }), { mode: 0o600, flag: 'wx' });
+            await fs.writeFile(input.resultPath, JSON.stringify({ ok: true, export: file, otherSubscriptionCount: 1, proof: input.resultNonce }), { mode: 0o600, flag: 'wx' });
             return { stopped: true, success: true };
         };
         const choice = { confirmed: true, directory: base, filename: 'result.json', otherSitesConsent: false };

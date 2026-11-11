@@ -12,9 +12,12 @@ const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
 const { encodeMacFirefoxReaderInput } = require('../../src/automation/firefox-mac-reader-protocol');
+const { createMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile');
+const { exportExperimentalMacFirefoxNotifications } = require('../../src/automation/firefox-mac-export-flow');
+const { runExperimentalMacFirefoxReader } = require('../../src/automation/firefox-mac-reader-supervisor');
 
 test('signed macOS Firefox reads a synthetic Push database with XPCShell',
-    { skip: process.platform !== 'darwin', timeout: 480000 }, async t => {
+    { skip: process.platform !== 'darwin', timeout: 720000 }, async t => {
         const temp = await fs.realpath(os.tmpdir()), token = randomBytes(16).toString('hex');
         const parent = path.join(temp, `cbte-通知-${token}`), root = path.join(parent, `cbte-xpcshell-isolated-${token}`);
         await fs.mkdir(parent, { mode: 0o700 }); await fs.mkdir(root, { mode: 0o700 });
@@ -175,20 +178,43 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         const resultPath = path.join(root, `firefox-result-${token}.json`);
         const readerEnv = { ...options.env, CBTE_GECKO_INPUT: 'stdin-v1' };
+        const resultNonce = randomBytes(32).toString('hex');
         const readerInput = encodeMacFirefoxReaderInput({ snapshotPath: snapshot, resultPath, readerPath,
-            readerSha256: readerHash, uaid: '22222222-2222-4222-8222-222222222222', browserVersion: browser.version });
+            readerSha256: readerHash, uaid: '22222222-2222-4222-8222-222222222222', browserVersion: browser.version, resultNonce });
         const read = await runSynthetic(bootstrap, readerEnv, async () => {
-            try { const value = JSON.parse(await fs.readFile(resultPath, 'utf8')); return value.ok === true && value.export?.push?.scope === 'https://x.com/'; }
+            try { const value = JSON.parse(await fs.readFile(resultPath, 'utf8')); return value.ok === true && value.proof === resultNonce && value.export?.push?.scope === 'https://x.com/'; }
             catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error; }
         }, useSandbox, readerInput);
         t.diagnostic(`reader: status=${JSON.stringify(read.status)} groupAlive=${read.groupAlive} stderr=${read.stderr}`);
         assert(read.status.code === 0 || read.stopForResult && read.status.signal === 'SIGTERM', 'synthetic reader process failed');
         assert.equal(read.groupAlive, false);
         const result = JSON.parse(await fs.readFile(resultPath, 'utf8'));
-        assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0);
+        assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0); assert.equal(result.proof, resultNonce);
         assert.equal(result.export.push.scope, 'https://x.com/'); assert.equal(result.export.provenance.browserVersion, browser.version);
         const normalized = parseTransferFile(JSON.stringify(result.export));
         assert.equal(normalized.push.uaid, '22222222-2222-4222-8222-222222222222');
         assert.equal(normalized.push.scope, 'https://x.com/');
         const after = await verifyInstalledMacFirefox(); assert.deepEqual(after, browser);
+        // Exercise the experimental composition with the actual signed reader,
+        // an isolated synthetic profile, and no automatic upload.
+        const helper = process.env.MAC_LOCK_HELPER; assert.equal(typeof helper, 'string');
+        const profile = await createMacFirefoxProfile(root), profileIdb = path.join(profile.profilePath, 'storage/permanent/chrome/idb');
+        await fs.mkdir(path.dirname(profileIdb), { recursive: true });
+        await fs.cp(source, profileIdb, { recursive: true, errorOnExist: true, force: false });
+        await fs.writeFile(path.join(profile.profilePath, '.parentlock'), '');
+        await fs.writeFile(path.join(profile.profilePath, 'prefs.js'), 'user_pref("dom.push.userAgentID", "22222222-2222-4222-8222-222222222222");\n');
+        const hashFile = async filename => createHash('sha256').update(await fs.readFile(filename)).digest('hex');
+        const output = path.join(root, 'composed-output.json');
+        let composed;
+        try { composed = await exportExperimentalMacFirefoxNotifications({ rootPath: profile.rootPath, profileId: profile.profileId,
+            helperPath: helper, expectedSha256: await hashFile(helper), bootstrapPath, bootstrapSha256: await hashFile(bootstrapPath),
+            readerPath, readerSha256: readerHash, experimental: true,
+            runReader: input => runExperimentalMacFirefoxReader({ ...input, experimental: true }),
+            confirmSave: async info => {
+                assert.equal(info.otherSubscriptionCount, 0); assert.equal(info.otherNotificationsMayReachServer, false);
+                return { confirmed: true, directory: root, filename: 'composed-output.json', otherSitesConsent: false };
+            } }); } catch (error) { preserveRoot = true; throw error; }
+        assert.equal(composed.state, 'saved'); assert.equal(composed.uploaded, false);
+        assert.deepEqual(parseTransferFile(await fs.readFile(output, 'utf8')), normalized);
+        assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-') || name.startsWith('firefox-result-')));
     });

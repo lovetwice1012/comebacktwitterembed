@@ -40,6 +40,16 @@ test('Firefox reader result is private, one-shot, tied to the verified snapshot 
     assert.equal(result.file.push.scope, 'https://x.com/'); assert.equal(result.otherSubscriptionCount, 2);
     await assert.rejects(fs.access(output), { code: 'ENOENT' });
     await assert.rejects(consumeMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
+    const expectedNonce = 'b'.repeat(64);
+    capability = await prepareMacFirefoxReaderResult({ ...args, expectedNonce });
+    await make(JSON.stringify({ ...record, proof: expectedNonce }));
+    assert.equal((await consumeMacFirefoxReaderResult(capability)).otherSubscriptionCount, 2);
+    for (const proof of [undefined, 'c'.repeat(64)]) {
+        capability = await prepareMacFirefoxReaderResult({ ...args, expectedNonce });
+        await make(JSON.stringify({ ...record, ...(proof === undefined ? {} : { proof }) }));
+        await assert.rejects(consumeMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
+        await assert.rejects(fs.access(output), { code: 'ENOENT' });
+    }
     capability = await prepareMacFirefoxReaderResult(args);
     assert.deepEqual(await discardMacFirefoxReaderResult(capability), { discarded: false });
     await assert.rejects(discardMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
