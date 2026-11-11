@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
+const http = require('node:http');
 const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
@@ -29,13 +30,13 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         assert.match(browser.version, /^[0-9A-Za-z._+-]{1,64}$/);
         const script = 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n';
         const useSandbox = process.env.CBTE_MAC_SYNTHETIC_SANDBOX === '1';
-        const command = args => useSandbox
+        const command = (args, sandbox = useSandbox) => sandbox
             ? ['/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)(deny process-fork)(deny network*)', browser.executable, ...args]]
             : [browser.executable, args];
         const options = { cwd: root, input: script, encoding: 'utf8', timeout: 30000,
             env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } };
-        async function runSynthetic(source, env, resultReady) {
-            const [executable, args] = command(['-xpcshell', '-e', source]);
+        async function runSynthetic(source, env, resultReady, sandbox = useSandbox) {
+            const [executable, args] = command(['-xpcshell', '-e', source], sandbox);
             const child = spawn(executable, args,
                 { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
             let stdout = '', stderr = '', settled = false, timer, polling = false, stopForResult = false;
@@ -77,6 +78,41 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
             t.diagnostic(`${name}: status=${value.status} error=${value.error?.code || 'none'} stderr=${(value.stderr || '').slice(0, 1000)}`);
         }
         assert.equal(inline.error, undefined); assert.equal(inline.status, 0); assert.match(inline.stdout, /CBTE_SYNTHETIC_STDIN_OK/);
+
+        if (useSandbox) {
+            const finish = `function finish(value) {
+              const f=Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile); f.initWithPath(Services.env.get('CBTE_CONTROL_RESULT'));
+              const s=Cc['@mozilla.org/network/file-output-stream;1'].createInstance(Ci.nsIFileOutputStream);
+              s.init(f,0x8a,0o600,0); s.write(value,value.length); s.close();
+            }`;
+            const forkScript = `${finish}
+              let result='denied'; try {
+                const f=Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile); f.initWithPath('/usr/bin/true');
+                const p=Cc['@mozilla.org/process/util;1'].createInstance(Ci.nsIProcess); p.init(f); p.run(true,[],0);
+                if(p.exitValue===0) result='allowed';
+              } catch {} finish(result); quit(0);`;
+            const server = http.createServer((_request, response) => { response.writeHead(204); response.end(); });
+            await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+            t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+            const networkScript = `${finish}
+              Cu.importGlobalProperties(['fetch']); let done=false;
+              fetch('http://127.0.0.1:${server.address().port}/').then(() => { finish('allowed'); done=true; },
+                () => { finish('denied'); done=true; });
+              Services.tm.spinEventLoopUntil('cbte-network-probe',()=>done); quit(0);`;
+            for (const [name, source, sandbox, expected] of [
+                ['fork-open', forkScript, false, 'allowed'], ['fork-closed', forkScript, true, 'denied'],
+                ['network-open', networkScript, false, 'allowed'], ['network-closed', networkScript, true, 'denied'],
+            ]) {
+                const resultFile = path.join(root, `control-${name}`);
+                const probe = await runSynthetic(source, { ...options.env, CBTE_CONTROL_RESULT: resultFile }, async () => {
+                    try { return ['allowed', 'denied'].includes(await fs.readFile(resultFile, 'utf8')); }
+                    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+                }, sandbox);
+                t.diagnostic(`${name}: status=${JSON.stringify(probe.status)} groupAlive=${probe.groupAlive} stderr=${probe.stderr}`);
+                assert(probe.status.code === 0 || probe.stopForResult && probe.status.signal === 'SIGTERM', `${name} process failed`);
+                assert.equal(probe.groupAlive, false); assert.equal(await fs.readFile(resultFile, 'utf8'), expected);
+            }
+        }
 
         const seed = path.join(root, 'seed'), snapshot = path.join(root, `firefox-snapshot-${token}`);
         await fs.mkdir(seed); await fs.mkdir(snapshot);
