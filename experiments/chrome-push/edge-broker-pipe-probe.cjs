@@ -18,6 +18,33 @@ const { assertSuppressedTakeover } = require('./edge-fixture-assertions.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotification }) {
+    const { fork } = require('node:child_process');
+    const child = fork(path.join(__dirname, 'edge-synthetic-restart-child.cjs'), [],
+        { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true, env: { ...process.env, NODE_ENV: 'test' } });
+    let ready = false, received = false, timeout;
+    try {
+        await new Promise((resolve, reject) => {
+            timeout = setTimeout(() => reject(new Error('PROBE_RESTART_TIMEOUT')), 45000);
+            child.on('error', () => reject(new Error('PROBE_RESTART_FAILED')));
+            child.on('message', message => {
+                if (message?.state === 'ready' && !ready) {
+                    ready = true; Promise.resolve().then(sendNotification).catch(() => reject(new Error('PROBE_RESTART_FAILED')));
+                } else if (message?.state === 'received' && ready && !received) received = true;
+                else reject(new Error('PROBE_RESTART_FAILED'));
+            });
+            child.on('exit', code => code === 0 && ready && received ? resolve() : reject(new Error('PROBE_RESTART_FAILED')));
+            child.send({ schema, ...identity, privateKey }, error => { if (error) reject(new Error('PROBE_RESTART_FAILED')); });
+        });
+    } finally {
+        clearTimeout(timeout);
+        if (child.exitCode === null && child.signalCode === null) {
+            const exited = once(child, 'exit').catch(() => {}); child.kill();
+            let timer; try { await Promise.race([exited, new Promise(resolve => { timer = setTimeout(resolve, 5000); })]); }
+            finally { clearTimeout(timer); }
+        }
+    }
+}
 let stage = 'start';
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
@@ -315,7 +342,7 @@ async function main() {
                 const tokenVault = createWnsTokenWorkerVault(config);
                 const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, privateWorkerVault: vault,
                     edgeTokenVault: tokenVault, rolloutMode: 'public' });
-                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), takeover ? 60000 : 30000); let received;
+                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), takeover ? 90000 : 30000); let received;
                 webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
                 try {
                     if (takeover) {
@@ -384,6 +411,10 @@ async function main() {
                             if (delivered?.payload?.text !== 'synthetic-after-reimport') throw new Error('PROBE_WNS_PIPELINE_FAILED');
                             takeoverResult.reimportRetainedServerToken = true; takeoverResult.receivedAfterReimport = true;
                         } finally { clearTimeout(timeout); resumed.abort(); }
+                        await verifyNewWorkerProcess({ schema: testDb.schema, identity,
+                            privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+                            sendNotification: () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-process-restart' }), { TTL: 60 }) });
+                        takeoverResult.receivedInNewWorkerProcess = true;
                     }
                     realWnsWorkerTested = true;
                 } finally { clearTimeout(timer); controller.abort(); }
