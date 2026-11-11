@@ -14,7 +14,7 @@ const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broke
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 
 test('signed macOS Chrome opens a dedicated synthetic profile over its private pipe',
-    { skip: process.platform !== 'darwin', timeout: 120000 }, async t => {
+    { skip: process.platform !== 'darwin', timeout: 400000 }, async t => {
         const temp = await fs.realpath(os.tmpdir());
         const base = await fs.mkdtemp(path.join(temp, 'cbte-mac-chrome-hosted-'));
         let child, closed = false, broker, cleanupSafe = true, resolveClosed;

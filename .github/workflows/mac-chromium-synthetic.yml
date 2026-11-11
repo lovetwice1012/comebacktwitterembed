@@ -39,6 +39,11 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build temporary lock helper
         run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+      # Hosted runners are disposable. Some preinstalled Chrome images carry
+      # Finder/resource-fork attributes that fail strict codesign verification.
+      # Do not perform this operation on a user's installed application.
+      - name: Prepare hosted Chrome metadata
+        run: sudo xattr -cr '/Applications/Google Chrome.app'
       - name: Run synthetic profile and LevelDB checks
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
