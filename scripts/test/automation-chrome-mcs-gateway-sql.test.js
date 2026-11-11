@@ -211,6 +211,58 @@ for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFix
         assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending')).map(row => row.persistent_id), ['recovery-id']);
     } finally { await db.close(); }
 });
+test('Chrome slow routing does not block durable receipts or their later queue recovery', { timeout: 30000 }, async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    const controller = new AbortController(); let runtime, running;
+    try {
+        const file = chromeFixture(), subscription = await insertSubscription(db, file);
+        await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
+            { planId: 'free', label: 'fixture', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+        const now = Date.now();
+        const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','fixture',1,'ready','free',?,'bound',1,?,?)",
+            [subscription.ownerUserId, JSON.stringify({ subscriptionId: subscription.subscriptionId }), now, now]);
+        await db.withDatabaseTransaction(query => entitlements.assignSlot(query, subscription.ownerUserId, 'x', String(monitor.insertId)));
+        const messages = [];
+        for (let i = 1; i <= 3; i++) {
+            const payload = { notificationType: 'tweet', text: `fixture ${i}`, author: { id: '12345', handle: 'example' },
+                url: `https://x.com/example/status/123456789012345678${i}` };
+            const cipher = await encrypted(file, payload);
+            messages.push(Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
+                pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, `slow-${i}`),
+                bytes(21, Buffer.from(cipher.data, 'base64url'))]));
+        }
+        let socket, lease, callbacks = 0, acknowledged = 0, finishReceipts;
+        const allReceived = new Promise(resolve => { finishReceipts = resolve; });
+        class BurstSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] !== 7) return super.write(wire, done);
+                this.writes.push(wire); done(); acknowledged++;
+                if (acknowledged < messages.length) setImmediate(() => this.emit('data', encodeFrame(8, messages[acknowledged])));
+                else finishReceipts();
+            }
+        }
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
+            requestTimeoutMs: 10000, createChromeSocket: () => socket = new BurstSocket(db) });
+        const queue = createQueue(db, {}, { rolloutMode: 'public' });
+        runtime = createXPushRuntime(db, queue, { enabled: true, gateway, rolloutMode: 'public', processingPolicy: 'batch', assertAllowed() {} });
+        running = gateway.run({ ...subscription, workerId: 'slow-routing', signal: controller.signal,
+            onSession: value => { lease = value.lease; socket.emit('data', encodeFrame(8, messages[0])); },
+            onReceived: () => { callbacks++; return new Promise(() => {}); } });
+        let timer;
+        try { await Promise.race([allReceived, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('burst blocked')), 5000); })]); }
+        finally { clearTimeout(timer); }
+        assert.equal(callbacks, 1);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_x_push_inbox'))[0].n), 3);
+        await db.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?', [Date.now() - 301000, subscription.subscriptionId]);
+        assert.equal((await runtime.drain(lease)).processed, 3);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 3);
+    } finally {
+        controller.abort();
+        if (running) await running;
+        if (runtime) await runtime.stop();
+        await db.close();
+    }
+});
 test('Chrome worker runs and saves check-in without interrupting the MCS session', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {
