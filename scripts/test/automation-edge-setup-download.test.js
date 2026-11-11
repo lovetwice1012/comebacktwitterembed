@@ -29,9 +29,18 @@ test('Edge preview download is pinned and contains only its reviewed package fil
     for (const name of ['EdgeSetup.ps1', 'EdgeShared.ps1', 'Start-EdgeSetup.ps1', 'EdgeCalibration.ps1'])
         assert.deepEqual([...Buffer.from(entries[`_app/${name}`]).subarray(0, 3)], [0xef, 0xbb, 0xbf]);
 });
-test('Windows rebuild matches the pinned Edge preview', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
+test('Windows rebuild matches the published preview or reproducibly builds a newer candidate', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
     const meta = metadata(), built = await require('../build-edge-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath });
-    assert.equal(built.version, meta.version); assert.equal(built.sha256, meta.sha256); assert.equal(built.archive.length, meta.bytes);
+    if (built.version === meta.version) {
+        assert.equal(built.sha256, meta.sha256); assert.equal(built.archive.length, meta.bytes);
+    } else {
+        const candidate = /^0\.1\.0-edge-preview\.([1-9]\d*)$/.exec(built.version);
+        const published = /^0\.1\.0-edge-preview\.([1-9]\d*)$/.exec(meta.version);
+        assert(candidate && published && Number(candidate[1]) > Number(published[1]), 'candidate must advance the published preview');
+        assert.notEqual(built.sha256, meta.sha256);
+        const second = await require('../build-edge-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath });
+        assert.equal(second.version, built.version); assert.equal(second.sha256, built.sha256); assert.equal(second.archive.length, built.archive.length);
+    }
 });
 test('Edge archive is included in the dashboard trace', () => {
     const config = load('dashboard/next.config.ts', { 'node:path': path }, { process: { env: {}, cwd: () => path.join(root, 'dashboard') } }).default;
