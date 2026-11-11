@@ -15,13 +15,14 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
     const marker = randomBytes(16).toString('hex'), pending = new Set();
     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
     const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', timeout: 15000 });
-    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false;
+    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login';
     const session = createChromeMcsSession({ credentials: { deviceId, securityToken, clientVersion: browserVersion },
         route: { expectedCategory: category, expectedAppId: appId, expectedSender: encryption.authorizedEntity },
         send: data => new Promise((resolve, reject) => socket.write(data, error => error ? reject(new Error('FIXTURE_MCS_WRITE_FAILED')) : resolve())),
         store: { pending: async () => [...pending], commit: async message => { pending.add(message.persistentId); return message; },
             confirm: async ids => { for (const id of ids) pending.delete(id); } },
         onReceipt: async message => {
+            stage = 'decrypt';
             const decoded = decryptEce(message.encrypted.data, message.encrypted.headers, {
                 public_key: [...Buffer.from(subscription.keys.p256dh, 'base64url')],
                 private_key: [...Buffer.from(encryption.privateKey.d, 'base64url')],
@@ -40,13 +41,18 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                     for (const frame of decoder.push(chunk)) {
                         const result = await session.receive(frame);
                         if (result.state === 'listening' && !sent) {
-                            sent = true;
+                            sent = true; stage = 'send';
                             try { await webpush.sendNotification(subscription, marker, { TTL: 60 }); }
-                            catch { throw new Error('FIXTURE_MCS_SEND_FAILED'); }
+                            catch (error) { throw new Error(`FIXTURE_MCS_SEND_FAILED_${Number.isInteger(error?.statusCode) ? error.statusCode : 'UNKNOWN'}`); }
+                            stage = 'receive';
                         }
                         if (result.state === 'received' && received) { resolve(); return; }
                     }
-                }).catch(() => reject(new Error('FIXTURE_MCS_PROCESSING_FAILED')));
+                }).catch(error => {
+                    const code = typeof error?.code === 'string' && /^X_CHROME_[A-Z_]+$/.test(error.code) ? error.code
+                        : typeof error?.message === 'string' && /^FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)$/.test(error.message) ? error.message : 'UNKNOWN';
+                    reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}`));
+                });
             });
         });
     } finally { clearTimeout(timer); session.close(); socket.destroy(); }
