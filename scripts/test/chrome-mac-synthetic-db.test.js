@@ -16,7 +16,10 @@ test('synthetic Mac intake stores encrypted receipt and replay ID atomically',
                 productCategory: 'com.chrome.macosx', authorizedEntity: 'sender_123', scope: 'https://x.com/',
                 p256dhPublicKey: original.push.p256dhPublicKey, authenticationSecret: original.push.authenticationSecret,
                 p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
-        const wire = await encrypted(file, { message: 'synthetic' });
+        const payload = process.env.CBTE_MAC_REAL_ROUTE_FIXTURE === '1'
+            ? { notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' }, url: 'https://x.com/synthetic/status/1234567890123456789', text: 'synthetic' }
+            : { message: 'synthetic' };
+        const wire = await encrypted(file, payload);
         const preflightWire = await encrypted(file, { message: 'preflight' });
         const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
         await verifySyntheticMacDatabaseTransfer(file, async ({ store, lease }) => {
@@ -31,6 +34,6 @@ test('synthetic Mac intake stores encrypted receipt and replay ID atomically',
             assert.deepEqual(new Set(await adapter.pending()), new Set(['synthetic-preflight', 'synthetic-receipt']));
             const decoded = decryptEce(Buffer.from(receipt.data, 'base64url'), receipt.headers, { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')],
                 private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] });
-            assert.equal(decoded.toString('utf8'), JSON.stringify({ message: 'synthetic' }));
+            assert.equal(decoded.toString('utf8'), JSON.stringify(payload));
         });
     });

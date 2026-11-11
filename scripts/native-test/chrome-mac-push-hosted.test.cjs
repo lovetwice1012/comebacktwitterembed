@@ -237,6 +237,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
             await verifySyntheticMacDatabaseTransfer(transfer, receiveWithDiagnostics);
             t.diagnostic('synthetic Mac transfer and encrypted MCS receipt persisted in disposable database before ACK');
+            if (process.env.CBTE_MAC_REAL_ROUTE_FIXTURE === '1') t.diagnostic('synthetic MCS receipt routed to one notification job');
         } else await receiveWithDiagnostics();
         fixtureCredentials = null;
         t.diagnostic('synthetic notification received and decrypted by MCS session; credentials omitted');

@@ -51,6 +51,7 @@ jobs:
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
           CBTE_MAC_DB_FIXTURE: '1'
+          CBTE_MAC_REAL_ROUTE_FIXTURE: '1'
           AUTOMATION_TEST_DB_PORT: '33621'
         run: |
           set -eu
@@ -68,5 +69,5 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
-          node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
+          CBTE_MAC_REAL_ROUTE_FIXTURE=0 node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
           node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs

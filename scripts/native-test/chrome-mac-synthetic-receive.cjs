@@ -16,7 +16,8 @@ const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs
 async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443, database }) {
     if (port !== 443 && port !== 5228) throw new Error('FIXTURE_MCS_PORT_INVALID');
     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
-    const marker = randomBytes(16).toString('hex'), pending = new Set();
+    const marker = JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
+        url: 'https://x.com/synthetic/status/1234567890123456789', text: randomBytes(16).toString('hex') }), pending = new Set();
     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
     const socket = tls.connect({ host: 'mtalk.google.com', port, servername: 'mtalk.google.com', timeout: 15000 });
     const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login', loginDetail = 'none', commitBeforeAck = false, awaitingAck = null;
