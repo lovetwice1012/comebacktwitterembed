@@ -1,12 +1,14 @@
 # X通知セットアップのWebダウンロード
 
-ログイン済みの利用者は `/api/automation/x-setup/download` から PowerShell 配布版 `0.1.0-preview.5` を取得できる。レスポンスは ZIP の添付ファイルで、成功・エラーとも `private, no-store`。この GET はPCの情報や通知ファイルを受信しない。
+ログイン済みの利用者は `/api/automation/x-setup/download` から PowerShell 配布版 `0.1.0-preview.6` を取得できる。レスポンスは ZIP の添付ファイルで、成功・エラーとも `private, no-store`。この GET はPCの情報や通知ファイルを受信しない。
 
-配布ファイル名は `x-notification-setup-0.1.0-preview.5.zip`、サイズは 68,992 bytes、SHA-256 は `4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98`。`scripts/build-angelic-setup-package.cjs` の固定された9ファイルと生成マニフェストから、検証済み版と同一の ZIP をメモリ上で再構成する。サーバー側には配布 ZIP を書き出さず、Git 管理外の `artifacts/` にも依存しない。
+配布ファイル名は `x-notification-setup-0.1.0-preview.6.zip`、サイズは 69,230 bytes、SHA-256 は `62fd68547409b83ff4afbbcfe9252efc9834b5ec10fb3a6b2cbb19f5c2c6aa56`。`scripts/build-angelic-setup-package.cjs` の固定された9ファイルと生成マニフェストから、検証済み版と同一の ZIP をメモリ上で再構成する。サーバー側には配布 ZIP を書き出さず、Git 管理外の `artifacts/` にも依存しない。
 
 preview.5では、書き込み失敗時の片付けを作成済みハンドルに限定する。失敗後に保存先のパスが別のファイルを指した場合、その別ファイルを削除しない。
 
-新版は旧preview.4の専用プロファイルを引き継げることをWindowsで確認した。また、オフラインの試験用Firefoxで作ったIndexedDBに合成レコードを入れ、PowerShell 5.1・7による保存、他サイト混在時の同意、GUIプロセス間の受け渡し、中断を確認した。これは実際のX購読や実利用者のプロファイルを使った試験ではない。
+preview.6は旧preview.4の専用プロファイルを引き継げることをWindowsで確認した。読み取り部品にはmacOS用パスの検証を追加し、模擬データでOS別のパス照合とWindowsの既存動作を確認した。Mac用の抽出ツールやmacOS実機上の読み取りはまだ完成していない。
+
+過去のpreview.5では、オフラインの試験用Firefoxで作ったIndexedDBに合成レコードを入れ、PowerShell 5.1・7による保存、他サイト混在時の同意、GUIプロセス間の受け渡し、中断を確認した。これは実際のX購読や実利用者のプロファイルを使った試験ではない。
 
 preview.4は利用者向けの文章を整理した版。保存ツールと登録画面を、できること・操作・次の手順から案内する。確認結果は `positive-copy-review.md` を参照。
 

@@ -204,7 +204,7 @@ async function main() {
         const pendingDownload = page.waitForEvent('download');
         await page.locator('a[download]').click();
         const received = await pendingDownload, receivedPath = await received.path(), packageBytes = await fs.readFile(receivedPath);
-        assert.equal(received.suggestedFilename(), 'x-notification-setup-0.1.0-preview.5.zip');
+        assert.equal(received.suggestedFilename(), 'x-notification-setup-0.1.0-preview.6.zip');
         assert.equal(packageBytes.length, PIN.bytes); assert.equal(hash(packageBytes), PIN.sha256); await received.delete();
         checks.push('actual-authenticated-download-route-pinned-release-bytes');
         await page.setViewportSize({ width: 390, height: 844 }); await page.evaluate(() => scrollTo(0, 0)); await capture('mobile-instructions');

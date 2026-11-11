@@ -13,8 +13,8 @@ const { unzipSync } = require('fflate');
 const { buildArchive, FILES } = require('../build-angelic-setup-package.cjs');
 
 const ROOT = path.resolve(__dirname, '../..');
-const PIN = Object.freeze({ version: '0.1.0-preview.5', filename: 'x-notification-setup-0.1.0-preview.5.zip',
-    sha256: '4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98', bytes: 68992,
+const PIN = Object.freeze({ version: '0.1.0-preview.6', filename: 'x-notification-setup-0.1.0-preview.6.zip',
+    sha256: '62fd68547409b83ff4afbbcfe9252efc9834b5ec10fb3a6b2cbb19f5c2c6aa56', bytes: 69230,
     href: '/api/automation/x-setup/download' });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 

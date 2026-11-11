@@ -21,7 +21,7 @@ test('new setup packages recognize profiles created by the previous releases', {
     const newFirefox = await currentFirefoxBuilder.buildArchive();
     assert.equal(createHash('sha256').update(oldFirefox).digest('hex'), 'c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db');
     assert.equal(await fs.readFile(`${oldFirefoxPath}.sha256`, 'utf8'), 'c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db  x-notification-setup-0.1.0-preview.4.zip\n');
-    assert.equal(newFirefox.version, '0.1.0-preview.5');
+    assert.equal(newFirefox.version, '0.1.0-preview.6');
     const archives = [oldFirefox, newFirefox.archive,
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip')),
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip')),
