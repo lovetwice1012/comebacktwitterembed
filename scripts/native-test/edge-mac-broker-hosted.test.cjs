@@ -35,6 +35,16 @@ test('signed Edge uses its isolated Mac profile and releases only after terminat
         const modulePath = path.resolve(__dirname, '../../src/automation/edge-mac-broker.js');
         const source = await fs.readFile(modulePath, 'utf8'), local = createRequire(modulePath), mod = { exports: {} };
         vm.runInNewContext(source, { module: mod, exports: mod.exports, process, require(name) {
+            if (name === './edge-private-broker') {
+                const original = local(name);
+                return { ...original, async startChromeBroker(options) {
+                    try { return await original.startChromeBroker(options); }
+                    catch (error) {
+                        const code = /^X_CHROME_(?:PIPE|BROKER|CAPTURE)_[A-Z_]+$/.test(error?.code || '') ? error.code : 'OTHER';
+                        t.diagnostic(`synthetic broker failure code=${code}`); throw error;
+                    }
+                } };
+            }
             if (name !== 'node:child_process') return local(name);
             const native = local(name);
             return { ...native, spawn(executable, args, options) {
