@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string] $Base, [Parameter(Mandatory=$true)][string] $Firefox, [switch] $ReadCopiedOnly)
+param([Parameter(Mandatory=$true)][string] $Base, [Parameter(Mandatory=$true)][string] $Firefox, [switch] $ReadCopiedOnly, [switch] $PipeBootstrap)
 $ErrorActionPreference = 'Stop'
 $basePath = [IO.Path]::GetFullPath($Base)
 $tempPath = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
@@ -14,6 +14,8 @@ foreach ($profile in @($seed, $reader)) {
 $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
 . ([IO.Path]::Combine($repo, 'client', 'angelic-setup', 'FirefoxReader.ps1'))
 Initialize-XSetupReaderJob
+. ([IO.Path]::Combine($repo, 'client', 'angelic-setup', 'EdgeCalibrationJob.ps1'))
+if ($PipeBootstrap) { Initialize-XEdgeCalibrationJob }
 if (-not [XSetupNative.ReaderJob]::IsSignedMozilla($Firefox)) { throw 'MOZILLA_SIGNATURE_REQUIRED' }
 function Invoke-SyntheticGecko([string] $Mode, [string] $Profile, [string] $Expected) {
     $resultName = if ($Mode -eq 'seed') { 'result-seed.txt' } else { 'firefox-result-' + $token + '.json' }
@@ -52,8 +54,13 @@ function Invoke-SyntheticGecko([string] $Mode, [string] $Profile, [string] $Expe
     $environment = ($items -join [char]0) + [char]0 + [char]0
     $fixture = if ($Mode -eq 'seed') { [IO.Path]::Combine($repo, 'scripts', 'native-test', 'firefox-xpcshell-fixture.js') }
         else { [IO.Path]::Combine($repo, 'client', 'angelic-setup', 'mac', 'FirefoxXPCShellReader.js') }
-    $job = [XSetupNative.ReaderJob]::Start($Firefox, ('-xpcshell -f "' + $fixture + '"'), $basePath, $environment)
+    $pipe = $PipeBootstrap -and $Mode -eq 'read'; $scriptBytes = $null; $writer = $null; $readerTask = $null; $job = $null
     try {
+        if ($pipe) {
+            $job = [XEdgeNative.CalibrationJob]::Start($Firefox, '-xpcshell -f -', $basePath, $environment)
+            $scriptBytes = [IO.File]::ReadAllBytes($fixture)
+            $readerTask = $job.ReadLimitedAsync(65536); $writer = $job.WriteAndCloseAsync($scriptBytes)
+        } else { $job = [XSetupNative.ReaderJob]::Start($Firefox, ('-xpcshell -f "' + $fixture + '"'), $basePath, $environment) }
         $deadline = [DateTime]::UtcNow.AddSeconds(20)
         $valid = $false
         while (-not $valid -and [DateTime]::UtcNow -lt $deadline) {
@@ -73,8 +80,10 @@ function Invoke-SyntheticGecko([string] $Mode, [string] $Profile, [string] $Expe
             if (-not $valid) { Start-Sleep -Milliseconds 100 }
         }
         if (-not $valid) { throw 'SYNTHETIC_READ_FAILED' }
+        if ($pipe -and (-not $writer.Wait(5000) -or $writer.IsFaulted)) { throw 'SYNTHETIC_PIPE_FAILED' }
     } finally {
-        try { $job.Stop() } finally { $job.Dispose() }
+        try { if ($null -ne $job) { $job.Stop() } } finally { if ($null -ne $job) { $job.Dispose() }; if ($null -ne $scriptBytes) { [Array]::Clear($scriptBytes,0,$scriptBytes.Length) } }
+        if ($null -ne $readerTask) { $null = $readerTask.Wait(5000) }
     }
 }
 if (-not $ReadCopiedOnly) {

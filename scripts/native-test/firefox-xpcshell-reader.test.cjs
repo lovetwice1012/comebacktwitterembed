@@ -39,6 +39,25 @@ test('signed Firefox XPCShell reads a synthetic Push database copied between iso
         assert.equal(output.ok, true); assert.equal(output.export.push.scope, 'https://x.com/');
         assert.equal(output.export.push.uaid, '22222222-2222-4222-8222-222222222222');
         assert.equal(output.export.provenance.browserVersion, '160.0-synthetic');
+        // Re-read the same synthetic copy using the bootstrap bytes over a
+        // private stdin pipe, rather than asking Firefox to reopen its path.
+        await fs.unlink(path.join(base, `firefox-result-${token}.json`));
+        // XPCShell automatically evaluates xpcshell.js from its working
+        // directory even when the main script comes from stdin. This harmless
+        // fixture proves that the future launcher must also control its cwd.
+        await fs.writeFile(path.join(base, 'xpcshell.js'), `{
+          const marker = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
+          marker.initWithPath(Services.env.get('CBTE_SYNTHETIC_PROFILE')); const parent = marker.parent; parent.append('autoload-marker');
+          const out = Cc['@mozilla.org/network/file-output-stream;1'].createInstance(Ci.nsIFileOutputStream);
+          out.init(parent, 0x8a, 0o600, 0); out.close();
+        }\n`, { flag: 'wx' });
+        const piped = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runner,
+            '-Base', base, '-Firefox', firefox, '-ReadCopiedOnly', '-PipeBootstrap'], { windowsHide: true, encoding: 'utf8', timeout: 35000 });
+        if (piped.error) throw piped.error;
+        assert.equal(piped.status, 0, piped.stderr); assert.match(piped.stdout, /SYNTHETIC_READ_OK/);
+        const pipedOutput = JSON.parse(await fs.readFile(path.join(base, `firefox-result-${token}.json`), 'utf8'));
+        assert.deepEqual(pipedOutput, output);
+        assert((await fs.stat(path.join(base, 'autoload-marker'))).isFile());
         if (process.env.CBTE_SYNTHETIC_INVENTORY === '1') {
             async function inventory(dir, rel = '') {
                 for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
