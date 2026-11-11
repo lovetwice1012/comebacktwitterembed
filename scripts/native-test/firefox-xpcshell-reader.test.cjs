@@ -39,6 +39,16 @@ test('signed Firefox XPCShell reads a synthetic Push database copied between iso
         assert.equal(output.ok, true); assert.equal(output.export.push.scope, 'https://x.com/');
         assert.equal(output.export.push.uaid, '22222222-2222-4222-8222-222222222222');
         assert.equal(output.export.provenance.browserVersion, '160.0-synthetic');
+        if (process.env.CBTE_SYNTHETIC_INVENTORY === '1') {
+            async function inventory(dir, rel = '') {
+                for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+                    const name = path.join(rel, entry.name);
+                    console.log(`SYNTHETIC_ENTRY ${name}`);
+                    if (entry.isDirectory()) await inventory(path.join(dir, entry.name), name);
+                }
+            }
+            await inventory(snapshot);
+        }
         assert.equal(await fs.readFile(path.join(base, 'seed', 'cookies.sqlite'), 'utf8'), 'synthetic-cookie-sentinel');
         await assert.rejects(fs.access(path.join(snapshot, 'cookies.sqlite')), { code: 'ENOENT' });
     });
