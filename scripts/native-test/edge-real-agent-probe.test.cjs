@@ -31,7 +31,12 @@ test('real signed Edge synthetic calibration reveals a parseable connect-agent s
         }
         if (['1', '2'].includes(process.env.CBTE_RUN_EDGE_AUTH_VERSION)) {
             assert.equal(result.authentication?.version, process.env.CBTE_RUN_EDGE_AUTH_VERSION);
-            assert.equal(result.authentication?.status, 'bound', JSON.stringify(result.authentication));
-            t.diagnostic(`synthetic authenticated WNS bind succeeded for version ${result.authentication.version}`);
+            const expected = process.env.CBTE_RUN_EDGE_RECONNECT_PROBE === '1' ? 'reconnected' : 'bound';
+            assert.equal(result.authentication?.status, expected, JSON.stringify(result.authentication));
+            t.diagnostic(`synthetic WNS ${expected} for version ${result.authentication.version}`);
+        }
+        if (process.env.CBTE_RUN_EDGE_SESSION_PROBE === '1') {
+            assert.equal(result.receiverSession?.status, 'resumed', JSON.stringify(result.receiverSession));
+            t.diagnostic('synthetic receiver session resumed with the returned token');
         }
     });

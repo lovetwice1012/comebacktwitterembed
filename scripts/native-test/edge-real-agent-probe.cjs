@@ -11,7 +11,7 @@ const { createWindowsEdgePeerVerifier } = require('../../src/automation/edge-win
 const { withMacEdgeEphemeralCertificate } = require('../../src/automation/edge-mac-ephemeral-certificate');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { connectFrameForVersion } = require('../../src/automation/edge-wns-connect-version');
-const { reply } = require('../../src/automation/edge-wns-session');
+const { reply, createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 const { deviceFrame, bindFrame, createNonce } = require('../../src/automation/edge-wns-protocol');
 const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
 const { selectDeviceRecord } = require('../../src/automation/edge-wns-record');
@@ -64,27 +64,66 @@ async function readSyntheticDevice(rootPath) {
 
 // Uses credentials from the probe's own temporary synthetic browser profile.
 // It performs CNT, ATH and BND only; no notifications are requested or read.
-async function probeAuthenticatedVersion(rootPath, metadata, version) {
-    let device, transport, frame, incoming, binding, stage = 'device';
+async function probeAuthenticatedVersion(rootPath, metadata, version, reconnect) {
+    let device, first, second, stage = 'device';
     try {
         device = await readSyntheticDevice(rootPath);
-        transport = createEdgeWnsTransport({ timeoutMs: 10000 }); await transport.connect();
-        stage = 'connect'; frame = connectFrameForVersion(metadata.agent, 1, version);
-        await transport.send(frame); frame.fill(0); frame = null;
-        incoming = await transport.next(10000); reply(incoming, 'CNT', 1, 'CON'); incoming.fill(0); incoming = null;
-        stage = 'device-auth'; frame = deviceFrame(2); await transport.send(frame); frame.fill(0); frame = null;
-        incoming = await transport.next(10000); reply(incoming, 'ATH', 2, 'CON', { emptyBody: true }); incoming.fill(0); incoming = null;
-        stage = 'bind'; frame = bindFrame({ ...metadata.client, nonce: createNonce(), reconnectToken: device.reconnectToken, deviceKey: device.deviceKey }, 3);
-        await transport.send(frame); frame.fill(0); frame = null; incoming = await transport.next(10000);
-        reply(incoming, 'BND', 3, 'CON'); binding = parseBindResponse(incoming, 3); incoming.fill(0); incoming = null;
-        return { version, status: 'bound' };
+        async function handshake(token, phase) {
+            let transport, frame, incoming;
+            try {
+                transport = createEdgeWnsTransport({ timeoutMs: 10000 }); await transport.connect();
+                stage = `${phase}-connect`; frame = connectFrameForVersion(metadata.agent, 1, version);
+                await transport.send(frame); frame.fill(0); frame = null;
+                incoming = await transport.next(10000); reply(incoming, 'CNT', 1, 'CON'); incoming.fill(0); incoming = null;
+                stage = `${phase}-device-auth`; frame = deviceFrame(2); await transport.send(frame); frame.fill(0); frame = null;
+                incoming = await transport.next(10000); reply(incoming, 'ATH', 2, 'CON', { emptyBody: true }); incoming.fill(0); incoming = null;
+                stage = `${phase}-bind`; frame = bindFrame({ ...metadata.client, nonce: createNonce(), reconnectToken: token, deviceKey: device.deviceKey }, 3);
+                await transport.send(frame); frame.fill(0); frame = null; incoming = await transport.next(10000);
+                reply(incoming, 'BND', 3, 'CON'); return parseBindResponse(incoming, 3);
+            } finally { frame?.fill(0); incoming?.fill(0); transport?.close(); }
+        }
+        first = await handshake(device.reconnectToken, 'initial');
+        if (!reconnect) return { version, status: 'bound' };
+        // Use only the freshly returned synthetic token, never the stale one.
+        await new Promise(resolve => setTimeout(resolve, 100));
+        second = await handshake(first.reconnectToken, 'reconnect');
+        return { version, status: 'reconnected' };
     } catch (error) {
         const allowed = new Set(['X_EDGE_WNS_CONNECT_TIMEOUT', 'X_EDGE_WNS_CONNECT_FAILED', 'X_EDGE_WNS_SOCKET_FAILED',
             'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_RECEIVE_TIMEOUT', 'X_EDGE_WNS_REPLY_INVALID', 'X_EDGE_WNS_FRAME_INVALID', 'X_EDGE_WNS_BIND_INVALID']);
         return { version, status: allowed.has(error?.code) ? error.code : 'PROBE_AUTH_FAILED', stage };
     } finally {
-        frame?.fill(0); incoming?.fill(0); binding?.reconnectToken.fill(0);
-        device?.deviceKey.fill(0); device?.reconnectToken.fill(0); transport?.close();
+        first?.reconnectToken.fill(0); second?.reconnectToken.fill(0);
+        device?.deviceKey.fill(0); device?.reconnectToken.fill(0);
+    }
+}
+
+// Exercise the actual receiver session's version-1 handshake and token-save
+// callback twice. The store is deliberately unable to process notifications.
+async function probeReceiverSession(rootPath, metadata) {
+    let device, first, second, stage = 'device'; const rotated = [], siteChannel = Buffer.from('synthetic-only-channel');
+    try {
+        device = await readSyntheticDevice(rootPath);
+        const config = token => ({ transport: createEdgeWnsTransport({ timeoutMs: 10000 }),
+            store: { async recordFrame() { throw new Error('notification handling forbidden'); },
+                async assertLease() { throw new Error('notification handling forbidden'); } },
+            lease: Object.freeze({}), siteChannel, authorize: async () => true,
+            saveRotatedToken: async value => { rotated.push(Buffer.from(value)); }, agent: metadata.agent, client: metadata.client,
+            deviceKey: device.deviceKey, reconnectToken: token, authenticationMode: 'bound' });
+        stage = 'first-start'; first = createEdgeWnsSession(config(device.reconnectToken));
+        if ((await first.start()).state !== 'ready' || rotated.length !== 1) throw new Error('PROBE_SESSION_INVALID');
+        first.close(); first = null;
+        await new Promise(resolve => setTimeout(resolve, 100));
+        stage = 'second-start'; second = createEdgeWnsSession(config(rotated[0]));
+        if ((await second.start()).state !== 'ready' || rotated.length !== 2) throw new Error('PROBE_SESSION_INVALID');
+        return { status: 'resumed' };
+    } catch (error) {
+        const allowed = new Set(['X_EDGE_WNS_CONNECT_TIMEOUT', 'X_EDGE_WNS_CONNECT_FAILED', 'X_EDGE_WNS_SOCKET_FAILED',
+            'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_RECEIVE_TIMEOUT', 'X_EDGE_WNS_REPLY_INVALID', 'X_EDGE_WNS_FRAME_INVALID', 'X_EDGE_WNS_BIND_INVALID']);
+        return { status: allowed.has(error?.code) ? error.code : 'PROBE_SESSION_FAILED', stage };
+    } finally {
+        first?.close(); second?.close(); siteChannel.fill(0); for (const token of rotated) token.fill(0);
+        device?.deviceKey.fill(0); device?.reconnectToken.fill(0);
     }
 }
 
@@ -128,10 +167,13 @@ async function main() {
         const connections = process.env.CBTE_EDGE_PROBE_CONNECT_VERSIONS === '1'
             ? [await probeConnectVersion(result.client.agent, '1'), await probeConnectVersion(result.client.agent, '2')] : undefined;
         const requestedAuth = process.env.CBTE_EDGE_PROBE_AUTH_VERSION;
+        if (['1', '2'].includes(requestedAuth) && process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1') throw new Error('PROBE_MODE_CONFLICT');
         const authentication = ['1', '2'].includes(requestedAuth)
-            ? await probeAuthenticatedVersion(rootPath, result.client, requestedAuth) : undefined;
+            ? await probeAuthenticatedVersion(rootPath, result.client, requestedAuth, process.env.CBTE_EDGE_PROBE_RECONNECT === '1') : undefined;
+        const receiverSession = process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1'
+            ? await probeReceiverSession(rootPath, result.client) : undefined;
         return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion,
-            ...(connections ? { connections } : {}), ...(authentication ? { authentication } : {}) };
+            ...(connections ? { connections } : {}), ...(authentication ? { authentication } : {}), ...(receiverSession ? { receiverSession } : {}) };
     } catch (error) {
         return { ok: false, code: /^X_EDGE_CALIBRATION_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_FAILED',
             ...(diagnostic ? { diagnostic } : {}) };
