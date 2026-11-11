@@ -23,11 +23,13 @@ test('unpacked macOS preview loads bundled runtime, application and LevelDB',
             const stat = await fs.lstat(path.join(bin, name));
             assert.ok(stat.isFile() && !stat.isSymbolicLink() && (stat.mode & 0o111), `${name} is not executable`);
         }
-        // Load the real bundled entry without executing its UI, then load the
-        // packaged native addon with the bundled runtime.
-        const probe = `const path=require('node:path');require(${JSON.stringify(path.join(bin, 'MacSetup.cjs'))});` +
+        // Load the real bundled entry without executing its UI, then create a
+        // disposable database with the packaged addon and bundled runtime.
+        const probe = `require(${JSON.stringify(path.join(bin, 'MacSetup.cjs'))});` +
             `const addon=require(${JSON.stringify(path.join(bin, 'MacLevelDB.node'))});` +
-            `if(!addon||typeof addon!=='object')process.exit(2);process.stdout.write('preview-load-ok');`;
+            `(async()=>{const db=addon.db_init();await addon.db_open(db,${JSON.stringify(path.join(root, 'synthetic-leveldb'))},` +
+            `{createIfMissing:true});try{await addon.db_put(db,'fixture','value',{});}finally{await addon.db_close(db);}` +
+            `process.stdout.write('preview-load-ok');})().catch(()=>{process.exitCode=1});`;
         const result = await exec(path.join(bin, 'MacNode'), ['-e', probe], { timeout: 30000, maxBuffer: 16384,
             env: { HOME: root, PATH: '/usr/bin:/bin' } });
         assert.equal(result.stdout, 'preview-load-ok');
