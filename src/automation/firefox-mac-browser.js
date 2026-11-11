@@ -25,7 +25,7 @@ async function verifyInstalledMacFirefox() {
         }
         async function signature() {
             await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', REQUIREMENT, APP],
-                { timeout: 30000, maxBuffer: 16384, windowsHide: true });
+                { timeout: 120000, maxBuffer: 16384, windowsHide: true });
         }
         const paths = [[APP, 'directory'], [EXECUTABLE, 'file'], [PLIST, 'file']];
         const before = [];

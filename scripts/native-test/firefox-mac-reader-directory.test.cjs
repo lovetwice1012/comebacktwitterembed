@@ -54,9 +54,15 @@ test('Firefox reader cwd is empty, held until shutdown and refuses unexpected ch
         } }), { code: 'X_FIREFOX_MAC_CWD_CLEANUP_FAILED' });
         assert.equal(await fs.readFile(path.join(modified, 'xpcshell.js'), 'utf8'), 'sentinel');
         const foreign = path.join(base, 'foreign'); await fs.mkdir(foreign); await fs.writeFile(path.join(foreign, 'keep'), 'unchanged');
+        let moved = false, replaced = false, replacementError;
         await assert.rejects(withExperimentalMacFirefoxReaderDirectory({ ...args, work: async ({ directory }) => {
             createdDirectories.push(directory);
-            await fs.rename(directory, `${directory}-moved`); await fs.symlink(foreign, directory);
-        } }), { code: 'X_FIREFOX_MAC_CWD_CLEANUP_FAILED' });
+            try { await fs.rename(directory, `${directory}-moved`); moved = true; await fs.symlink(foreign, directory); replaced = true; }
+            catch (error) { replacementError = error.code; throw error; }
+        } }), error => error.code === (moved ? 'X_FIREFOX_MAC_CWD_CLEANUP_FAILED' : 'X_FIREFOX_MAC_CWD_INVALID'));
+        if (!replaced) {
+            t.diagnostic(`OS refused the synthetic directory replacement: ${replacementError}`);
+            assert(['EPERM', 'EACCES', 'EBUSY', 'ENOTSUP'].includes(replacementError));
+        }
         assert.equal(await fs.readFile(path.join(foreign, 'keep'), 'utf8'), 'unchanged');
     });

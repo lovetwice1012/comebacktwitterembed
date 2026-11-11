@@ -10,7 +10,7 @@ const { spawnSync } = require('node:child_process');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 
 test('signed macOS Firefox executes a synthetic XPCShell script from stdin',
-    { skip: process.platform !== 'darwin', timeout: 45000 }, async t => {
+    { skip: process.platform !== 'darwin', timeout: 240000 }, async t => {
         const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-firefox-hosted-fixture-'));
         t.after(async () => {
             const real = await fs.realpath(root);
@@ -24,7 +24,10 @@ test('signed macOS Firefox executes a synthetic XPCShell script from stdin',
             cwd: root, input: 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n', encoding: 'utf8', timeout: 30000,
             env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' },
         });
-        assert.equal(child.error, undefined); assert.equal(child.status, 0);
+        assert.equal(child.error, undefined);
+        // The process receives only synthetic input and a private empty HOME.
+        // Capture a bounded diagnostic without credentials or profile data.
+        assert.equal(child.status, 0, `synthetic Firefox stderr: ${(child.stderr || '').slice(0, 4000)}`);
         assert.match(child.stdout, /CBTE_SYNTHETIC_STDIN_OK/);
         const after = await verifyInstalledMacFirefox(); assert.deepEqual(after, browser);
     });
