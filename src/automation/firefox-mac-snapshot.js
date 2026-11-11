@@ -77,11 +77,29 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
         }
         async function cleanup() {
             if (untrackedCreation) throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
-            for (const item of [...created].reverse()) {
+            const byName = new Map(created.map(item => [item.filename, item]));
+            async function verify(item) {
                 const info = await fs.lstat(item.filename);
                 if (info.dev !== item.info.dev || info.ino !== item.info.ino || info.uid !== process.getuid()
                     || info.isSymbolicLink() || (item.directory ? !info.isDirectory() : !info.isFile() || info.nlink !== 1))
                     throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+            }
+            // Validate the complete tree before removing anything. Unexpected
+            // entries, renamed directories and replacements must be retained.
+            for (const item of created) {
+                await verify(item);
+                if (item.directory) {
+                    const expected = created.filter(other => path.dirname(other.filename) === item.filename)
+                        .map(other => path.basename(other.filename)).sort();
+                    const actual = (await fs.readdir(item.filename)).sort();
+                    if (expected.length !== actual.length || expected.some((name, index) => name !== actual[index]))
+                        throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+                }
+            }
+            for (const item of [...created].reverse()) {
+                let parent = path.dirname(item.filename);
+                while (byName.has(parent)) { await verify(byName.get(parent)); parent = path.dirname(parent); }
+                await verify(item);
                 if (item.directory) await fs.rmdir(item.filename); else await fs.unlink(item.filename);
             }
         }

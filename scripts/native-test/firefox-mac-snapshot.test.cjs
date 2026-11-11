@@ -72,9 +72,19 @@ test('Firefox snapshot copies only push files while locked and removes its own c
     } finally { hook.mock.restore(); }
     assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-')));
     const sentinel = path.join(base, 'unrelated-sentinel'); await fs.writeFile(sentinel, 'preserve');
+    let unsafeSnapshot;
     await assert.rejects(withMacFirefoxSnapshot({ ...args, work: async ({ snapshotPath }) => {
+        unsafeSnapshot = snapshotPath;
         const copied = path.join(snapshotPath, 'storage/permanent/chrome/idb', `${db}.sqlite`);
         await fs.unlink(copied); await fs.symlink(sentinel, copied);
     } }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED' });
     assert.equal(await fs.readFile(sentinel, 'utf8'), 'preserve');
+    assert.equal(await fs.readFile(path.join(unsafeSnapshot, 'storage/permanent/chrome/idb', `${db}.sqlite-wal`), 'utf8'), 'synthetic-wal');
+    let unexpectedSnapshot;
+    await assert.rejects(withMacFirefoxSnapshot({ ...args, work: async ({ snapshotPath }) => {
+        unexpectedSnapshot = snapshotPath;
+        await fs.writeFile(path.join(snapshotPath, 'unexpected-reader-output'), 'preserve-unknown');
+    } }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED' });
+    assert.equal(await fs.readFile(path.join(unexpectedSnapshot, 'unexpected-reader-output'), 'utf8'), 'preserve-unknown');
+    assert.equal(await fs.readFile(path.join(unexpectedSnapshot, 'storage/permanent/chrome/idb', `${db}.sqlite`), 'utf8'), 'synthetic-db');
 });
