@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
 const LEVELDB_SHA256 = 'e311fd4aadf58e151dcb19b0144fbbb468ef08fb73d77bca806e7320725ef26c';
 
 async function buildMacBundle(entry) {
-    if (!['chrome-mac-app.cjs', 'brave-mac-app.cjs'].includes(entry)) throw new Error('Unsupported Mac bundle');
+    if (!['chrome-mac-app.cjs', 'brave-mac-app.cjs', 'firefox-mac-app.cjs'].includes(entry)) throw new Error('Unsupported Mac bundle');
     const binding = { name: 'flat-mac-leveldb', setup(build) {
         build.onResolve({ filter: /^\.\/binding$/ }, args => /[\\/]classic-level[\\/][^\\/]+\.js$/.test(args.importer)
             ? { path: 'binding', namespace: 'mac-level-binding' } : undefined);
@@ -52,4 +52,5 @@ async function buildMacBundle(entry) {
 }
 const buildMacChromeBundle = () => buildMacBundle('chrome-mac-app.cjs');
 const buildMacBraveBundle = () => buildMacBundle('brave-mac-app.cjs');
-module.exports = { buildMacChromeBundle, buildMacBraveBundle, LEVELDB_SHA256 };
+const buildMacFirefoxBundle = () => buildMacBundle('firefox-mac-app.cjs');
+module.exports = { buildMacChromeBundle, buildMacBraveBundle, buildMacFirefoxBundle, LEVELDB_SHA256 };

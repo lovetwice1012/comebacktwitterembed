@@ -15,6 +15,7 @@ const exec = promisify(execFile);
 
 test('ad-hoc hardened Mac preview can load its native database',
     { skip: process.platform !== 'darwin', timeout: 120000 }, async t => {
+        const firefox = process.env.CBTE_MAC_FIREFOX_PREVIEW === '1';
         assert.ok(path.isAbsolute(process.env.MAC_PREVIEW_ZIP || ''), 'missing synthetic preview');
         const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-adhoc-package-'));
         let child, closed = false, resolveClosed, closePromise;
@@ -41,6 +42,12 @@ test('ad-hoc hardened Mac preview can load its native database',
         const manifest = JSON.parse(await fs.readFile(path.join(app, 'Contents', 'Resources', 'MacSetup-manifest.json'), 'utf8'));
         const helperHash = createHash('sha256').update(await fs.readFile(path.join(bin, 'MacStoreLock'))).digest('hex');
         assert.equal(helperHash, manifest.lockSha256, 'signing changed the helper after the manifest was created');
+        if (firefox) {
+            assert.equal(manifest.packageId, 'x-notification-mac-firefox-setup');
+            const resources = path.join(app, 'Contents', 'Resources');
+            for (const [name, expected] of [['FirefoxXPCShellReader.js', manifest.bootstrapSha256], ['Read-PushSubscription.js', manifest.readerSha256]])
+                assert.equal(createHash('sha256').update(await fs.readFile(path.join(resources, name))).digest('hex'), expected);
+        }
         const probe = `require(${JSON.stringify(path.join(app, 'Contents', 'Resources', 'MacSetup.cjs'))});` +
             `const addon=require(${JSON.stringify(path.join(bin, 'MacLevelDB.node'))});` +
             `(async()=>{const db=addon.db_init();await addon.db_open(db,${JSON.stringify(path.join(root, 'synthetic-db'))},{createIfMissing:true});` +
@@ -51,7 +58,8 @@ test('ad-hoc hardened Mac preview can load its native database',
         await fs.mkdir(support, { recursive: true, mode: 0o700 });
         closePromise = new Promise(resolve => { resolveClosed = resolve; });
         child = spawn(path.join(bin, 'Launch'), [], { detached: true, stdio: 'ignore',
-            env: { HOME: home, PATH: '/usr/bin:/bin', DYLD_INSERT_LIBRARIES: '/nonexistent/synthetic' } });
+            env: { HOME: home, PATH: '/usr/bin:/bin', DYLD_INSERT_LIBRARIES: '/nonexistent/synthetic',
+                ...(firefox ? { CBTE_FIREFOX_MAC_EXPERIMENTAL: '1' } : {}) } });
         child.once('close', () => { closed = true; resolveClosed(); }); child.once('error', () => {});
         let dialogPid;
         for (let attempt = 0; attempt < 100 && !dialogPid && !closed; attempt++) {

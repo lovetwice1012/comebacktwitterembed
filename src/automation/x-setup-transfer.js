@@ -1,7 +1,7 @@
 'use strict';
 
 const { KeyObject, constants, createCipheriv, createDecipheriv, createECDH, createHash, createPrivateKey, createPublicKey, privateDecrypt, publicEncrypt, randomBytes, timingSafeEqual } = require('node:crypto');
-const { AutomationError } = require('./service');
+const { AutomationError } = require('./automation-error');
 const { parseUniqueJson } = require('./strict-json');
 
 const MAX_FILE_BYTES = 32768;
