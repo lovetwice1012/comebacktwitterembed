@@ -55,14 +55,28 @@ test('Firefox snapshot copies only push files while locked and removes its own c
     await assert.rejects(withMacFirefoxSnapshot({ ...args, work: async () => assert.fail('linked blob copied') }), { code: 'X_FIREFOX_MAC_SNAPSHOT_INVALID' });
     await fs.unlink(link);
     const earlyExit = path.join(base, 'synthetic-exit-helper');
-    await fs.writeFile(earlyExit, '#!/bin/sh\nprintf R\nsleep 0.1\n', { mode: 0o700 });
+    const exitFlag = path.join(base, 'synthetic-exit-request'), pidFile = path.join(base, 'synthetic-helper-pid');
+    const quote = value => `'${value.replace(/'/g, "'\\''")}'`;
+    await fs.writeFile(earlyExit, `#!/bin/sh\nprintf '%s' "$$" > ${quote(pidFile)}\nprintf R\nwhile [ ! -e ${quote(exitFlag)} ]; do sleep 0.02; done\n`, { mode: 0o700 });
     const earlyHash = createHash('sha256').update(await fs.readFile(earlyExit)).digest('hex');
     const realOpen = fs.open.bind(fs), dbPath = path.join(dir, `${db}.sqlite`);
     const hook = mock.method(fs, 'open', async (name, ...options) => {
         const handle = await realOpen(name, ...options);
         if (name === dbPath) {
             const read = handle.read.bind(handle);
-            handle.read = async (...readArgs) => { await new Promise(resolve => setTimeout(resolve, 200)); return read(...readArgs); };
+            handle.read = async (...readArgs) => {
+                const pid = Number(await fs.readFile(pidFile, 'utf8'));
+                assert(Number.isSafeInteger(pid) && pid > 4);
+                await fs.writeFile(exitFlag, 'exit');
+                let exited = false;
+                for (let attempt = 0; attempt < 250; attempt++) {
+                    try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') { exited = true; break; } throw error; }
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                }
+                assert.equal(exited, true, 'synthetic lock helper did not exit');
+                await new Promise(resolve => setImmediate(resolve));
+                return read(...readArgs);
+            };
         }
         return handle;
     });
