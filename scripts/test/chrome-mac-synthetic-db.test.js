@@ -24,5 +24,8 @@ test('synthetic Mac intake stores encrypted receipt and replay ID atomically',
                     private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] }) });
             const receipt = await adapter.commit({ persistentId: 'synthetic-receipt', encrypted: { data: Buffer.from(wire.data, 'base64url'), headers: wire.headers } });
             assert.equal(receipt.status, 'received'); assert.deepEqual(await adapter.pending(), ['synthetic-receipt']);
+            const decoded = decryptEce(Buffer.from(receipt.data, 'base64url'), receipt.headers, { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')],
+                private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] });
+            assert.equal(decoded.toString('utf8'), JSON.stringify({ message: 'synthetic' }));
         });
     });

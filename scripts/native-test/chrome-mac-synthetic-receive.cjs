@@ -43,8 +43,12 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
         store: receiptStore,
         onReceipt: async message => {
             stage = 'decrypt';
-            const decoded = database ? decrypt(Buffer.from(message.data, 'base64url'), message.headers)
-                : decrypt(message.encrypted.data, message.encrypted.headers);
+            if (database && (message?.status !== 'received' || typeof message.data !== 'string' || !message.headers))
+                throw new Error('FIXTURE_MCS_RECEIPT_INVALID');
+            let decoded;
+            try { decoded = database ? decrypt(Buffer.from(message.data, 'base64url'), message.headers)
+                : decrypt(message.encrypted.data, message.encrypted.headers); }
+            catch { throw new Error('FIXTURE_MCS_DECRYPT_FAILED'); }
             received = decoded.toString('utf8') === marker;
         } });
     try {
@@ -74,7 +78,7 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                     }
                 }).catch(error => {
                     const code = typeof error?.code === 'string' && /^X_CHROME_[A-Z_]+$/.test(error.code) ? error.code
-                        : typeof error?.message === 'string' && /^FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)_(?:UNREGISTERED|INVALID_TOKEN|EXPIRED|NOT_FOUND|OTHER)$/.test(error.message) ? error.message : 'UNKNOWN';
+                        : typeof error?.message === 'string' && /^(?:FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)_(?:UNREGISTERED|INVALID_TOKEN|EXPIRED|NOT_FOUND|OTHER)|FIXTURE_MCS_RECEIPT_INVALID|FIXTURE_MCS_DECRYPT_FAILED)$/.test(error.message) ? error.message : 'UNKNOWN';
                     reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}_${loginDetail}`));
                 });
             });
