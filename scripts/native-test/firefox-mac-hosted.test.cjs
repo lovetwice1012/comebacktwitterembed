@@ -43,7 +43,9 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const baseEnv = { ...options.env, CBTE_SYNTHETIC_PROFILE: seed, CBTE_SYNTHETIC_MODE: 'seed',
             CBTE_SYNTHETIC_READER: readerPath, CBTE_SYNTHETIC_RESULT: path.join(root, 'result-seed.txt') };
         const seeded = spawnSync(browser.executable, ['-xpcshell', '-e', seedScript], { ...options, input: '', env: baseEnv });
-        assert.equal(seeded.error, undefined); assert.equal(seeded.status, 0, `synthetic seed stderr: ${(seeded.stderr || '').slice(0, 4000)}`);
+        t.diagnostic(`seed: status=${seeded.status} error=${seeded.error?.code || 'none'} stderr=${(seeded.stderr || '').slice(0, 2000)}`);
+        assert.equal(Boolean(seeded.error), false, 'synthetic seed process failed');
+        assert.equal(seeded.status, 0, `synthetic seed stderr: ${(seeded.stderr || '').slice(0, 4000)}`);
         assert.equal(await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
         const source = path.join(seed, 'storage/permanent/chrome/idb'), target = path.join(snapshot, 'storage/permanent/chrome/idb');
         await fs.mkdir(target, { recursive: true });
@@ -60,7 +62,9 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
             CBTE_GECKO_READER: readerPath, CBTE_GECKO_READER_SHA256: readerHash,
             CBTE_GECKO_UAID: '22222222-2222-4222-8222-222222222222', CBTE_GECKO_VERSION: browser.version };
         const read = spawnSync(browser.executable, ['-xpcshell', '-e', bootstrap], { ...options, input: '', env: readerEnv });
-        assert.equal(read.error, undefined); assert.equal(read.status, 0, `synthetic reader stderr: ${(read.stderr || '').slice(0, 4000)}`);
+        t.diagnostic(`reader: status=${read.status} error=${read.error?.code || 'none'} stderr=${(read.stderr || '').slice(0, 2000)}`);
+        assert.equal(Boolean(read.error), false, 'synthetic reader process failed');
+        assert.equal(read.status, 0, `synthetic reader stderr: ${(read.stderr || '').slice(0, 4000)}`);
         const result = JSON.parse(await fs.readFile(resultPath, 'utf8'));
         assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0);
         assert.equal(result.export.push.scope, 'https://x.com/'); assert.equal(result.export.provenance.browserVersion, browser.version);
