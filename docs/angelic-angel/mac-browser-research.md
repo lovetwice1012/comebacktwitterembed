@@ -2,6 +2,10 @@
 
 MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファイルを作り、画面から自分でアップロードできることを目標とする。専用Chromiumは同梱しない。現在のWindows用ツールはWindowsのアクセス権、プロセス管理、DPAPI、Windows Formsを使うため、Macでそのまま動作するものではない。
 
+2026年11月11日、[macOSの合成試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42975177060)でApple SiliconとIntelの各16件が成功した。署名を確認したFirefoxと使い捨ての合成プロファイルを使用し、読み取り用プロセスへの標準入力、通知情報の照合、保存確認、ローカルファイル作成、終了確認と一時データの片付けを通している。アップロードは行っていない。
+
+これは試験用の内部経路であり、利用者向けの画面や配布物には接続していない。`sandbox-exec` は非推奨で、試験したプロセス生成・ネットワークの制約やプロセスグループの終了確認は、同一ユーザーの全操作や分離した子孫に対する完全な安全性の証明ではない。実際のX通知、サーバー受信、署名済み配布物の動作は未検証であり、これらを確認するまでは有効化しない。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
