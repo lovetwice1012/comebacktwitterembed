@@ -74,3 +74,5 @@ WebKit公開ソースの [ApplePushServiceConnection.mm](https://github.com/WebK
 Firefox向けの共通読み取り部品では、macOSのパスを完全一致で照合し、`..` や空の要素、制御文字を含むパスを拒否するようにした。OS判定の `Darwin` と `WINNT` は[Mozillaの公開コード](https://searchfox.org/firefox-main/source/toolkit/mozapps/extensions/test/xpcshell/rs-blocklist/test_gfxBlocklist_DriverNew.js)を参照した。合成データでMacの大文字・小文字の違いと、既存Windows版の動作を検証したが、これはMac用の抽出アプリ、プロファイルの安全な所有確認、ネットワーク隔離や実機での実行を実装・検証したことを意味しない。
 
 Mac用Firefoxの専用プロフィールについて、ツール所有の非共有ディレクトリを作成し、所有マーカーと別のインデックスを検証して再利用する部品を追加した。Chromeのインデックスと既存の通常プロフィールは変更せず、他ブラウザーのプロフィールとの取り違え、インデックス欠落、所有情報の改変を拒否する。Linuxの使い捨てディレクトリで合成データによる確認を行った。macOS固有のACL、Firefox起動・終了、プロファイル排他制御、抽出処理への接続は未検証・未実装。
+
+専用Firefoxの `prefs.js` から通知識別子だけを読む内部部品を追加した。プロファイルの所有確認とツール内の排他制御を行い、対象ファイルのリンク、過大な入力、不正なUTF-8、識別子の重複、読み取り中の変更を拒否する。Linuxの使い捨てプロファイルと合成データで正常・異常・同時実行を検証した。これはブラウザーの終了確認やFirefox自身のプロファイルロックの代わりではなく、これらと隔離コピーが整うまでアプリへ接続しない。
