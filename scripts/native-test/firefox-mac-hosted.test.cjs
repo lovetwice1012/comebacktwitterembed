@@ -8,6 +8,8 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const http = require('node:http');
+const vm = require('node:vm');
+const { createRequire } = require('node:module');
 const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
@@ -216,5 +218,49 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
             } }); } catch (error) { preserveRoot = true; throw error; }
         assert.equal(composed.state, 'saved'); assert.equal(composed.uploaded, false);
         assert.deepEqual(parseTransferFile(await fs.readFile(output, 'utf8')), normalized);
+        assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-') || name.startsWith('firefox-result-')));
+        // Connect the real setup session, launcher and export flow. Only the
+        // destination and headless/offline switches are changed by the fixture.
+        const launcherPath = path.resolve(__dirname, '../../src/automation/firefox-mac-setup-browser.js');
+        const launcherSource = await fs.readFile(launcherPath, 'utf8'), launcherRequire = createRequire(launcherPath), launcher = { exports: {} };
+        let setupChild;
+        vm.runInNewContext(launcherSource, { module: launcher, exports: launcher.exports, process, require(name) {
+            if (name !== 'node:child_process') return launcherRequire(name);
+            return { spawn(executable, args, options) {
+                assert.equal(executable, browser.executable);
+                assert.deepEqual(Array.from(args), ['-no-remote', '-profile', profile.profilePath, 'https://x.com/']);
+                setupChild = spawn(executable, ['-headless', '-offline', ...args.slice(0, -1), 'about:blank'],
+                    { ...options, env: { ...options.env, MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } });
+                return setupChild;
+            } };
+        } });
+        const sessionPath = path.resolve(__dirname, '../../src/automation/firefox-mac-setup-session.js');
+        const sessionSource = await fs.readFile(sessionPath, 'utf8'), sessionRequire = createRequire(sessionPath), session = { exports: {} };
+        vm.runInNewContext(sessionSource, { module: session, exports: session.exports, process, AbortSignal, setTimeout, clearTimeout, require(name) {
+            return name === './firefox-mac-setup-browser' ? launcher.exports : sessionRequire(name);
+        } });
+        let setupResult;
+        try {
+            setupResult = await session.exports.runExperimentalMacFirefoxSetup({ rootPath: profile.rootPath, profileId: profile.profileId,
+                helperPath: helper, expectedSha256: await hashFile(helper), bootstrapPath, bootstrapSha256: await hashFile(bootstrapPath),
+                readerPath, readerSha256: readerHash, experimental: true, ui: {
+                    confirmOpen: async () => true,
+                    confirmClosed: async () => {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        assert(setupChild && setupChild.exitCode === null && setupChild.signalCode === null);
+                        assert.equal(setupChild.kill('SIGTERM'), true); return true;
+                    },
+                    confirmSave: async info => {
+                        assert.equal(info.otherSubscriptionCount, 0);
+                        return { confirmed: true, directory: root, filename: 'setup-output.json', otherSitesConsent: false };
+                    },
+                } });
+        } catch (error) {
+            preserveRoot = true;
+            if (setupChild && setupChild.exitCode === null && setupChild.signalCode === null) try { setupChild.kill('SIGTERM'); } catch {}
+            throw error;
+        }
+        assert.equal(setupResult.state, 'saved'); assert.equal(setupResult.uploaded, false);
+        assert.deepEqual(parseTransferFile(await fs.readFile(path.join(root, 'setup-output.json'), 'utf8')), normalized);
         assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-') || name.startsWith('firefox-result-')));
     });

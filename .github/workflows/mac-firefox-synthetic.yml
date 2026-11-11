@@ -11,6 +11,7 @@ on:
       - scripts/test/firefox-mac-reader-protocol.test.js
       - scripts/test/firefox-mac-reader-result.test.js
       - scripts/test/firefox-mac-setup-browser.test.js
+      - scripts/test/firefox-mac-setup-session.test.js
       - scripts/test/firefox-xpcshell-bootstrap.test.js
       - client/angelic-setup/mac/FirefoxXPCShellReader.js
       - client/angelic-setup/mac/lock-notification-stores.c
@@ -49,6 +50,7 @@ jobs:
             scripts/test/firefox-mac-reader-protocol.test.js \
             scripts/test/firefox-mac-reader-result.test.js \
             scripts/test/firefox-mac-setup-browser.test.js \
+            scripts/test/firefox-mac-setup-session.test.js \
             scripts/test/firefox-xpcshell-bootstrap.test.js \
             scripts/native-test/firefox-mac-export-flow.test.cjs \
             scripts/native-test/firefox-mac-reader-directory.test.cjs \
