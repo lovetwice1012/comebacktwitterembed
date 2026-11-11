@@ -9,6 +9,7 @@ const { once } = require('node:events');
 const { createHash } = require('node:crypto');
 const { createMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
+const { withMacFirefoxLockedUaid } = require('../../src/automation/firefox-mac-uaid');
 const helper = process.env.MAC_LOCK_HELPER;
 
 test('Firefox profile lock conflicts with native fcntl and rejects replaced or linked lock files', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
@@ -35,10 +36,24 @@ test('Firefox profile lock conflicts with native fcntl and rejects replaced or l
         const [status] = await once(contender, 'exit'); assert.notEqual(status, 0);
         await assert.rejects(withMacStoreLocks({ ...args, work: async () => {} }), { code: 'X_CHROME_MAC_LOCK_BUSY' });
     } });
+    const syntheticId = '0123456789abcdef0123456789abcdef';
+    const prefs = path.join(profile.profilePath, 'prefs.js');
+    await fs.writeFile(prefs, `user_pref("dom.push.userAgentID", "${syntheticId}");\n`, { mode: 0o600 });
+    assert.equal(await withMacFirefoxLockedUaid({ ...args, work: async ({ profilePath, uaid, signal }) => {
+        assert.equal(profilePath, profile.profilePath); assert.equal(uaid, syntheticId); assert.equal(signal.aborted, false);
+        const contender = spawn('python3', ['-c', code, filename], { stdio: ['pipe', 'pipe', 'pipe'] }); children.push(contender);
+        const [status] = await once(contender, 'exit'); assert.notEqual(status, 0);
+        return 'synthetic-snapshot-complete';
+    } }), 'synthetic-snapshot-complete');
+    await fs.writeFile(prefs, 'user_pref("dom.push.userAgentID", "invalid");\n');
+    await assert.rejects(withMacFirefoxLockedUaid({ ...args, work: async () => assert.fail('invalid identifier accepted') }), { code: 'X_FIREFOX_MAC_UAID_INVALID' });
+    await fs.writeFile(prefs, `user_pref("dom.push.userAgentID", "${syntheticId}");\n`);
     const prematureHelper = path.join(base, 'synthetic-exit-helper');
     await fs.writeFile(prematureHelper, '#!/bin/sh\nprintf R\nsleep 0.1\n', { mode: 0o700 });
     const prematureHash = createHash('sha256').update(await fs.readFile(prematureHelper)).digest('hex');
     await assert.rejects(withMacStoreLocks({ ...args, helperPath: prematureHelper, expectedSha256: prematureHash,
+        work: ({ signal }) => new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) }), { code: 'X_CHROME_MAC_LOCK_LOST' });
+    await assert.rejects(withMacFirefoxLockedUaid({ ...args, helperPath: prematureHelper, expectedSha256: prematureHash,
         work: ({ signal }) => new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) }), { code: 'X_CHROME_MAC_LOCK_LOST' });
     await assert.rejects(withMacStoreLocks({ ...args, work: async () => {
         await fs.rename(filename, `${filename}.old`); await fs.writeFile(filename, '');

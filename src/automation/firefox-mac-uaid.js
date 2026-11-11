@@ -10,14 +10,21 @@ const path = require('node:path');
 const { TextDecoder } = require('node:util');
 const { verifyMacFirefoxProfile } = require('./chrome-mac-profile');
 const { beginMacProfileLease } = require('./chrome-mac-profile-lease');
+const { withMacStoreLocks } = require('./chrome-mac-store-locks');
 const fail = code => Object.assign(new Error(code), { code });
 const MAX_FILE = 8 * 1024 * 1024, MAX_LINE = 65536;
 const UAID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/;
 
 async function readMacFirefoxUaid({ rootPath, profileId, lease }) {
     const operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'firefox' });
+    try { return await readOwnedUaid({ rootPath, profileId }); } finally { operation.end(); }
+}
+
+async function readOwnedUaid({ rootPath, profileId, signal = undefined }) {
     let handle, buffer;
+    function check() { if (signal?.aborted) throw fail('X_FIREFOX_MAC_LOCK_LOST'); }
     try {
+        check();
         const profile = await verifyMacFirefoxProfile(rootPath, profileId);
         const filename = path.join(profile.profilePath, 'prefs.js');
         handle = await fs.open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -45,7 +52,9 @@ async function readMacFirefoxUaid({ rootPath, profileId, lease }) {
         }
         buffer = Buffer.alloc(4096);
         for (;;) {
+            check();
             const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+            check();
             if (!bytesRead) break;
             total += bytesRead;
             if (total > MAX_FILE || total > before.size) throw fail('X_FIREFOX_MAC_PREFS_INVALID');
@@ -54,6 +63,7 @@ async function readMacFirefoxUaid({ rootPath, profileId, lease }) {
         consume(decoder.decode(), true); inspect(line);
         const after = await handle.stat(), current = await fs.lstat(filename);
         await verifyMacFirefoxProfile(rootPath, profileId);
+        check();
         if (total !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs
             || after.ctimeMs !== before.ctimeMs || current.dev !== before.dev || current.ino !== before.ino
             || !current.isFile() || current.isSymbolicLink()) throw fail('X_FIREFOX_MAC_PREFS_CHANGED');
@@ -64,7 +74,19 @@ async function readMacFirefoxUaid({ rootPath, profileId, lease }) {
         throw fail('X_FIREFOX_MAC_PREFS_INVALID');
     } finally {
         buffer?.fill(0);
-        try { await handle?.close(); } finally { operation.end(); }
+        await handle?.close();
     }
 }
-module.exports = { readMacFirefoxUaid };
+
+// Keeps both the tool lease and Firefox's native fcntl lock throughout the
+// identifier read and the caller's snapshot step. Nothing is uploaded here.
+async function withMacFirefoxLockedUaid({ rootPath, profileId, helperPath, expectedSha256, work }) {
+    if (typeof work !== 'function') throw fail('X_FIREFOX_MAC_ARGUMENTS_INVALID');
+    return withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, browser: 'firefox', profileLease: undefined,
+        work: async ({ profilePath, signal }) => {
+            const uaid = await readOwnedUaid({ rootPath, profileId, signal });
+            if (signal.aborted) throw fail('X_FIREFOX_MAC_LOCK_LOST');
+            return work({ profilePath, uaid, signal });
+        } });
+}
+module.exports = { readMacFirefoxUaid, withMacFirefoxLockedUaid };
