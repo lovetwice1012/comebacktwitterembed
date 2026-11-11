@@ -315,6 +315,24 @@ function createXPushGateway(db, options = {}) {
                 if (input.signal?.aborted) aborted();
                 await transport.connect();
                 const chromeStore = createChromeMcsStoreAdapter({ store, lease, authorize, decrypt: row => decrypt(crypto, file, row) });
+                // The inbox is durable before this hint runs. Coalesce hints
+                // while routing is slow, leaving the runtime's inbox scan to
+                // recover every row without blocking the MCS reader.
+                let wakeRunning = false, pendingInbox = null;
+                function wakeFor(inbox) {
+                    if (finished || renewalFailure || input.signal?.aborted || typeof input.onReceived !== 'function') return;
+                    pendingInbox = inbox;
+                    if (wakeRunning) return;
+                    wakeRunning = true;
+                    void (async () => {
+                        while (pendingInbox && !finished && !renewalFailure && !input.signal?.aborted) {
+                            const current = pendingInbox; pendingInbox = null;
+                            let payload;
+                            try { payload = decrypt(crypto, file, current); } catch { continue; }
+                            await notify(input.onReceived, { lease, inbox: current, payload }, input.signal);
+                        }
+                    })().catch(() => {}).finally(() => { wakeRunning = false; if (pendingInbox) wakeFor(pendingInbox); });
+                }
                 const session = createChromeMcsSession({
                     credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, clientVersion: file.provenance.engineVersion || file.provenance.browserVersion },
                     route: { expectedCategory: file.push.productCategory, expectedAppId: file.push.appId, expectedSender: file.push.authorizedEntity },
@@ -326,8 +344,7 @@ function createXPushGateway(db, options = {}) {
                     },
                     onReceipt: async inbox => {
                         if (!inbox.duplicate && inbox.status === 'received' && typeof input.onReceived === 'function') {
-                            const payload = decrypt(crypto, file, inbox);
-                            await notify(input.onReceived, { lease, inbox, payload }, input.signal);
+                            wakeFor(inbox);
                         }
                     },
                 });

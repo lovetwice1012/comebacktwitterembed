@@ -9,7 +9,7 @@ function v(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if 
 function field(n, x) { const b = Buffer.isBuffer(x) ? x : Buffer.from(x); return Buffer.concat([v(n * 8 + 2), v(b.length), b]); }
 const pair = (k, x) => field(7, Buffer.concat([field(1, k), field(2, x)]));
 
-test('Chrome gateway requests server confirmation during a sustained receipt burst', async () => {
+test('Chrome gateway continues a receipt burst while downstream routing is stalled', { timeout: 5000 }, async () => {
     const old = fixture(), key = old.push.p256dhPrivateKey;
     const file = { format: old.format, version: 2,
         provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion: '140.0.7339.42', readMethod: 'chrome-gcm-snapshot' },
@@ -18,7 +18,7 @@ test('Chrome gateway requests server confirmation during a sustained receipt bur
             p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
             p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
     const wire = await encrypted(file, { notificationType: 'tweet', text: 'fixture' });
-    const controller = new AbortController(), pending = new Set(); let commits = 0, socket, pingAfter;
+    const controller = new AbortController(), pending = new Set(); let commits = 0, socket, pingAfter, wakeups = 0;
     const lease = { subscriptionId: '11111111-1111-4111-8111-111111111111', ownerUserId: '222222222222222222', revision: 1,
         token: 'a'.repeat(64), expiresAtMs: Date.now() + 60000, sealedEnvelope: { version: 2 } };
     const store = { leaseMs: 60000, claim: async () => lease, renew: async () => lease, assertLease: async () => {}, auditUse: async () => {},
@@ -42,9 +42,10 @@ test('Chrome gateway requests server confirmation during a sustained receipt bur
     }
     const gateway = createXPushGateway({ queryDatabase: async () => [] }, { store, enabled: true, chromeEnabled: true,
         privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 3000, createChromeSocket: () => socket = new Socket() });
-    const result = await gateway.run({ ...lease, workerId: 'fixture', signal: controller.signal, onSession: () => socket.deliver(1) });
+    const result = await gateway.run({ ...lease, workerId: 'fixture', signal: controller.signal, onSession: () => socket.deliver(1),
+        onReceived: () => { wakeups++; return new Promise(() => {}); } });
     assert.deepEqual(result, { state: 'stopped', reasonCode: null });
-    assert.equal(commits, 25); assert.equal(pingAfter, 25); assert.equal(pending.size, 25);
+    assert.equal(commits, 25); assert.equal(pingAfter, 25); assert.equal(pending.size, 25); assert.equal(wakeups, 1);
 });
 
 test('one gateway handles simultaneous independent receivers without crossing receipts', { timeout: 15000 }, async () => {
