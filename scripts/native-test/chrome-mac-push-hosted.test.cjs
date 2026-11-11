@@ -23,6 +23,7 @@ const { withMacChromeKeychainPassword } = require('../../src/automation/chrome-m
 const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-mac-token-crypto');
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
+const { checkin } = require('../../src/automation/chrome-checkin');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -147,7 +148,18 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             }
         }) });
         t.diagnostic('synthetic device token and subscription keys matched the isolated snapshot; credentials omitted');
-        await receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion: version.product.slice('Chrome/'.length) });
+        const browserVersion = version.product.slice('Chrome/'.length);
+        const receive = () => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion });
+        try { await receive(); }
+        catch (error) {
+            // Diagnostic only: the gateway currently logs in before check-in.
+            // Retry solely after a rejected login, before any push was sent.
+            if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error[0-9]+$/.test(error?.message || '')) throw error;
+            t.diagnostic('first MCS login rejected; trying a synthetic Mac check-in with the same credentials');
+            await checkin({ deviceId: fixtureCredentials.deviceId, securityToken: fixtureCredentials.securityToken, browserVersion, platform: 'macos' });
+            t.diagnostic('synthetic Mac check-in accepted unchanged credentials; retrying login');
+            await receive();
+        }
         fixtureCredentials = null;
         t.diagnostic('synthetic notification received and decrypted by MCS session; credentials omitted');
         broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin, pipeTimeoutMs: 30000,
