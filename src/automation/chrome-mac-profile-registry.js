@@ -7,14 +7,22 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseUniqueJson } = require('./strict-json');
-const { createMacChromeProfile, verifyMacChromeProfile } = require('./chrome-mac-profile');
+const { createMacChromeProfile, verifyMacChromeProfile, createMacFirefoxProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
 const fail = code => Object.assign(new Error(code), { code });
 
-async function getOrCreateMacChromeProfile(directory) {
+async function getOrCreateMacProfile(directory, browser) {
+    const config = browser === 'chrome'
+        ? { create: createMacChromeProfile, verify: verifyMacChromeProfile, index: 'setup-profile.json', lock: 'registry.lock',
+            orphan: /^x-notification-setup-[0-9a-f]{32}$/, temporary: '.setup-profile-' }
+        : browser === 'firefox'
+            ? { create: createMacFirefoxProfile, verify: verifyMacFirefoxProfile, index: 'firefox-setup-profile.json', lock: 'firefox-registry.lock',
+                orphan: /^x-notification-firefox-[0-9a-f]{32}$/, temporary: '.firefox-setup-profile-' }
+            : null;
     if (process.platform === 'win32' || typeof process.getuid !== 'function' || typeof directory !== 'string' || !path.isAbsolute(directory))
         throw fail('X_CHROME_MAC_REGISTRY_INVALID');
+    if (!config) throw fail('X_CHROME_MAC_REGISTRY_INVALID');
     let lock, lockStat, temporary, tempStat;
-    const base = path.resolve(directory), index = path.join(base, 'setup-profile.json'), lockPath = path.join(base, 'registry.lock');
+    const base = path.resolve(directory), index = path.join(base, config.index), lockPath = path.join(base, config.lock);
     async function unlinkOwned(filename, expected) {
         const stat = await fs.lstat(filename);
         if (!expected || stat.dev !== expected.dev || stat.ino !== expected.ino) throw fail('X_CHROME_MAC_REGISTRY_CLEANUP_FAILED');
@@ -45,14 +53,14 @@ async function getOrCreateMacChromeProfile(directory) {
             if (!record || typeof record !== 'object' || Array.isArray(record)
                 || Object.keys(record).sort().join(',') !== 'profileId,rootPath' || typeof record.rootPath !== 'string'
                 || path.dirname(record.rootPath) !== base) throw fail('X_CHROME_MAC_REGISTRY_INVALID');
-            return await verifyMacChromeProfile(record.rootPath, record.profileId);
+            return await config.verify(record.rootPath, record.profileId);
         }
         // A missing index with an existing tool-created root can be the result
         // of an interrupted write. Never silently replace or delete it.
-        if ((await fs.readdir(base)).some(name => /^x-notification-setup-[0-9a-f]{32}$/.test(name)))
+        if ((await fs.readdir(base)).some(name => config.orphan.test(name)))
             throw fail('X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED');
-        const profile = await createMacChromeProfile(base);
-        temporary = path.join(base, `.setup-profile-${randomBytes(16).toString('hex')}.tmp`);
+        const profile = await config.create(base);
+        temporary = path.join(base, `${config.temporary}${randomBytes(16).toString('hex')}.tmp`);
         const handle = await fs.open(temporary, 'wx', 0o600);
         try {
             tempStat = await handle.stat();
@@ -77,4 +85,6 @@ async function getOrCreateMacChromeProfile(directory) {
         if (cleanupFailed) throw fail('X_CHROME_MAC_REGISTRY_CLEANUP_FAILED');
     }
 }
-module.exports = { getOrCreateMacChromeProfile };
+const getOrCreateMacChromeProfile = directory => getOrCreateMacProfile(directory, 'chrome');
+const getOrCreateMacFirefoxProfile = directory => getOrCreateMacProfile(directory, 'firefox');
+module.exports = { getOrCreateMacChromeProfile, getOrCreateMacFirefoxProfile };

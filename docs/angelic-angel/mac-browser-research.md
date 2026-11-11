@@ -70,3 +70,7 @@ LevelDB部品についても、ユニバーサルバイナリーにIntelとApple
 ### Safariの受信側の追加調査
 
 WebKit公開ソースの [ApplePushServiceConnection.mm](https://github.com/WebKit/WebKit/blob/c526785513ba334a7a24e5cc649c99f11336038a/Source/WebKit/webpushd/ApplePushServiceConnection.mm) は、macOS内の `APSConnection` で通知を受け取り、topic と VAPID公開鍵からURLトークンを要求する実装を示す。[PushService.mm](https://github.com/WebKit/WebKit/blob/c526785513ba334a7a24e5cc649c99f11336038a/Source/WebKit/webpushd/PushService.mm) では購読情報をDBと照合し、通知を処理する。これはAppleの通知基盤とSafari購読の結び付きを示すもので、ファイルに保存した購読情報だけを別サーバーで受信できることを意味しない。実機・Apple側の認証・受信経路と、既存Safari通知への影響は未検証。受信を推測して有効化せず、実機で検証できるまでSafari向けの完成版として提供しない。
+
+Firefox向けの共通読み取り部品では、macOSのパスを完全一致で照合し、`..` や空の要素、制御文字を含むパスを拒否するようにした。OS判定の `Darwin` と `WINNT` は[Mozillaの公開コード](https://searchfox.org/firefox-main/source/toolkit/mozapps/extensions/test/xpcshell/rs-blocklist/test_gfxBlocklist_DriverNew.js)を参照した。合成データでMacの大文字・小文字の違いと、既存Windows版の動作を検証したが、これはMac用の抽出アプリ、プロファイルの安全な所有確認、ネットワーク隔離や実機での実行を実装・検証したことを意味しない。
+
+Mac用Firefoxの専用プロフィールについて、ツール所有の非共有ディレクトリを作成し、所有マーカーと別のインデックスを検証して再利用する部品を追加した。Chromeのインデックスと既存の通常プロフィールは変更せず、他ブラウザーのプロフィールとの取り違え、インデックス欠落、所有情報の改変を拒否する。Linuxの使い捨てディレクトリで合成データによる確認を行った。macOS固有のACL、Firefox起動・終了、プロファイル排他制御、抽出処理への接続は未検証・未実装。
