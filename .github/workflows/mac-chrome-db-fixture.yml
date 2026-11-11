@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/mac-chrome-db-fixture.yml
       - scripts/native-test/chrome-mac-*.cjs
+      - scripts/test/chrome-mac-synthetic-db.test.js
       - src/automation/chrome-mac-*.js
       - src/automation/x-setup*.js
       - scripts/lib/automation-test-db.js

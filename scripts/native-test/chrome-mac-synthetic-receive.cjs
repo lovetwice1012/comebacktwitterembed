@@ -81,7 +81,7 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                     }
                 }).catch(error => {
                     const code = typeof error?.code === 'string' && /^X_(?:CHROME|PUSH)_[A-Z_]+$/.test(error.code) ? error.code
-                        : typeof error?.message === 'string' && /^(?:FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)_(?:UNREGISTERED|INVALID_TOKEN|EXPIRED|NOT_FOUND|OTHER)|FIXTURE_MCS_RECEIPT_INVALID|FIXTURE_MCS_DECRYPT_FAILED)$/.test(error.message) ? error.message : 'UNKNOWN';
+                        : typeof error?.message === 'string' && /^(?:FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)_(?:UNREGISTERED|INVALID_TOKEN|EXPIRED|NOT_FOUND|OTHER)|FIXTURE_MCS_RECEIPT_INVALID|FIXTURE_MCS_DECRYPT_FAILED|FIXTURE_MCS_ACK_BEFORE_COMMIT)$/.test(error.message) ? error.message : 'UNKNOWN';
                     reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}_${loginDetail}_matched${received}`));
                 });
             });
