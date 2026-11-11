@@ -19,6 +19,7 @@ if ($env:CBTE_RUN_EDGE_CONNECT_PROBE -ceq '1') { $items.Add('CBTE_EDGE_PROBE_CON
 if (@('1','2') -ccontains $env:CBTE_RUN_EDGE_AUTH_VERSION) { $items.Add('CBTE_EDGE_PROBE_AUTH_VERSION=' + $env:CBTE_RUN_EDGE_AUTH_VERSION) }
 if ($env:CBTE_RUN_EDGE_RECONNECT_PROBE -ceq '1') { $items.Add('CBTE_EDGE_PROBE_RECONNECT=1') }
 if ($env:CBTE_RUN_EDGE_SESSION_PROBE -ceq '1') { $items.Add('CBTE_EDGE_PROBE_RECEIVER_SESSION=1') }
+if (@('1','2') -ccontains $env:CBTE_RUN_EDGE_SESSION_VERSION) { $items.Add('CBTE_EDGE_PROBE_RECEIVER_VERSION=' + $env:CBTE_RUN_EDGE_SESSION_VERSION) }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $script = [IO.Path]::Combine($repo, 'scripts', 'native-test', 'edge-real-agent-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $script + '"'), $repo, $environment)

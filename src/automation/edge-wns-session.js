@@ -2,7 +2,8 @@
 
 // Protocol orchestration for one receiver. The caller supplies the already
 // fenced token-save operation and the transport; no browser data is loaded here.
-const { connectFrame, deviceFrame, bindFrame, challengeFrame, createNonce } = require('./edge-wns-protocol');
+const { deviceFrame, bindFrame, challengeFrame, createNonce } = require('./edge-wns-protocol');
+const { connectFrameForVersion } = require('./edge-wns-connect-version');
 const { parseBindResponse } = require('./edge-wns-bind');
 const { createEdgeWnsReceiver } = require('./edge-wns-receiver');
 const { MAX_HEADER, MAX_PAYLOAD } = require('./edge-wns-framing');
@@ -32,11 +33,11 @@ function copyObject(value, names) {
     if (keys.length !== names.length || keys.some(key => typeof key !== 'string' || !names.includes(key) || !Object.hasOwn(descriptors[key], 'value'))) throw fail('X_EDGE_WNS_SESSION_CONFIG_INVALID');
     return Object.fromEntries(names.map(name => [name, descriptors[name].value]));
 }
-function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize, saveRotatedToken, agent, client, deviceKey, reconnectToken, productKey, productId, authenticationMode = 'challenge' }) {
+function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize, saveRotatedToken, agent, client, deviceKey, reconnectToken, productKey, productId, authenticationMode = 'challenge', connectVersion = '1' }) {
     if (!transport || ['connect', 'send', 'next', 'close'].some(name => typeof transport[name] !== 'function')
         || typeof saveRotatedToken !== 'function' || !Buffer.isBuffer(deviceKey) || deviceKey.length !== 32
         || !Buffer.isBuffer(reconnectToken) || !reconnectToken.length || reconnectToken.length > 4096
-        || !['challenge', 'bound'].includes(authenticationMode)
+        || !['challenge', 'bound'].includes(authenticationMode) || !['1', '2'].includes(connectVersion)
         || authenticationMode === 'challenge' && (!Buffer.isBuffer(productKey) || productKey.length !== 16 || !Buffer.isBuffer(productId) || productId.length !== 16)
         || authenticationMode === 'bound' && (productKey !== undefined || productId !== undefined))
         throw fail('X_EDGE_WNS_SESSION_CONFIG_INVALID');
@@ -69,7 +70,7 @@ function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize,
             let cnt, ath, bnd;
             try {
                 // Validate all local metadata before starting the handshake.
-                cnt = connectFrame(safeAgent, 1); ath = deviceFrame(2);
+                cnt = connectFrameForVersion(safeAgent, 1, connectVersion); ath = deviceFrame(2);
                 bnd = bindFrame({ ...safeClient, nonce: createNonce(), reconnectToken: secrets.reconnectToken, deviceKey: secrets.deviceKey }, 3);
                 await transport.connect();
                 (await exchange(cnt, 'CNT', 1, 'CON')).fill(0); cnt = null;

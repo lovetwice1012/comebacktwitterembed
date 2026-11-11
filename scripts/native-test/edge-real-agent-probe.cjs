@@ -98,9 +98,9 @@ async function probeAuthenticatedVersion(rootPath, metadata, version, reconnect)
     }
 }
 
-// Exercise the actual receiver session's version-1 handshake and token-save
+// Exercise the actual receiver session's selected handshake and token-save
 // callback twice. The store is deliberately unable to process notifications.
-async function probeReceiverSession(rootPath, metadata) {
+async function probeReceiverSession(rootPath, metadata, connectVersion) {
     let device, first, second, stage = 'device'; const rotated = [], siteChannel = Buffer.from('synthetic-only-channel');
     try {
         device = await readSyntheticDevice(rootPath);
@@ -109,7 +109,7 @@ async function probeReceiverSession(rootPath, metadata) {
                 async assertLease() { throw new Error('notification handling forbidden'); } },
             lease: Object.freeze({}), siteChannel, authorize: async () => true,
             saveRotatedToken: async value => { rotated.push(Buffer.from(value)); }, agent: metadata.agent, client: metadata.client,
-            deviceKey: device.deviceKey, reconnectToken: token, authenticationMode: 'bound' });
+            deviceKey: device.deviceKey, reconnectToken: token, authenticationMode: 'bound', connectVersion });
         stage = 'first-start'; first = createEdgeWnsSession(config(device.reconnectToken));
         if ((await first.start()).state !== 'ready' || rotated.length !== 1) throw new Error('PROBE_SESSION_INVALID');
         first.close(); first = null;
@@ -170,8 +170,10 @@ async function main() {
         if (['1', '2'].includes(requestedAuth) && process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1') throw new Error('PROBE_MODE_CONFLICT');
         const authentication = ['1', '2'].includes(requestedAuth)
             ? await probeAuthenticatedVersion(rootPath, result.client, requestedAuth, process.env.CBTE_EDGE_PROBE_RECONNECT === '1') : undefined;
+        const receiverVersion = process.env.CBTE_EDGE_PROBE_RECEIVER_VERSION || '1';
+        if (!['1', '2'].includes(receiverVersion)) throw new Error('PROBE_VERSION_INVALID');
         const receiverSession = process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1'
-            ? await probeReceiverSession(rootPath, result.client) : undefined;
+            ? await probeReceiverSession(rootPath, result.client, receiverVersion) : undefined;
         return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion,
             ...(connections ? { connections } : {}), ...(authentication ? { authentication } : {}), ...(receiverSession ? { receiverSession } : {}) };
     } catch (error) {

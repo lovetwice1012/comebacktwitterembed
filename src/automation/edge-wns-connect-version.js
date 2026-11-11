@@ -1,7 +1,7 @@
 'use strict';
 
-// Experimental frame construction only. This does not change the existing
-// receiver or intake. The caller owns the returned buffer and must clear it.
+// Builds the explicitly selected handshake version. Existing callers default
+// to version 1; version 2 is not enabled by intake. The caller clears the buffer.
 const { connectFrame } = require('./edge-wns-protocol');
 const fail = () => Object.assign(new Error('X_EDGE_WNS_CONNECT_VERSION_INVALID'), { code: 'X_EDGE_WNS_CONNECT_VERSION_INVALID' });
 function connectFrameForVersion(agent, sequence, version) {

@@ -18,13 +18,21 @@ function harness(options = {}) {
         saveRotatedToken: options.saveRotatedToken || (async token => { events.push('rotate'); rotated.push(token); }),
         agent: { os: 'Test OS', osVersion: '1', architecture: 'x64', locale: 'en' },
         client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
-        deviceKey: Buffer.alloc(32, 7), reconnectToken: Buffer.from('old-token'), ...(options.bound
+        deviceKey: Buffer.alloc(32, 7), reconnectToken: Buffer.from('old-token'), ...(options.connectVersion === undefined ? {} : { connectVersion: options.connectVersion }), ...(options.bound
             ? { authenticationMode: 'bound' } : { productKey: Buffer.from('0123456789abcdef'), productId: Buffer.from('fedcba9876543210') }) });
     return { session, incoming, events, frames, rotated };
 }
+test('bound session sends the explicitly observed connect version', async () => {
+    const h = harness({ bound: true, connectVersion: '2' }); h.incoming.pop();
+    assert.deepEqual(await h.session.start(), { state: 'ready' });
+    assert(h.frames[0].includes(Buffer.from('<connect><ver>2</ver>')));
+    h.session.close(); for (const frame of h.frames) frame.fill(0);
+    assert.throws(() => harness({ bound: true, connectVersion: '3' }), { code: 'X_EDGE_WNS_SESSION_CONFIG_INVALID' });
+});
 test('bound session saves token and receives without product challenge', async () => {
     const h = harness({ bound: true }); h.incoming.pop();
     assert.deepEqual(await h.session.start(), { state: 'ready' });
+    assert(h.frames[0].includes(Buffer.from('<connect><ver>1</ver>')));
     assert.deepEqual(h.events, ['connect', 'send:CNT', 'send:ATH', 'send:BND', 'rotate']);
     h.incoming.push(notification());
     assert.deepEqual(await h.session.next(), { state: 'persisted', inboxId: '1', duplicate: false });
