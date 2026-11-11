@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string] $Base, [Parameter(Mandatory=$true)][string] $Firefox)
+param([Parameter(Mandatory=$true)][string] $Base, [Parameter(Mandatory=$true)][string] $Firefox, [switch] $ReadCopiedOnly)
 $ErrorActionPreference = 'Stop'
 $basePath = [IO.Path]::GetFullPath($Base)
 $tempPath = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
@@ -72,6 +72,7 @@ function Invoke-SyntheticGecko([string] $Mode, [string] $Profile, [string] $Expe
         try { $job.Stop() } finally { $job.Dispose() }
     }
 }
+if (-not $ReadCopiedOnly) {
 Invoke-SyntheticGecko 'seed' $seed 'CBTE_SYNTHETIC_SEED_OK'
 $source = [IO.Path]::Combine($seed, 'storage', 'permanent', 'chrome', 'idb')
 $target = [IO.Path]::Combine($reader, 'storage', 'permanent', 'chrome', 'idb')
@@ -96,8 +97,11 @@ if ([IO.Directory]::Exists($blobs)) {
     if ([IO.File]::GetAttributes($blobs) -band [IO.FileAttributes]::ReparsePoint) { throw 'SYNTHETIC_LINK_REJECTED' }
     Copy-Item -LiteralPath $blobs -Destination ([IO.Path]::Combine($target, $database + '.files')) -Recurse
 }
+}
 Invoke-SyntheticGecko 'read' $reader 'CBTE_SYNTHETIC_READ_OK'
+if (-not $ReadCopiedOnly) {
 foreach ($filename in $hashes.Keys) {
     if ((Get-SyntheticHash ([IO.Path]::Combine($source, $filename))) -cne $hashes[$filename]) { throw 'SYNTHETIC_SOURCE_CHANGED' }
+}
 }
 Write-Output 'SYNTHETIC_READ_OK'
