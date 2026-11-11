@@ -42,3 +42,5 @@ Chromiumは製品のcategoryが登録時の値に一致する場合に限り、�
 `scripts/test/chrome-mcs-*.test.js` と `scripts/test/chrome-x-transfer.test.js` はGoogleの通知サーバーに接続しない単体試験です。接続を伴う検証は `experiments/chrome-push/controlled-fixture.cjs` と `packaged-e2e.cjs` を使います。後者はWindows、Chrome、ビルド済み `packages/angelic-angel/dist`、使い捨てMariaDB、および試験用の `web-push`、`chrome-remote-interface` が必要です。試験用の新規プロファイルのみを作り、既存プロファイルにアクセスしません。
 
 Linuxワーカーまで確認する場合は、名前が `cbte-chrome-compat-20261110` の使い捨てWSL環境に、依存関係とビルド済み `packages/angelic-angel/dist` を含む検証用コピーを `/tmp/cbte-linux-worker` に用意し、同環境のループバック `33621` に使い捨てMariaDBを起動します。`CHROME_FIXTURE_LINUX=1` と `CHROME_FIXTURE_LINUX_DB=1` を指定すると、`linux-worker-fixture.cjs` は試験用スキーマを作成し、終了時にそのスキーマを削除します。購読情報は試験用Chromeから標準入力で渡され、ログやコマンド引数には出しません。実ユーザーのプロファイルや本番DBを指定してはいけません。
+
+固定済みWindows版プレビュー7と現行ソースを照合したところ、起動補助のChromeBroker.cjsが変わっていたため、同じ版番号を再利用せず、未公開プレビュー8を作成した。ZIPは35,928,371バイト、SHA-256は902a52e869b7071eceed76712f0d8cf172beb4d4b205bee0ecb32475dcf2cda0。固定済み版と候補版の両方について専用プロフィール、改変拒否、既存ファイルの保護、日本語を含むパスからのChrome・Brave起動を検証した。画面側は引き続きプレビュー7を参照し、新版は本番に公開していない。実X通知・Discord配送は未確認。
