@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
 
@@ -14,7 +14,11 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
     { skip: process.platform !== 'darwin', timeout: 480000 }, async t => {
         const temp = await fs.realpath(os.tmpdir()), token = randomBytes(16).toString('hex');
         const root = path.join(temp, `cbte-xpcshell-isolated-${token}`); await fs.mkdir(root, { mode: 0o700 });
+        let preserveRoot = false;
         t.after(async () => {
+            // If the process group cannot be proven empty, leave only this
+            // synthetic root for the disposable hosted VM to clean up.
+            if (preserveRoot) return;
             const real = await fs.realpath(root);
             assert.equal(path.dirname(real), temp); assert.match(path.basename(real), /^cbte-xpcshell-isolated-[0-9a-f]{32}$/);
             await fs.rm(real, { recursive: true });
@@ -25,6 +29,33 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const script = 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n';
         const options = { cwd: root, input: script, encoding: 'utf8', timeout: 30000,
             env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } };
+        async function runSynthetic(source, env) {
+            const child = spawn(browser.executable, ['-xpcshell', '-e', source],
+                { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+            let stdout = '', stderr = '', settled = false, timer;
+            child.stdout.on('data', chunk => { if (stdout.length < 2000) stdout += chunk.toString('utf8').slice(0, 2000 - stdout.length); });
+            child.stderr.on('data', chunk => { if (stderr.length < 2000) stderr += chunk.toString('utf8').slice(0, 2000 - stderr.length); });
+            const exited = new Promise(resolve => {
+                child.once('error', error => { if (!settled) { settled = true; resolve({ error: error.code || 'ERROR' }); } });
+                child.once('exit', (code, signal) => { if (!settled) { settled = true; resolve({ code, signal }); } });
+            });
+            let status;
+            try {
+                status = await Promise.race([exited, new Promise(resolve => { timer = setTimeout(() => resolve({ timeout: true }), 30000); })]);
+                if (status.timeout) {
+                    child.kill('SIGTERM');
+                    status = { timeout: true, result: await Promise.race([exited, new Promise(resolve => setTimeout(() => resolve(null), 3000))]) };
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+                let groupAlive = false;
+                if (child.pid) {
+                    try { process.kill(-child.pid, 0); groupAlive = true; }
+                    catch (error) { if (error.code !== 'ESRCH') groupAlive = true; }
+                }
+                if (groupAlive || !settled) preserveRoot = true;
+                return { status, stdout, stderr, groupAlive };
+            } finally { clearTimeout(timer); child.stdout.destroy(); child.stderr.destroy(); }
+        }
         const child = spawnSync(browser.executable, ['-xpcshell', '-f', '-'], options);
         const viaDevice = spawnSync(browser.executable, ['-xpcshell', '-f', '/dev/stdin'], options);
         const inline = spawnSync(browser.executable, ['-xpcshell', '-e', script], { ...options, input: '' });
@@ -53,14 +84,13 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const readerHash = createHash('sha256').update(await fs.readFile(readerPath)).digest('hex');
         const baseEnv = { ...options.env, CBTE_SYNTHETIC_PROFILE: seed, CBTE_SYNTHETIC_MODE: 'seed',
             CBTE_SYNTHETIC_READER: readerPath, CBTE_SYNTHETIC_RESULT: path.join(root, 'result-seed.txt') };
-        const seeded = spawnSync(browser.executable, ['-xpcshell', '-e', seedScript], { ...options, input: '', env: baseEnv });
-        t.diagnostic(`seed: status=${seeded.status} error=${seeded.error?.code || 'none'} stdout=${(seeded.stdout || '').slice(0, 2000)} stderr=${(seeded.stderr || '').slice(0, 2000)}`);
+        const seeded = await runSynthetic(seedScript, baseEnv);
+        t.diagnostic(`seed: status=${JSON.stringify(seeded.status)} groupAlive=${seeded.groupAlive} stdout=${seeded.stdout} stderr=${seeded.stderr}`);
         let seedFile = 'missing';
         try { seedFile = await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8') === 'CBTE_SYNTHETIC_SEED_OK' ? 'valid' : 'unexpected'; }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         t.diagnostic(`seed-result-file: ${seedFile}`);
-        assert.equal(Boolean(seeded.error), false, 'synthetic seed process failed');
-        assert.equal(seeded.status, 0, `synthetic seed stderr: ${(seeded.stderr || '').slice(0, 4000)}`);
+        assert.equal(seeded.status.code, 0, 'synthetic seed process failed'); assert.equal(seeded.groupAlive, false);
         assert.equal(await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
         const source = path.join(seed, 'storage/permanent/chrome/idb'), target = path.join(snapshot, 'storage/permanent/chrome/idb');
         await fs.mkdir(target, { recursive: true });
@@ -76,10 +106,9 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const readerEnv = { ...options.env, CBTE_GECKO_SNAPSHOT: snapshot, CBTE_GECKO_RESULT: resultPath,
             CBTE_GECKO_READER: readerPath, CBTE_GECKO_READER_SHA256: readerHash,
             CBTE_GECKO_UAID: '22222222-2222-4222-8222-222222222222', CBTE_GECKO_VERSION: browser.version };
-        const read = spawnSync(browser.executable, ['-xpcshell', '-e', bootstrap], { ...options, input: '', env: readerEnv });
-        t.diagnostic(`reader: status=${read.status} error=${read.error?.code || 'none'} stderr=${(read.stderr || '').slice(0, 2000)}`);
-        assert.equal(Boolean(read.error), false, 'synthetic reader process failed');
-        assert.equal(read.status, 0, `synthetic reader stderr: ${(read.stderr || '').slice(0, 4000)}`);
+        const read = await runSynthetic(bootstrap, readerEnv);
+        t.diagnostic(`reader: status=${JSON.stringify(read.status)} groupAlive=${read.groupAlive} stderr=${read.stderr}`);
+        assert.equal(read.status.code, 0, 'synthetic reader process failed'); assert.equal(read.groupAlive, false);
         const result = JSON.parse(await fs.readFile(resultPath, 'utf8'));
         assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0);
         assert.equal(result.export.push.scope, 'https://x.com/'); assert.equal(result.export.provenance.browserVersion, browser.version);
