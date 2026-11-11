@@ -11,8 +11,9 @@ const firefox = process.env.CBTE_XPCSHELL_FIREFOX;
 test('signed Firefox XPCShell reads a synthetic Push database copied between isolated profiles',
     { skip: process.platform !== 'win32' || !firefox, timeout: 45000 }, async t => {
         const parent = await fs.realpath(os.tmpdir());
-        const base = path.join(parent, `cbte-xpcshell-isolated-${randomBytes(16).toString('hex')}`);
-        await fs.mkdir(base); await fs.mkdir(path.join(base, 'seed')); await fs.mkdir(path.join(base, 'read'));
+        const token = randomBytes(16).toString('hex'), base = path.join(parent, `cbte-xpcshell-isolated-${token}`);
+        const snapshot = path.join(base, `firefox-snapshot-${token}`);
+        await fs.mkdir(base); await fs.mkdir(path.join(base, 'seed')); await fs.mkdir(snapshot);
         await fs.writeFile(path.join(base, 'seed', 'cookies.sqlite'), 'synthetic-cookie-sentinel');
         t.after(async () => {
             const real = await fs.realpath(base);
@@ -34,7 +35,10 @@ test('signed Firefox XPCShell reads a synthetic Push database copied between iso
         assert.equal(result.status, 0, result.stderr);
         assert.match(result.stdout, /SYNTHETIC_READ_OK/);
         assert.equal(await fs.readFile(path.join(base, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
-        assert.equal(await fs.readFile(path.join(base, 'result-read.txt'), 'utf8'), 'CBTE_SYNTHETIC_READ_OK');
+        const output = JSON.parse(await fs.readFile(path.join(base, `firefox-result-${token}.json`), 'utf8'));
+        assert.equal(output.ok, true); assert.equal(output.export.push.scope, 'https://x.com/');
+        assert.equal(output.export.push.uaid, '22222222-2222-4222-8222-222222222222');
+        assert.equal(output.export.provenance.browserVersion, '160.0-synthetic');
         assert.equal(await fs.readFile(path.join(base, 'seed', 'cookies.sqlite'), 'utf8'), 'synthetic-cookie-sentinel');
-        await assert.rejects(fs.access(path.join(base, 'read', 'cookies.sqlite')), { code: 'ENOENT' });
+        await assert.rejects(fs.access(path.join(snapshot, 'cookies.sqlite')), { code: 'ENOENT' });
     });
