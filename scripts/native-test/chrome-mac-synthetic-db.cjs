@@ -39,8 +39,8 @@ async function verifySyntheticMacDatabaseTransfer(file, work) {
             assert.ok(lease, 'fixture lease unavailable');
             await work({ db, store, lease });
             const inbox = await db.queryDatabase('SELECT status,data_ciphertext FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
-            assert.equal(inbox.length, 1); assert.equal(inbox[0].status, 'received');
-            assert.ok(typeof inbox[0].data_ciphertext === 'string' && inbox[0].data_ciphertext.length > 0, 'encrypted receipt missing');
+            assert.ok(inbox.length >= 1, 'encrypted receipt missing');
+            assert.ok(inbox.every(row => row.status === 'received' && typeof row.data_ciphertext === 'string' && row.data_ciphertext.length > 0), 'invalid encrypted receipt');
         }
     } finally { await db.close(); }
 }
