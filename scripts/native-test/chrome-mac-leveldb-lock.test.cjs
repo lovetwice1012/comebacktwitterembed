@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { once } = require('node:events');
 const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
@@ -173,7 +174,17 @@ test('Mac snapshot copies only notification data under both locks and is removed
     await fs.writeFile(path.join(defaults, 'Preferences'), JSON.stringify({ gcm: { product_category_for_subtypes: 'com.chrome.macosx',
         push_messaging_application_id_map: { [appId]: 'https://x.com/#1#', other: 'https://example.com/#2#' } } }));
     for (const name of ['Cookies', 'History', 'Login Data']) await fs.writeFile(path.join(defaults, name), 'must not be copied');
-    const password = Buffer.from('synthetic-password'), key = pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1');
+    const hostedKeychain = process.platform === 'darwin' && process.env.CBTE_SYNTHETIC_HOSTED_KEYCHAIN === '1';
+    if (hostedKeychain) {
+        assert.equal(process.env.GITHUB_ACTIONS, 'true');
+        assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+        const temp = await fs.realpath(process.env.RUNNER_TEMP);
+        const expected = path.join(temp, 'cbte-synthetic.keychain-db');
+        const list = await promisify(execFile)('/usr/bin/security', ['list-keychains', '-d', 'user'], { timeout: 5000 });
+        assert.equal(list.stdout.trim(), `"${expected}"`, 'synthetic keychain must be the only user search entry');
+    }
+    const password = Buffer.from(hostedKeychain ? 'cbte-synthetic-only-key' : 'synthetic-password');
+    const key = pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1');
     const cipher = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20));
     const encrypted = Buffer.concat([Buffer.from('v10'), cipher.update('456'), cipher.final()]); key.fill(0);
     const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }), jwk = ec.publicKey.export({ format: 'jwk' }), auth = randomBytes(16);
@@ -225,6 +236,21 @@ test('Mac snapshot copies only notification data under both locks and is removed
     assert.equal(output.state, 'saved'); assert.equal(output.uploaded, false);
     const saved = JSON.parse(await fs.readFile(path.join(base, 'notifications.json'), 'utf8'));
     assert.equal(saved.push.securityToken, '456'); assert(!JSON.stringify(saved).includes('synthetic-password'));
+    if (hostedKeychain) {
+        // Use the real Keychain reader and production export flow with only
+        // the dedicated synthetic keychain and synthetic profile above.
+        const { exportMacChromeNotifications } = require('../../src/automation/chrome-mac-export-flow');
+        const actual = await exportMacChromeNotifications({ ...flowArgs, confirmSave: async details => {
+            assert.equal(details.otherSubscriptionCount, 1);
+            return { confirmed: true, otherSitesConsent: true, directory: base, filename: 'native-keychain.json' };
+        } });
+        assert.equal(actual.state, 'saved'); assert.equal(actual.uploaded, false);
+        const result = JSON.parse(await fs.readFile(path.join(base, 'native-keychain.json'), 'utf8'));
+        assert.equal(result.push.securityToken, '456');
+        assert.equal(result.push.p256dhPublicKey, subscription.keys.p256dh);
+        assert.equal((await fs.stat(path.join(base, 'native-keychain.json'))).mode & 0o777, 0o600);
+        assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    }
     await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('synthetic read failure'); } }), { code: 'X_CHROME_MAC_LOCK_FAILED' });
     for (const code of ['X_CHROME_SNAPSHOT_INVALID', 'X_CHROME_SNAPSHOT_UNSUPPORTED', 'X_CHROME_SNAPSHOT_NOT_FOUND',
         'X_CHROME_SNAPSHOT_AMBIGUOUS', 'X_CHROME_MAC_FLOW_CANCELLED']) {

@@ -82,6 +82,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+          CBTE_SYNTHETIC_HOSTED_KEYCHAIN: '1'
         run: |
           test "$(uname -s)" = Darwin
           node --test --test-concurrency=1 \
