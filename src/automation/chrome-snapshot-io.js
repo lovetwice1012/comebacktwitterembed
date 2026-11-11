@@ -56,21 +56,23 @@ async function verifyLeveldb(directory, allowEncryptionDirectory) {
         if (stat.size > 64 * 1024 * 1024 || total > 128 * 1024 * 1024) throw fault('X_CHROME_SNAPSHOT_INVALID');
     }
 }
-async function readChromeSnapshot({ snapshotPath, token, subscription, browserVersion, engineVersion, dbFactory, unprotect, parseJson, platform = 'windows', macPassword }) {
+async function readChromeSnapshot({ snapshotPath, token, subscription, browserVersion, engineVersion, dbFactory, unprotect, parseJson, platform = 'windows', macPassword, experimentalBraveMac = false }) {
     let deviceStore, encryptionStore, key;
     try {
         if (typeof snapshotPath !== 'string' || !path.isAbsolute(snapshotPath) || !/^[0-9a-f]{32}$/.test(token)
-            || path.basename(snapshotPath) !== `chrome-snapshot-${token}` || typeof dbFactory !== 'function'
+            || typeof experimentalBraveMac !== 'boolean' || experimentalBraveMac && platform !== 'macos'
+            || path.basename(snapshotPath) !== `${experimentalBraveMac ? 'brave' : 'chrome'}-snapshot-${token}` || typeof dbFactory !== 'function'
             || !['windows', 'macos'].includes(platform) || (platform === 'windows' && typeof unprotect !== 'function')
             || (platform === 'macos' && !Buffer.isBuffer(macPassword)) || typeof parseJson !== 'function') throw fault('X_CHROME_SNAPSHOT_INVALID');
         const root = path.resolve(snapshotPath), rootStat = await fs.lstat(root), resolved = await fs.realpath(root);
         if (rootStat.isSymbolicLink() || !rootStat.isDirectory() || (process.platform === 'win32' ? resolved.toLowerCase() !== root.toLowerCase() : resolved !== root)) throw fault('X_CHROME_SNAPSHOT_INVALID');
         const marker = parseJson(await readBounded(root, ['snapshot-owner.json'], 4096));
-        if (!marker || marker.appId !== 'x-notification-setup' || marker.kind !== 'chrome-snapshot-v1' || marker.token !== token
+        if (!marker || marker.appId !== 'x-notification-setup' || marker.kind !== `${experimentalBraveMac ? 'brave' : 'chrome'}-snapshot-v1` || marker.token !== token
             || Object.keys(marker).sort().join(',') !== 'appId,kind,token') throw fault('X_CHROME_SNAPSHOT_INVALID');
         const preferences = parseJson(await readBounded(root, ['Default', 'Preferences'], 4 * 1024 * 1024));
-        const { appId, productCategory } = selectChromeMapping(preferences, { allowMac: platform === 'macos' });
-        if ((platform === 'macos') !== (productCategory === 'com.chrome.macosx')) throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
+        const { appId, productCategory } = selectChromeMapping(preferences, { allowMac: platform === 'macos', allowBraveMac: experimentalBraveMac });
+        if (platform === 'macos' ? productCategory !== (experimentalBraveMac ? 'com.brave.macosx' : 'com.chrome.macosx')
+            : !['com.chrome.windows', 'com.brave.windows'].includes(productCategory)) throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
         if (platform === 'windows') {
             const localState = parseJson(await readBounded(root, ['Local State'], 1024 * 1024));
             const wrapped = b64(localState?.os_crypt?.encrypted_key);
@@ -100,7 +102,8 @@ async function readChromeSnapshot({ snapshotPath, token, subscription, browserVe
             if (records.length >= 4) throw fault('X_CHROME_SNAPSHOT_AMBIGUOUS');
             records.push({ key: recordKey, value });
         }
-        return buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion, allowMac: platform === 'macos' });
+        return buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion,
+            allowMac: platform === 'macos', allowBraveMac: experimentalBraveMac });
     } catch (error) {
         const code = typeof error?.code === 'string' && /^X_CHROME_SNAPSHOT_[A-Z_]+$/.test(error.code)
             ? error.code : 'X_CHROME_SNAPSHOT_INVALID';

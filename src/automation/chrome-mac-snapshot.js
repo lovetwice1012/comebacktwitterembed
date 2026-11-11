@@ -14,7 +14,8 @@ const LEVELDB_FILE = /^(?:CURRENT|LOCK|LOG|LOG\.old|MANIFEST-[0-9]+|[0-9]+\.(?:l
 const MAX_TOTAL = 128 * 1024 * 1024, MAX_FILE = 64 * 1024 * 1024;
 
 async function cleanSnapshot(root, token, identity, browser) {
-    const prefix = browser === 'edge' ? 'edge' : 'chrome';
+    const prefix = browser === 'edge' ? 'edge' : browser === 'brave' ? 'brave' : 'chrome';
+    const isGcm = browser === 'chrome' || browser === 'brave';
     const storeName = browser === 'edge' ? 'EdgePushStorageWithConnectTokenAndKey' : 'GCM Store';
     const stat = await fs.lstat(root);
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid() || stat.dev !== identity.dev || stat.ino !== identity.ino
@@ -27,9 +28,9 @@ async function cleanSnapshot(root, token, identity, browser) {
             const file = path.join(dir, name), info = await fs.lstat(file);
             if (info.isSymbolicLink() || info.uid !== process.getuid()) throw fail('X_CHROME_MAC_SNAPSHOT_CLEANUP_FAILED');
             const allowedDir = depth === 0 && name === 'Default' || depth === 1 && name === storeName
-                || browser === 'chrome' && depth === 2 && name === 'Encryption';
-            const allowedFile = depth === 0 && name === 'snapshot-owner.json' || browser === 'chrome' && depth === 1 && name === 'Preferences'
-                || (depth === 2 || browser === 'chrome' && depth === 3) && LEVELDB_FILE.test(name);
+                || isGcm && depth === 2 && name === 'Encryption';
+            const allowedFile = depth === 0 && name === 'snapshot-owner.json' || isGcm && depth === 1 && name === 'Preferences'
+                || (depth === 2 || isGcm && depth === 3) && LEVELDB_FILE.test(name);
             if (info.isDirectory() && allowedDir) { await collect(file, depth + 1); directories.push(file); }
             else if (info.isFile() && info.nlink === 1 && allowedFile) {
                 if (depth === 0) {
@@ -59,7 +60,8 @@ async function cleanSnapshot(root, token, identity, browser) {
 async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, browser, profileLease }) {
     if (typeof work !== 'function') throw fail('X_CHROME_MAC_SNAPSHOT_INVALID');
     return withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, browser, profileLease, work: async ({ profilePath, signal }) => {
-        const prefix = browser === 'edge' ? 'edge' : 'chrome';
+        const prefix = browser === 'edge' ? 'edge' : browser === 'brave' ? 'brave' : 'chrome';
+        const isGcm = browser === 'chrome' || browser === 'brave';
         const storeName = browser === 'edge' ? 'EdgePushStorageWithConnectTokenAndKey' : 'GCM Store';
         const token = randomBytes(16).toString('hex'), snapshot = path.join(rootPath, `${prefix}-snapshot-${token}`);
         let identity, total = 0;
@@ -90,14 +92,14 @@ async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expecte
             await fs.mkdir(snapshot, { mode: 0o700 }); identity = await fs.lstat(snapshot);
             await fs.mkdir(path.join(snapshot, 'Default'), { mode: 0o700 });
             const targetStore = path.join(snapshot, 'Default', storeName); await fs.mkdir(targetStore, { mode: 0o700 });
-            if (browser === 'chrome') await fs.mkdir(path.join(targetStore, 'Encryption'), { mode: 0o700 });
+            if (isGcm) await fs.mkdir(path.join(targetStore, 'Encryption'), { mode: 0o700 });
             const marker = await fs.open(path.join(snapshot, 'snapshot-owner.json'), 'wx', 0o600);
             try { await marker.writeFile(JSON.stringify({ appId: 'x-notification-setup', kind: `${prefix}-snapshot-v1`, token })); await marker.sync(); }
             finally { await marker.close(); }
-            if (browser === 'chrome') await copy(path.join(profilePath, 'Default', 'Preferences'), path.join(snapshot, 'Default', 'Preferences'), 4 * 1024 * 1024);
+            if (isGcm) await copy(path.join(profilePath, 'Default', 'Preferences'), path.join(snapshot, 'Default', 'Preferences'), 4 * 1024 * 1024);
             const sourceStore = path.join(profilePath, 'Default', storeName);
             /** @type {Array<[string, string, boolean]>} */
-            const stores = browser === 'chrome' ? [[sourceStore, targetStore, true],
+            const stores = isGcm ? [[sourceStore, targetStore, true],
                 [path.join(sourceStore, 'Encryption'), path.join(targetStore, 'Encryption'), false]] : [[sourceStore, targetStore, false]];
             for (const [source, target, allowEncryption] of stores) {
                 const entries = await fs.readdir(source, { withFileTypes: true });
@@ -118,4 +120,5 @@ async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expecte
 }
 const withMacChromeSnapshot = options => withMacBrowserSnapshot({ ...options, browser: 'chrome' });
 const withMacEdgeSnapshot = options => withMacBrowserSnapshot({ ...options, browser: 'edge' });
-module.exports = { withMacChromeSnapshot, withMacEdgeSnapshot };
+const withMacBraveSnapshot = options => withMacBrowserSnapshot({ ...options, browser: 'brave' });
+module.exports = { withMacChromeSnapshot, withMacEdgeSnapshot, withMacBraveSnapshot };

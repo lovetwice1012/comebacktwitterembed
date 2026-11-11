@@ -9,19 +9,19 @@ const { readChromeSnapshot } = require('../../src/automation/chrome-snapshot-io'
 const { parseChromeSnapshotJson } = require('../../src/automation/x-setup-transfer');
 function vint(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
 function field(n, value) { const v = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([vint(n * 8 + 2), vint(v.length), v]); }
-async function fixture(t, platform = 'windows') {
-    const token = randomBytes(16).toString('hex'), root = path.join(await fs.realpath(os.tmpdir()), `chrome-snapshot-${token}`);
+async function fixture(t, platform = 'windows', brave = false) {
+    const token = randomBytes(16).toString('hex'), prefix = brave ? 'brave' : 'chrome', root = path.join(await fs.realpath(os.tmpdir()), `${prefix}-snapshot-${token}`);
     await fs.mkdir(root);
     t.after(async () => {
         const target = await fs.realpath(root), parent = await fs.realpath(os.tmpdir());
         assert.equal(path.dirname(target).toLowerCase(), parent.toLowerCase());
-        assert.equal(path.basename(target), `chrome-snapshot-${token}`);
+        assert.equal(path.basename(target), `${prefix}-snapshot-${token}`);
         await fs.rm(target, { recursive: true });
     });
     await fs.mkdir(path.join(root, 'Default', 'GCM Store', 'Encryption'), { recursive: true });
-    await fs.writeFile(path.join(root, 'snapshot-owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'chrome-snapshot-v1', token }));
+    await fs.writeFile(path.join(root, 'snapshot-owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: `${prefix}-snapshot-v1`, token }));
     const id = 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2', sender = 'sender_123';
-    await fs.writeFile(path.join(root, 'Default', 'Preferences'), JSON.stringify({ gcm: { product_category_for_subtypes: platform === 'macos' ? 'com.chrome.macosx' : 'com.chrome.windows',
+    await fs.writeFile(path.join(root, 'Default', 'Preferences'), JSON.stringify({ gcm: { product_category_for_subtypes: brave ? 'com.brave.macosx' : platform === 'macos' ? 'com.chrome.macosx' : 'com.chrome.windows',
         push_messaging_application_id_map: { [id]: 'https://x.com/#1#' } } }));
     if (platform === 'windows') await fs.writeFile(path.join(root, 'Local State'), JSON.stringify({ os_crypt: { encrypted_key: Buffer.concat([Buffer.from('DPAPI'), Buffer.from('wrapped')]).toString('base64') } }));
     const key = randomBytes(32), iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -42,8 +42,20 @@ async function fixture(t, platform = 'windows') {
     const subscription = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test',
         keys: { p256dh: publicKey.toString('base64url'), auth: auth.toString('base64url') } };
     return { root, token, key, opened, input: { snapshotPath: root, token, subscription, browserVersion: '140.0.7339.42', dbFactory,
-        ...(platform === 'macos' ? { platform, macPassword } : { unprotect: async () => Buffer.from(key) }), parseJson: parseChromeSnapshotJson } };
+        ...(platform === 'macos' ? { platform, macPassword } : { unprotect: async () => Buffer.from(key) }),
+        ...(brave ? { engineVersion: '140.0.7339.42' } : {}), parseJson: parseChromeSnapshotJson } };
 }
+test('Brave Mac snapshot requires the explicit local gate, matching marker and category', async t => {
+    const f = await fixture(t, 'macos', true);
+    await assert.rejects(readChromeSnapshot(f.input), { code: 'X_CHROME_SNAPSHOT_INVALID' });
+    await assert.rejects(readChromeSnapshot({ ...f.input, experimentalBraveMac: true, platform: 'windows', unprotect: async () => Buffer.alloc(32) }), { code: 'X_CHROME_SNAPSHOT_INVALID' });
+    await assert.rejects(readChromeSnapshot({ ...f.input, experimentalBraveMac: 'true' }), { code: 'X_CHROME_SNAPSHOT_INVALID' });
+    assert.equal(f.opened.length, 0);
+    const result = await readChromeSnapshot({ ...f.input, experimentalBraveMac: true });
+    assert.equal(result.file.push.productCategory, 'com.brave.macosx'); assert.equal(result.file.provenance.kind, 'brave-gcm');
+    assert.equal(result.file.push.securityToken, '456');
+    assert.throws(() => require('../../src/automation/x-setup-transfer').parseTransferFile(JSON.stringify(result.file)), error => error.code === 'X_SETUP_INVALID_FILE');
+});
 test('reads only a marked snapshot and binds Chrome keys to selected X subscription', async t => {
     const f = await fixture(t), result = await readChromeSnapshot(f.input);
     assert.equal(result.file.push.deviceId, '123'); assert.equal(result.file.push.securityToken, '456');
