@@ -9,8 +9,9 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
-const { createECDH, createHash } = require('node:crypto');
+const { createHash } = require('node:crypto');
 const { ClassicLevel } = require('classic-level');
+const webpush = require('web-push');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
@@ -21,6 +22,7 @@ const { withMacChromeSnapshot } = require('../../src/automation/chrome-mac-snaps
 const { withMacChromeKeychainPassword } = require('../../src/automation/chrome-mac-keychain');
 const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-mac-token-crypto');
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
+const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -55,7 +57,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const key = createECDH('prime256v1'); key.generateKeys(); const publicKey = key.getPublicKey().toString('base64url');
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey;
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); res.end("self.addEventListener('push',()=>{});"); }
             else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>Push fixture</title>'); }
@@ -91,7 +93,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             '--no-first-run', '--no-default-browser-check', '--disable-sync', '--no-proxy-server', 'about:blank'],
         { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
         const call = fixturePipe(child);
-        await call('Browser.getVersion');
+        const version = await call('Browser.getVersion');
+        assert.ok(/^Chrome\/[0-9]+(?:\.[0-9]+){3}$/.test(version.product), 'unexpected browser version');
         await call('Browser.grantPermissions', { origin, permissions: ['notifications'] });
         const target = await call('Target.createTarget', { url: origin });
         const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
@@ -116,6 +119,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         assert.equal(await waitForMacProcessGroupExit(child.pid), true, 'first browser group did not stop');
         const helper = process.env.MAC_LOCK_HELPER; assert.equal(typeof helper, 'string');
         const expectedSha256 = createHash('sha256').update(await fs.readFile(helper)).digest('hex');
+        let fixtureCredentials;
         await withMacChromeKeychainPassword({ confirmed: true, work: password => withMacChromeSnapshot({
             rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper, expectedSha256,
             work: async snapshot => {
@@ -138,10 +142,14 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     const found = readEncryptionData(records[0].record, { expectedAppId: appId,
                         expectedPublicKey: Buffer.from(value.keys.p256dh, 'base64url'), expectedAuthSecret: Buffer.from(value.keys.auth, 'base64url') });
                     assert.ok(records[0].recordKey === `${appId},${found.authorizedEntity}`, 'subscription key did not match');
+                    fixtureCredentials = { deviceId: device, securityToken: token, appId, category: preferences.gcm.product_category_for_subtypes, encryption: found };
                 } finally { await keys.close().catch(() => {}); await devices.close().catch(() => {}); }
             }
         }) });
         t.diagnostic('synthetic device token and subscription keys matched the isolated snapshot; credentials omitted');
+        await receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion: version.product.slice('Chrome/'.length) });
+        fixtureCredentials = null;
+        t.diagnostic('synthetic notification received and decrypted by MCS session; credentials omitted');
         broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin, pipeTimeoutMs: 30000,
             extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
         let captured;

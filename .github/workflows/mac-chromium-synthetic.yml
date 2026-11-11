@@ -12,6 +12,7 @@ on:
       - scripts/native-test/chrome-mac-hosted.test.cjs
       - scripts/native-test/chrome-mac-install-diagnostic.cjs
       - scripts/native-test/chrome-mac-push-hosted.test.cjs
+      - scripts/native-test/chrome-mac-synthetic-receive.cjs
       - scripts/native-test/chrome-mac-process-group.test.cjs
       - scripts/native-test/brave-mac-composed.test.cjs
       - scripts/test/chrome-mac-broker.test.js
@@ -40,6 +41,10 @@ jobs:
           node-version: '24'
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the notification decryptor
+        run: |
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
       - name: Build temporary lock helper
         run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
       # Hosted runners are disposable. Some preinstalled Chrome images carry
