@@ -30,7 +30,7 @@ async function main() {
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
     if (reimport && (!takeover || process.env.EDGE_PROBE_BLOCK_WNS !== '1')) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
-    const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+    const profile = path.join(root, 'edge-profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
     try {
         const vapid = webpush.generateVAPIDKeys();
@@ -159,11 +159,23 @@ async function main() {
             }
         }
         stage = 'snapshot';
-        const token = randomBytes(16).toString('hex'), snapshotPath = path.join(root, `edge-snapshot-${token}`);
+        // Exercise the same locked snapshot implementation used in the
+        // distribution, against only this freshly created fixture profile.
+        const shared = path.resolve(__dirname, '../../client/angelic-setup/EdgeShared.ps1').replace(/'/g, "''");
+        const snapshotScript = path.resolve(__dirname, '../../client/angelic-setup/EdgeSnapshot.ps1').replace(/'/g, "''");
+        const command = `$ErrorActionPreference='Stop'; . '${shared}' -Browser edge -LibraryOnly; . '${snapshotScript}'; `
+            + `$r=Copy-XEdgeSnapshot -ProfileRoot ([IO.Path]::Combine($env:CBTE_EDGE_FIXTURE_ROOT,'edge-profile')) -PrivateRoot $env:CBTE_EDGE_FIXTURE_ROOT; `
+            + `[ordered]@{path=$r.path;token=$r.token}|ConvertTo-Json -Compress`;
+        const copy = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+            Buffer.from(command, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000,
+            env: { ...process.env, CBTE_EDGE_FIXTURE_ROOT: root } });
+        if (copy.status !== 0) throw new Error('PROBE_SNAPSHOT_FAILED');
+        let snapshot;
+        try { snapshot = JSON.parse(copy.stdout); } catch { throw new Error('PROBE_SNAPSHOT_FAILED'); }
+        const { token, path: snapshotPath } = snapshot;
+        if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token) || snapshotPath !== path.join(root, `edge-snapshot-${token}`))
+            throw new Error('PROBE_SNAPSHOT_FAILED');
         const storePath = path.join(snapshotPath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
-        await fs.mkdir(path.dirname(storePath), { recursive: true });
-        await fs.cp(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'), storePath, { recursive: true, errorOnExist: true, force: false });
-        await fs.writeFile(path.join(snapshotPath, 'snapshot-owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-snapshot-v1', token }), { flag: 'wx' });
         const db = new ClassicLevel(storePath, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
         let rewriteKey, rewriteValue;
         try {
@@ -187,6 +199,14 @@ async function main() {
                     clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
+        const cleanupCommand = `$ErrorActionPreference='Stop'; . '${shared}' -Browser edge -LibraryOnly; . '${snapshotScript}'; `
+            + `Remove-XEdgeSnapshot -Snapshot $env:CBTE_EDGE_FIXTURE_SNAPSHOT -Token $env:CBTE_EDGE_FIXTURE_TOKEN -PrivateRoot $env:CBTE_EDGE_FIXTURE_ROOT`;
+        const cleaned = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+            Buffer.from(cleanupCommand, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000,
+            env: { ...process.env, CBTE_EDGE_FIXTURE_ROOT: root, CBTE_EDGE_FIXTURE_SNAPSHOT: snapshotPath, CBTE_EDGE_FIXTURE_TOKEN: token } });
+        if (cleaned.status !== 0) throw new Error('PROBE_SNAPSHOT_CLEANUP_FAILED');
+        try { await fs.lstat(snapshotPath); throw new Error('PROBE_SNAPSHOT_CLEANUP_FAILED'); }
+        catch (error) { if (error?.code !== 'ENOENT') throw error; }
         if (result.file.push.p256dhPublicKey !== captured.keys.p256dh || result.file.push.authenticationSecret !== captured.keys.auth
             || result.file.push.applicationServerKey !== captured.applicationServerKey) throw new Error('PROBE_CAPTURE_MISMATCH');
         stage = 'vault';
