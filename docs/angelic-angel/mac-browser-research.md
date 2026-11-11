@@ -30,6 +30,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [追加比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142481)では、Apple SiliconのMCSログインは成功したが、試験通知の送信先から `410` が返り送信できなかった。同じ実行のIntelと、[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142531)は受信・復号まで成功した。いずれの試験用端末情報も符号なし64ビット値の上位ビットは立っていなかった。`401` はこの実行で再現せず、代替ポートの比較も行われていない。`401` と `410` の原因・関連は未確定である。
 
+[終了前後の比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525175)では、Apple Silicon・Intelの各試験で、Chromeを閉じる前の試験通知送信がすでに `410` となった。一方、[別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525255)では、同じ手順でブラウザー起動中の通知と、通常終了後のMCSによる通知の両方を受信できた。このため、少なくとも観測した `410` の一部は移譲後のサーバー受信処理より前に起きている。原因と再発条件は未確定である。
+
 [macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
 
 ## 調査で確認した範囲
