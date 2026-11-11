@@ -8,15 +8,15 @@ const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 
-test('Mac broker verifies signer and profile, fences duplicate starts and releases on browser exit', { skip: process.platform === 'win32' }, async t => {
+test('Mac broker retains its profile lease until close, including startup failure', { skip: process.platform === 'win32' }, async t => {
     const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-broker-test-'));
     t.after(async () => {
         const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
         assert.match(path.basename(real), /^cbte-mac-broker-test-/); await fs.rm(real, { recursive: true });
     });
-    const profile = await createMacChromeProfile(base), chrome = new EventEmitter(); chrome.exitCode = null;
+    const profile = await createMacChromeProfile(base); let chrome;
     const app = '/Applications/Google Chrome.app', executable = app + '/Contents/MacOS/Google Chrome';
-    let accepted = false, calls = 0, captured, signing;
+    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false;
     const fakeFs = { ...fs,
         async lstat(name) { if (name === app) return { isDirectory: () => true, isSymbolicLink: () => false };
             if (name === executable) return { isFile: () => true, isSymbolicLink: () => false }; return fs.lstat(name); },
@@ -24,9 +24,13 @@ test('Mac broker verifies signer and profile, fences duplicate starts and releas
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
-            signing = { file, args, opts }; callback(accepted ? null : new Error('signature rejected'), '', ''); } };
-        if (name === './chrome-mac-profile') return require('../../src/automation/chrome-mac-profile');
-        if (name === './chrome-private-broker') return { startChromeBroker: async options => { calls++; captured = options; return { chrome }; } };
+            signing = { file, args, opts }; callback(accepted ? null : new Error('signature rejected'), '', ''); },
+        spawn() { chrome = new EventEmitter(); chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
+        if (name === './chrome-private-broker') return { startChromeBroker: async options => {
+            calls++; captured = options; options.spawnChrome('synthetic', [], {});
+            if (failAfterSpawn) throw new Error('synthetic failure'); return { chrome, stop: async () => {} };
+        } };
+        if (name.startsWith('./')) return require(path.join(__dirname, '../../src/automation', name));
         return require(name);
     };
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/chrome-mac-broker.js'), 'utf8');
@@ -41,7 +45,13 @@ test('Mac broker verifies signer and profile, fences duplicate starts and releas
     assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' }); assert.equal(calls, 1);
     chrome.exitCode = 0; chrome.emit('exit');
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
+    chrome.emit('close');
     assert.equal(await broker.releaseComplete, true);
+    failAfterSpawn = true;
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_CLEANUP_PENDING' });
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
+    chrome.emit('close');
     const lock = path.join(profile.rootPath, 'broker.lock');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });

@@ -5,9 +5,10 @@
 // does not itself publish or upload anything.
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { verifyMacChromeProfile } = require('./chrome-mac-profile');
+const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('./chrome-mac-profile-lease');
 const { startChromeBroker } = require('./chrome-private-broker');
 const execFileAsync = promisify(execFile);
 const APP = '/Applications/Google Chrome.app';
@@ -32,39 +33,52 @@ async function verifyInstalledChrome() {
 async function startMacChromeBroker({ rootPath, profileId }) {
     const profile = await verifyMacChromeProfile(rootPath, profileId);
     const chromePath = await verifyInstalledChrome();
-    const lockPath = path.join(profile.rootPath, 'broker.lock');
-    let lock, lockStat;
+    let lease, operation, broker, launchedClosed = false;
+    /** @type {import('node:child_process').ChildProcess | null} */
+    let launched = null;
+    const spawnOwned = (file, args, options) => {
+        launched = spawn(file, args, options);
+        launched.once('close', () => { launchedClosed = true; });
+        return launched;
+    };
     try {
-        // A second setup process must not attach a debugger to the same
-        // profile. A crash may leave this lock, which needs safe recovery.
-        lock = await fs.open(lockPath, 'wx', 0o600); lockStat = await lock.stat();
-        if (!lockStat.isFile() || lockStat.uid !== process.getuid() || (lockStat.mode & 0o777) !== 0o600 || lockStat.nlink !== 1)
-            throw fail('X_CHROME_MAC_BROKER_INVALID');
-        await lock.writeFile(JSON.stringify({ profileId, pid: process.pid })); await lock.sync();
-        const broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath });
+        lease = await acquireMacProfileLease({ rootPath, profileId, browser: 'chrome' });
+        operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'chrome' });
+        await verifyMacChromeProfile(rootPath, profileId);
+        broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath,
+            spawnChrome: /** @type {typeof import('node:child_process').spawn} */ (/** @type {unknown} */ (spawnOwned)) });
+        if (await verifyInstalledChrome() !== chromePath) throw fail('X_CHROME_MAC_BROKER_INVALID');
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
-            if (released) return; released = true;
+            if (released) return; released = true; operation.end();
             let ok = false;
-            try {
-                const current = await fs.lstat(lockPath);
-                if (current.dev === lockStat.dev && current.ino === lockStat.ino) { await fs.unlink(lockPath); ok = true; }
-            } catch { /* A stale lock fails closed and can be recovered later. */ }
-            finally { await lock.close().catch(() => { ok = false; }); settleRelease(ok); }
+            try { await releaseMacProfileLease(lease); ok = true; }
+            catch { /* Preserve a stale lock when ownership cannot be proven. */ }
+            finally { settleRelease(ok); }
         };
-        broker.chrome.once('exit', () => { void release(); });
-        if (broker.chrome.exitCode !== null) await release();
+        broker.chrome.once('close', () => { void release(); });
+        if (launchedClosed) await release();
         return { ...broker, releaseComplete };
     } catch (error) {
-        if (lock) {
-            try {
-                const current = await fs.lstat(lockPath);
-                if (lockStat && current.dev === lockStat.dev && current.ino === lockStat.ino) await fs.unlink(lockPath);
-            } catch { /* Report only a fixed error. */ }
-            await lock.close().catch(() => {});
+        if (broker) {
+            try { broker.chrome.kill(); } catch { /* Already stopped. */ }
+            await broker.stop().catch(() => {});
         }
-        if (error?.code === 'EEXIST') throw fail('X_CHROME_MAC_BROKER_BUSY');
+        const active = /** @type {import('node:child_process').ChildProcess | null} */ (launched);
+        if (operation && active && !launchedClosed) {
+            let finished = false;
+            const releaseAfterClose = async () => {
+                if (finished) return; finished = true; operation.end();
+                await releaseMacProfileLease(lease).catch(() => {});
+            };
+            active.once('close', () => { void releaseAfterClose(); });
+            if (launchedClosed) void releaseAfterClose();
+            throw fail('X_CHROME_MAC_BROKER_CLEANUP_PENDING');
+        }
+        operation?.end();
+        if (lease) await releaseMacProfileLease(lease).catch(() => {});
+        if (error?.code === 'X_CHROME_MAC_LEASE_BUSY') throw fail('X_CHROME_MAC_BROKER_BUSY');
         throw fail('X_CHROME_MAC_BROKER_INVALID');
     }
 }
