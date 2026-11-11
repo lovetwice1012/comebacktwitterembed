@@ -1,0 +1,46 @@
+name: macOS Chromium synthetic validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-chromium-synthetic.yml
+      - src/automation/chrome-mac-*.js
+      - src/automation/brave-mac-*.js
+      - src/automation/edge-mac-*.js
+      - scripts/native-test/chrome-mac-leveldb-lock.test.cjs
+      - scripts/native-test/brave-mac-composed.test.cjs
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build temporary lock helper
+        run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+      - name: Run synthetic profile and LevelDB checks
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 \
+            scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
+            scripts/native-test/brave-mac-composed.test.cjs
