@@ -6,7 +6,7 @@ export const X_SETUP_CHROME_DOWNLOAD_URL = "/api/automation/x-setup/download-chr
 export const X_SETUP_EDGE_DOWNLOAD_URL = "/api/automation/x-setup/download-edge";
 export type XReceiverState = "awaiting" | "connecting" | "listening" | "requires_reenrollment" | "stopped" | "error";
 export type XReceiptCounts = { received: number; routed: number; unsupported: number; decryptionFailed: number; unmatched?: number };
-export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserKind: "firefox" | "chrome" | "brave" | "edge"; browserVersion: string; receiverState: XReceiverState; boundMonitorCount: number; lastReceivedAtMs: number | null; lastProviderLossAtMs?: number; receiptCounts?: XReceiptCounts };
+export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserKind: "firefox" | "chrome" | "brave" | "edge"; browserVersion: string; receiverState: XReceiverState; receiverRetryPending?: boolean; boundMonitorCount: number; lastReceivedAtMs: number | null; lastProviderLossAtMs?: number; receiptCounts?: XReceiptCounts };
 export type XSetupStatus = { available: boolean; receiverEnabled: boolean; chromeEnabled: boolean; braveEnabled: boolean; edgeEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
 export type XSetupSession = { sessionId: string; expiresAtMs: number };
 export type XSetupPreview = { browserVersion: string; scope: string; formatVersion: 1 | 2 | 3; browserKind?: "brave" | "edge" };
@@ -23,13 +23,14 @@ export function parseXSetupSubscription(value: unknown): XSetupSubscription {
   if (item.browserKind !== undefined && item.browserKind !== "firefox" && item.browserKind !== "chrome" && item.browserKind !== "brave" && item.browserKind !== "edge") throw invalid();
   const receiverState = item.receiverState ?? "awaiting";
   if (!["awaiting", "connecting", "listening", "requires_reenrollment", "stopped", "error"].includes(String(receiverState))) throw invalid();
+  if (item.receiverRetryPending !== undefined && (typeof item.receiverRetryPending !== "boolean" || item.receiverRetryPending && receiverState !== "error")) throw invalid();
   // Older servers omit the breakdown. Keep that absence distinct from a
   // verified zero count, and reject incomplete/invalid new status data.
   const receipts = item.receiptCounts === undefined ? undefined : xObject(item.receiptCounts);
   const receiptCounts = receipts === undefined ? undefined : { received: count(receipts.received), routed: count(receipts.routed),
     unsupported: count(receipts.unsupported), decryptionFailed: count(receipts.decryptionFailed),
     ...(receipts.unmatched === undefined ? {} : { unmatched: count(receipts.unmatched) }) };
-  return { id: item.id, state: "stored", revision: count(item.revision, 1), createdAtMs: timestamp(item.createdAtMs), updatedAtMs: timestamp(item.updatedAtMs), browserKind: item.browserKind === "brave" ? "brave" : item.browserKind === "chrome" ? "chrome" : item.browserKind === "edge" ? "edge" : "firefox", browserVersion: browserVersion(item.browserVersion), receiverState: receiverState as XReceiverState, boundMonitorCount: item.boundMonitorCount == null ? 0 : count(item.boundMonitorCount), lastReceivedAtMs: item.lastReceivedAtMs == null ? null : timestamp(item.lastReceivedAtMs), ...(item.lastProviderLossAtMs == null ? {} : { lastProviderLossAtMs: timestamp(item.lastProviderLossAtMs) }), ...(receiptCounts === undefined ? {} : { receiptCounts }) };
+  return { id: item.id, state: "stored", revision: count(item.revision, 1), createdAtMs: timestamp(item.createdAtMs), updatedAtMs: timestamp(item.updatedAtMs), browserKind: item.browserKind === "brave" ? "brave" : item.browserKind === "chrome" ? "chrome" : item.browserKind === "edge" ? "edge" : "firefox", browserVersion: browserVersion(item.browserVersion), receiverState: receiverState as XReceiverState, ...(item.receiverRetryPending === true ? { receiverRetryPending: true } : {}), boundMonitorCount: item.boundMonitorCount == null ? 0 : count(item.boundMonitorCount), lastReceivedAtMs: item.lastReceivedAtMs == null ? null : timestamp(item.lastReceivedAtMs), ...(item.lastProviderLossAtMs == null ? {} : { lastProviderLossAtMs: timestamp(item.lastProviderLossAtMs) }), ...(receiptCounts === undefined ? {} : { receiptCounts }) };
 }
 export function parseXSetupStatus(value: unknown): XSetupStatus {
   const item = xObject(value), download = xObject(item.download);
@@ -80,9 +81,11 @@ export function xSetupFeedback(cause: unknown): string {
   if (code === "REVISION_CONFLICT" || code === "NOT_FOUND") return "一覧を更新してから、もう一度確認してください。別の操作で登録情報が更新・削除されています。";
   return "受付状態と登録一覧を更新して、もう一度お試しください。今回の操作中にエラーが発生しました。";
 }
-export function xReceiverLabel(state: XReceiverState): string {
+export function xReceiverLabel(state: XReceiverState, retryPending = false): string {
+  if (state === "error" && retryPending) return "再接続待ち";
   return ({ awaiting: "サーバー接続待ち", connecting: "サーバー接続中", listening: "サーバー接続を確認済み", requires_reenrollment: "受信情報の再登録が必要", stopped: "サーバー受信は停止中", error: "サーバー接続の確認が必要" })[state];
 }
-export function xReceiverDescription(state: XReceiverState): string {
+export function xReceiverDescription(state: XReceiverState, retryPending = false): string {
+  if (state === "error" && retryPending) return "再接続を待っています。";
   return ({ awaiting: "受信情報の保存が完了しました。サーバーとの接続を待っています。", connecting: "サーバーとの接続を準備しています。接続後は、通知データの受信記録と通知先への配信結果をご確認ください。", listening: "サーバーとの接続を確認しました。投稿通知が届いたら、受信記録と通知先への配信結果を確認してください。", requires_reenrollment: "設定用ブラウザーで通知を設定し直し、新しいファイルを作成してください。一覧から古い受信情報を削除して新しいファイルを登録し、監視するアカウントに設定してください。", stopped: "受信情報は保存されています。受信を再開するには、受付状態と監視の設定を確認してください。", error: "下の更新ボタンで、受信情報と接続状態を確認してください。エラーが続く場合は管理者へお問い合わせください。" })[state];
 }

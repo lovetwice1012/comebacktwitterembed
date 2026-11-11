@@ -229,6 +229,29 @@ test('concurrent same-session, same-owner and cross-owner imports cannot duplica
     assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 2);
 }));
 
+test('scheduled Chrome reconnect is shown only for an active, current owner subscription', async t => setup(t, async db => {
+    let clock = 1000000;
+    const service = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: true, rolloutMode: 'public', now: () => clock });
+    const file = chromeFixture(), saved = (await service.importFile(A, await payload(service, A, file))).subscription;
+    await db.queryDatabase("INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,subscription_revision,retry_at_ms,retry_attempt,updated_at_ms) VALUES (?,'error','X_PUSH_CHROME_LOGIN_FAILED',1,?,1,?)", [saved.id, clock + 5000, clock]);
+    const get = async () => (await service.status(A)).subscriptions[0];
+    assert.equal((await get()).receiverRetryPending, undefined, 'a missing active monitor is not retryable');
+    const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','synthetic','fixture',1,'ready','free',?,'bound',1,?,?)",
+        [A.userId, JSON.stringify({ subscriptionId: saved.id }), clock, clock]);
+    const pending = await get(); assert.equal(pending.receiverRetryPending, true);
+    assert(!JSON.stringify(pending).includes('X_PUSH_CHROME_LOGIN_FAILED'));
+    assert.equal((await service.status(B)).subscriptions.length, 0);
+    await db.queryDatabase('UPDATE automation_x_monitors SET enabled=0 WHERE id=?', [monitor.insertId]);
+    assert.equal((await get()).receiverRetryPending, undefined);
+    await db.queryDatabase('UPDATE automation_x_monitors SET enabled=1 WHERE id=?', [monitor.insertId]);
+    await db.queryDatabase('UPDATE automation_x_push_receivers SET subscription_revision=2 WHERE subscription_id=?', [saved.id]);
+    assert.equal((await get()).receiverRetryPending, undefined);
+    await db.queryDatabase('UPDATE automation_x_push_receivers SET subscription_revision=1 WHERE subscription_id=?', [saved.id]);
+    clock += 5000; assert.equal((await get()).receiverRetryPending, undefined);
+    const disabled = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: false, rolloutMode: 'public', now: () => clock - 1 });
+    assert.equal((await disabled.status(A)).subscriptions[0].receiverRetryPending, undefined);
+}));
+
 test('receipt status counts stay scoped to each owned subscription and expose no encrypted material', async t => setup(t, async db => {
     const service = createXSetup(db, { sealer });
     const first = (await service.importFile(A, await payload(service, A))).subscription;

@@ -21,14 +21,17 @@ function exact(input, fields) {
 function consent(input) {
     if (input.consent !== true) fail('X_SETUP_CONSENT_REQUIRED', '受信設定の取り扱いを確認して同意してください。');
 }
-function publicSubscription(row, currentTime = Date.now()) {
+function publicSubscription(row, currentTime = Date.now(), retriesEnabled = false) {
     if (row.browser_kind !== undefined && !['firefox', 'chrome', 'brave', 'edge'].includes(row.browser_kind))
         fail('X_SETUP_BROWSER_INVALID', '受信情報を確認できません。管理者にご相談ください。', 503);
     const states = ['awaiting', 'connecting', 'listening', 'requires_reenrollment', 'stopped', 'error'];
     let receiverState = states.includes(row.receiver_state) ? row.receiver_state : 'awaiting';
     if (['connecting', 'listening'].includes(receiverState) && Number(row.lease_expires_at_ms || 0) <= currentTime) receiverState = 'stopped';
+    const receiverRetryPending = retriesEnabled && receiverState === 'error' && row.reason_code === 'X_PUSH_CHROME_LOGIN_FAILED'
+        && Number(row.subscription_revision) === Number(row.revision) && Number(row.retry_at_ms) > currentTime && Number(row.has_active_monitor) === 1;
     return { id: row.id, state: 'stored', revision: Number(row.revision), browserKind: ['brave', 'chrome', 'edge'].includes(row.browser_kind) ? row.browser_kind : 'firefox', browserVersion: row.browser_version,
         createdAtMs: Number(row.created_at_ms), updatedAtMs: Number(row.updated_at_ms), receiverState,
+        ...(receiverRetryPending ? { receiverRetryPending: true } : {}),
         boundMonitorCount: Number(row.bound_monitor_count || 0), lastReceivedAtMs: row.last_received_at_ms == null ? null : Number(row.last_received_at_ms),
         ...(row.last_provider_loss_at_ms == null ? {} : { lastProviderLossAtMs: Number(row.last_provider_loss_at_ms) }),
         // These are inbox states, not Discord delivery counts. Return only
@@ -67,7 +70,9 @@ function createXSetup(db, options = {}) {
     const braveEnabled = chromeEnabled && (options.braveEnabled === undefined ? process.env.X_NOTIFICATION_BRAVE_ENABLED === '1' : options.braveEnabled === true);
     const edgeEnabled = options.edgeEnabled === undefined ? process.env.X_NOTIFICATION_EDGE_ENABLED === '1' : options.edgeEnabled === true;
     async function subscriptionRows(query, owner, filter = {}) {
-        return query(`SELECT s.id,s.revision,s.browser_kind,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,
+        return query(`SELECT s.id,s.revision,s.browser_kind,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,r.reason_code,r.retry_at_ms,r.subscription_revision,
+            EXISTS (SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
+                AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id) AS has_active_monitor,
             (SELECT COUNT(*) FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.state<>'deleted'
                 AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id) AS bound_monitor_count,
             (SELECT MAX(i.received_at_ms) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id) AS last_received_at_ms,
@@ -111,7 +116,7 @@ function createXSetup(db, options = {}) {
             chromeEnabled: chromeEnabled && receiverEnabled && rollout.eligible, braveEnabled: braveEnabled && receiverEnabled && rollout.eligible,
             edgeEnabled: edgeEnabled && receiverEnabled && rollout.eligible,
             receiverEnabled: receiverEnabled && rollout.eligible, download: DOWNLOAD, maxFileBytes: MAX_FILE_BYTES,
-            subscriptions: rows.slice(0, 100).map(row => publicSubscription(row, now())), nextCursor: rows.length > 100 ? rows[99].id : null };
+            subscriptions: rows.slice(0, 100).map(row => publicSubscription(row, now(), receiverEnabled && rollout.eligible)), nextCursor: rows.length > 100 ? rows[99].id : null };
     }
     async function startSession(actor, input) {
         requireActor(actor); available(); exact(input, ['consent']); consent(input);

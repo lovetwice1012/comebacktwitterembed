@@ -47,6 +47,21 @@ async function fixture({ current = status(), respond, opened = true, active = tr
     return f;
 }
 
+test('scheduled reconnect is clear without exposing internal error codes', async () => {
+    const f = await fixture({ upload: false, current: status({ receiverEnabled: true,
+        subscriptions: [subscription({ browserKind: 'chrome', receiverState: 'error', receiverRetryPending: true })] }) });
+    try {
+        assert.match(f.container.textContent, /再接続待ち/);
+        assert.match(f.container.textContent, /再接続を待っています/);
+        assert.doesNotMatch(f.container.textContent, /X_PUSH_CHROME_LOGIN_FAILED/);
+        const parse = f.exports.parseXSetupSubscription;
+        assert.equal(parse(subscription({ receiverState: 'error', receiverRetryPending: true })).receiverRetryPending, true);
+        assert.throws(() => parse(subscription({ receiverState: 'listening', receiverRetryPending: true })));
+        assert.throws(() => parse(subscription({ receiverState: 'error', receiverRetryPending: 'true' })));
+        f.assertPrivate();
+    } finally { await f.close(); }
+});
+
 test('beginner setup leads with concrete steps and clearly explains manual upload, consent, sensitive data and receiver readiness', async () => {
     const f = await fixture({ opened: false });
     try {
