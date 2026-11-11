@@ -63,7 +63,14 @@ jobs:
           security list-keychains -d user -s "$keychain"
           security default-keychain -d user -s "$keychain"
           security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
+      - name: Run synthetic push reception on fresh runner
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs
       - name: Run synthetic profile and LevelDB checks
+        if: ${{ !cancelled() }}
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
         run: |
@@ -71,7 +78,6 @@ jobs:
           node --test --test-concurrency=1 \
             scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
             scripts/native-test/chrome-mac-hosted.test.cjs \
-            scripts/native-test/chrome-mac-push-hosted.test.cjs \
             scripts/native-test/chrome-mac-process-group.test.cjs \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \
