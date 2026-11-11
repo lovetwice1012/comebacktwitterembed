@@ -100,7 +100,9 @@ function identifyTransfer(file) {
             return { uaidHash: id.deviceHash, channelHash: id.channelHash, contentHash: id.contentHash };
         }
         const hash = value => createHash('sha256').update(value, 'utf8').digest('hex');
-        return { uaidHash: hash(normalized.push.uaid.replace(/-/g, '')), channelHash: hash(normalized.push.channelID), contentHash: hash(JSON.stringify(normalized)) };
+        // The version checks above leave only the validated Firefox format.
+        const firefox = /** @type {import('./x-setup-transfer').FirefoxTransferFile} */ (/** @type {unknown} */ (normalized));
+        return { uaidHash: hash(firefox.push.uaid.replace(/-/g, '')), channelHash: hash(firefox.push.channelID), contentHash: hash(JSON.stringify(normalized)) };
     } catch { throw invalidFile(); }
 }
 

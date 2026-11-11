@@ -27,7 +27,7 @@ export interface BraveTransferFile extends Omit<ChromeTransferFile, 'provenance'
 export interface EdgeTransferFile {
     format: 'x-notification-subscription'; version: 3;
     provenance: { kind: 'edge-wns'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'edge-wns-snapshot' };
-    push: { scope: 'https://x.com/'; siteChannel: string; deviceKey: string; reconnectToken: string;
+    push: { scope: 'https://x.com/'; siteChannel: string; deviceKey: string; reconnectToken: string; connectVersion?: '2';
         agent: { os: string; osVersion: string; architecture: string; locale: string };
         client: { channel: string; protocolVersion: string; clientName: string; clientVersion: string };
         p256dhPublicKey: string; authenticationSecret: string; applicationServerKey: string;

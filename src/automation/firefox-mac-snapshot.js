@@ -20,7 +20,7 @@ const READER_ARTIFACTS = new Map([
     ['cert9.db', 'file'], ['key4.db', 'file'], ['pkcs11.txt', 'file'], ['storage.sqlite', 'file'],
     ['storage/ls-archive.sqlite', 'file'], ['storage/permanent/chrome/.metadata', 'file'],
     ['storage/permanent/chrome/.metadata-v2', 'file'],
-    ...['-wal', '-shm', '-journal'].map(suffix => [`storage/permanent/chrome/idb/${DB}.sqlite${suffix}`, 'file']),
+    ...['-wal', '-shm', '-journal'].map(suffix => /** @type {[string, string]} */ ([`storage/permanent/chrome/idb/${DB}.sqlite${suffix}`, 'file'])),
     [`storage/permanent/chrome/idb/${DB}.files`, 'directory'],
 ]);
 
