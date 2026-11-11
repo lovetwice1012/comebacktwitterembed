@@ -61,15 +61,19 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; let preflightReceived = false;
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set();
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') {
                 res.writeHead(200, { 'Content-Type': 'application/javascript' });
-                res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{await self.registration.showNotification('Fixture');for(const c of await clients.matchAll({includeUncontrolled:true}))c.postMessage('received')})()));");
-            } else if (req.url === '/delivered') { preflightReceived = true; res.end('ok'); }
+                res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{await self.registration.showNotification('Fixture');for(const c of await clients.matchAll({includeUncontrolled:true}))c.postMessage(e.data?e.data.text():'')})()));");
+            } else if (req.url?.startsWith('/delivered?tag=')) {
+                const tag = req.url.slice('/delivered?tag='.length);
+                if (['preflight', 'secondary', 'original-recheck'].includes(tag)) delivered.add(tag);
+                res.end('ok');
+            }
             else {
                 res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end("<!doctype html><title>Push fixture</title><script>navigator.serviceWorker.addEventListener('message',()=>fetch('/delivered'))</script>");
+                res.end("<!doctype html><title>Push fixture</title><script>navigator.serviceWorker.addEventListener('message',e=>fetch('/delivered?tag='+encodeURIComponent(e.data)))</script>");
             }
         });
         t.after(async () => {
@@ -147,7 +151,12 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     // remains rejected after a short registration delay.
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
-                    try { await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 }); t.diagnostic('original synthetic subscription accepted on delayed recheck'); }
+                    try {
+                        await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
+                        t.diagnostic('original synthetic subscription accepted on delayed recheck');
+                        for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+                        t.diagnostic(`original synthetic delayed recheck delivered=${delivered.has('original-recheck')}`);
+                    }
                     catch (retryError) { t.diagnostic(`original synthetic subscription delayed recheck=${classifyPushError(retryError)}`); }
                 } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
             }
@@ -155,8 +164,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             // subscription into a passing result.
             throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
         }
-        for (let attempt = 0; attempt < 100 && !preflightReceived; attempt++) await new Promise(resolve => setTimeout(resolve, 200));
-        assert.equal(preflightReceived, true, 'browser did not receive the synthetic preflight push');
+        for (let attempt = 0; attempt < 100 && !delivered.has('preflight'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+        assert.equal(delivered.has('preflight'), true, 'browser did not receive the synthetic preflight push');
         t.diagnostic('browser received synthetic preflight push before shutdown');
         // Match the setup broker's graceful close. A dropped reply is expected
         // if the pipe closes first; process and group shutdown are checked below.
