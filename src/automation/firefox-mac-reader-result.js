@@ -83,4 +83,27 @@ async function consumeMacFirefoxReaderResult(capability) {
         }
     }
 }
-module.exports = { prepareMacFirefoxReaderResult, consumeMacFirefoxReaderResult };
+
+// Only call after the supervisor has confirmed that every reader process has
+// stopped. A missing result is normal when the reader failed before writing.
+async function discardMacFirefoxReaderResult(capability) {
+    const state = capability && prepared.get(capability);
+    if (!state || state.used) throw fail('X_FIREFOX_MAC_RESULT_INVALID');
+    state.used = true; let handle;
+    try {
+        await verifyMacFirefoxProfile(state.rootPath, state.profileId);
+        const snapshot = await fs.lstat(state.snapshot);
+        if (!snapshot.isDirectory() || snapshot.isSymbolicLink() || snapshot.dev !== state.identity.dev
+            || snapshot.ino !== state.identity.ino || await fs.realpath(state.snapshot) !== state.snapshot) throw new Error();
+        try { handle = await fs.open(state.resultPath, constants.O_RDONLY | constants.O_NOFOLLOW); }
+        catch (error) { if (error?.code === 'ENOENT') return { discarded: false }; throw error; }
+        const original = await handle.stat(), current = await fs.lstat(state.resultPath);
+        if (!original.isFile() || original.uid !== process.getuid() || (original.mode & 0o777) !== 0o600
+            || original.nlink !== 1 || !current.isFile() || current.isSymbolicLink() || current.uid !== process.getuid()
+            || current.nlink !== 1 || current.dev !== original.dev || current.ino !== original.ino) throw new Error();
+        await fs.unlink(state.resultPath);
+        return { discarded: true };
+    } catch { throw fail('X_FIREFOX_MAC_RESULT_CLEANUP_FAILED'); }
+    finally { await handle?.close(); }
+}
+module.exports = { prepareMacFirefoxReaderResult, consumeMacFirefoxReaderResult, discardMacFirefoxReaderResult };

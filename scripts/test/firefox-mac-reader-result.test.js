@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { createECDH } = require('node:crypto');
 const { createMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile');
-const { prepareMacFirefoxReaderResult, consumeMacFirefoxReaderResult } = require('../../src/automation/firefox-mac-reader-result');
+const { prepareMacFirefoxReaderResult, consumeMacFirefoxReaderResult, discardMacFirefoxReaderResult } = require('../../src/automation/firefox-mac-reader-result');
 
 function syntheticFile() {
     const scalar = Buffer.alloc(32); scalar[31] = 1;
@@ -40,6 +40,25 @@ test('Firefox reader result is private, one-shot, tied to the verified snapshot 
     assert.equal(result.file.push.scope, 'https://x.com/'); assert.equal(result.otherSubscriptionCount, 2);
     await assert.rejects(fs.access(output), { code: 'ENOENT' });
     await assert.rejects(consumeMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
+    capability = await prepareMacFirefoxReaderResult(args);
+    assert.deepEqual(await discardMacFirefoxReaderResult(capability), { discarded: false });
+    await assert.rejects(discardMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
+    capability = await prepareMacFirefoxReaderResult(args); await make('partial-synthetic-output');
+    assert.deepEqual(await discardMacFirefoxReaderResult(capability), { discarded: true });
+    await assert.rejects(fs.access(output), { code: 'ENOENT' });
+    capability = await prepareMacFirefoxReaderResult(args); await fs.symlink(path.join(base, 'missing'), output);
+    await assert.rejects(discardMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_CLEANUP_FAILED' });
+    assert((await fs.lstat(output)).isSymbolicLink()); await fs.unlink(output);
+    capability = await prepareMacFirefoxReaderResult(args); await make('private-synthetic-result');
+    await fs.rename(snapshotPath, `${snapshotPath}.old`); await fs.mkdir(snapshotPath, { mode: 0o700 });
+    await assert.rejects(discardMacFirefoxReaderResult(capability), { code: 'X_FIREFOX_MAC_RESULT_CLEANUP_FAILED' });
+    assert.equal(await fs.readFile(output, 'utf8'), 'private-synthetic-result');
+    await fs.unlink(output); await fs.rmdir(snapshotPath); await fs.rename(`${snapshotPath}.old`, snapshotPath);
+    capability = await prepareMacFirefoxReaderResult(args); await make(JSON.stringify(record));
+    const raced = await Promise.allSettled([consumeMacFirefoxReaderResult(capability), discardMacFirefoxReaderResult(capability)]);
+    assert.equal(raced.filter(item => item.status === 'fulfilled').length, 1);
+    assert.equal(raced.filter(item => item.status === 'rejected' && item.reason.code === 'X_FIREFOX_MAC_RESULT_INVALID').length, 1);
+    await assert.rejects(fs.access(output), { code: 'ENOENT' });
     await make('preexisting');
     await assert.rejects(prepareMacFirefoxReaderResult(args), { code: 'X_FIREFOX_MAC_RESULT_INVALID' });
     assert.equal(await fs.readFile(output, 'utf8'), 'preexisting'); await fs.unlink(output);
