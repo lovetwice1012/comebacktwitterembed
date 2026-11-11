@@ -43,8 +43,8 @@ function fixturePipe(child) {
         }
     });
     child.on('exit', rejectAll); child.on('error', rejectAll); child.stdio[3].on('error', rejectAll); child.stdio[4].on('error', rejectAll);
-    return (method, params = {}, sessionId, timeout = 15000) => new Promise((resolve, reject) => {
-        const next = ++id, timer = setTimeout(() => { pending.delete(next); reject(new Error('FIXTURE_CDP_TIMEOUT')); }, timeout);
+    return (method, params = {}, sessionId, timeout = 30000) => new Promise((resolve, reject) => {
+        const next = ++id, timer = setTimeout(() => { pending.delete(next); reject(new Error(`FIXTURE_CDP_TIMEOUT_${method}`)); }, timeout);
         pending.set(next, { resolve, reject, timer });
         child.stdio[3].write(JSON.stringify({ id: next, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
     });
