@@ -8,10 +8,12 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { createECDH } = require('node:crypto');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
+const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
+const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -39,8 +41,13 @@ function fixturePipe(child) {
 test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
     { skip: process.platform !== 'darwin', timeout: 300000 }, async t => {
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-mac-push-hosted-'));
-        let child, closed = false, resolveClosed;
-        const closePromise = new Promise(resolve => { resolveClosed = resolve; });
+        let child, closed = false, resolveClosed, closePromise, broker;
+        const spawnOwned = (file, args, options) => {
+            closed = false; closePromise = new Promise(resolve => { resolveClosed = resolve; });
+            child = spawn(file, args, options);
+            child.once('close', () => { closed = true; resolveClosed(); });
+            return child;
+        };
         const key = createECDH('prime256v1'); key.generateKeys(); const publicKey = key.getPublicKey().toString('base64url');
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); res.end("self.addEventListener('push',()=>{});"); }
@@ -49,17 +56,25 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         t.after(async () => {
             if (child && !closed) { try { child.kill('SIGTERM'); } catch { /* Keep profile if shutdown is uncertain. */ } }
             let timer; const stopped = !child || closed || await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
-            clearTimeout(timer); server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
+            clearTimeout(timer); if (broker) await broker.stop();
+            server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
             if (stopped) { const real = await fs.realpath(base); assert.equal(path.dirname(real), temp); assert.match(path.basename(real), /^cbte-mac-push-hosted-/); await fs.rm(real, { recursive: true }); }
             assert.equal(stopped, true, 'synthetic browser still running; profile retained');
         });
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
         const origin = `http://127.0.0.1:${server.address().port}`;
-        const profile = await createMacChromeProfile(base), executable = await verifyInstalledChrome();
-        child = spawn(executable, ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile.profilePath}`,
+        const profile = await createMacChromeProfile(base); let executable;
+        try { executable = await verifyInstalledChrome(); }
+        catch (error) {
+            const app = '/Applications/Google Chrome.app';
+            const check = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"', app],
+                { encoding: 'utf8', timeout: 120000 });
+            t.diagnostic(`codesign status=${check.status} signal=${check.signal} error=${check.error?.code || 'none'} stderr=${(check.stderr || '').slice(0, 2048)}`);
+            throw error;
+        }
+        spawnOwned(executable, ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile.profilePath}`,
             '--no-first-run', '--no-default-browser-check', '--disable-sync', '--no-proxy-server', 'about:blank'],
         { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
-        child.once('close', () => { closed = true; resolveClosed(); });
         const call = fixturePipe(child);
         await call('Browser.getVersion');
         await call('Browser.grantPermissions', { origin, permissions: ['notifications'] });
@@ -79,6 +94,22 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         value = response.result?.value;
         assert.equal(typeof value?.endpoint, 'string'); assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(value.endpoint), 'unexpected push provider');
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
-        t.diagnostic('synthetic local subscription created; credentials omitted');
+        child.kill('SIGTERM');
+        let timer;
+        const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000); })]);
+        clearTimeout(timer); assert.equal(stopped, true, 'first browser did not stop');
+        broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin,
+            extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
+        let captured;
+        for (let attempt = 0; attempt < 30 && !captured; attempt++) {
+            try { captured = await captureFromBroker({ port: broker.port, token: broker.token }); }
+            catch (error) {
+                if (!/^X_CHROME_CAPTURE_(?:INVALID|NOT_FOUND)$/.test(error?.code || '') || attempt === 29) throw error;
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+        assert.ok(captured?.endpoint === value.endpoint && captured.keys?.p256dh === value.keys.p256dh && captured.keys?.auth === value.keys.auth,
+            'captured subscription did not match');
+        t.diagnostic('synthetic local subscription created and captured; credentials omitted');
         value = null;
     });
