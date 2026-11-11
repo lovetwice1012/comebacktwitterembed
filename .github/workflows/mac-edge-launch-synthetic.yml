@@ -12,6 +12,13 @@ on:
       - src/automation/chrome-mac-process-group.js
       - scripts/native-test/edge-mac-broker-hosted.test.cjs
       - scripts/test/edge-mac-broker.test.js
+      - scripts/native-test/edge-mac-calibration-hosted*.cjs
+      - src/automation/edge-mac-calibration.js
+      - src/automation/edge-mac-peer.js
+      - src/automation/edge-calibration-*.js
+      - client/angelic-setup/mac/edge-process-identity.c
+      - client/angelic-setup/mac/edge-socket-owner.c
+      - package-lock.json
 
 permissions:
   contents: read
@@ -40,7 +47,15 @@ jobs:
       # Disposable runner only: do not alter a person's installed application.
       - name: Prepare hosted Edge metadata
         run: sudo xattr -cr '/Applications/Microsoft Edge.app'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build isolated peer verification helpers
+        run: |
+          clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"
+          clang -O2 client/angelic-setup/mac/edge-socket-owner.c -o "$RUNNER_TEMP/MacEdgeSocketOwner"
       - name: Test dedicated Edge launch
         env:
           CBTE_MAC_EDGE_HOSTED: '1'
-        run: node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/test/edge-mac-broker.test.js
+          MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
+          MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
+        run: node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js
