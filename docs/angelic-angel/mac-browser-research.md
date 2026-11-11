@@ -18,6 +18,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42981690055)では、両CPUで実Chromeの試験用購読と隔離コピーした通知ストアの鍵が一致し、試験用Keychainの鍵による端末トークンの復号に成功した。無人ランナー上では通常のKeychain許可ダイアログに応答できないため、試験用のKeychainと既知の試験鍵をランナー内に作成している。利用者のKeychain、アクセス許可画面、実Xのデータを使った確認ではない。同じ実行のIntel側は別の起動試験で10秒のパイプ待ちに失敗したため、Macの待ち時間を30秒に調整した。[再試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42982284729)ではApple Siliconが成功し、IntelはChromeの更新中とみられる署名検証エラーで停止した。Intelの全試験成功は未確認。
 
+[実通知サーバーを使った追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42983613388)では、Apple Siliconの使い捨てChromeで作成したローカル試験サイトの購読を使い、ブラウザー終了後にMCSセッションで試験通知を受信・復号した。試験用Keychainとインメモリーの受信記録を使っており、DB永続化、サーバーの常駐運用、実XやDiscord配送の証明ではない。別の実行ではMCSログイン失敗が発生しており原因は未確定。この実行でも別のChrome終了試験はプロセスグループ消滅を確認できず、Intelでは署名検証エラーで停止したため、全体として試験失敗である。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
