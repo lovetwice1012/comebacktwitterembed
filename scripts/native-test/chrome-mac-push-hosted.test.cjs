@@ -60,10 +60,16 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey;
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; let preflightReceived = false;
         const server = http.createServer((req, res) => {
-            if (req.url === '/sw.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); res.end("self.addEventListener('push',()=>{});"); }
-            else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>Push fixture</title>'); }
+            if (req.url === '/sw.js') {
+                res.writeHead(200, { 'Content-Type': 'application/javascript' });
+                res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{await self.registration.showNotification('Fixture');for(const c of await clients.matchAll({includeUncontrolled:true}))c.postMessage('received')})()));");
+            } else if (req.url === '/delivered') { preflightReceived = true; res.end('ok'); }
+            else {
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end("<!doctype html><title>Push fixture</title><script>navigator.serviceWorker.addEventListener('message',()=>fetch('/delivered'))</script>");
+            }
         });
         t.after(async () => {
             if (child && !closed) { try { child.kill('SIGTERM'); } catch { /* Keep profile if shutdown is uncertain. */ } }
@@ -115,6 +121,12 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         value = response.result?.value;
         assert.equal(typeof value?.endpoint, 'string'); assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(value.endpoint), 'unexpected push provider');
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
+        webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
+        try { await webpush.sendNotification(value, 'preflight', { TTL: 60 }); }
+        catch (error) { throw new Error(`FIXTURE_PREFLIGHT_SEND_${Number.isInteger(error?.statusCode) ? error.statusCode : 'UNKNOWN'}`); }
+        for (let attempt = 0; attempt < 100 && !preflightReceived; attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+        assert.equal(preflightReceived, true, 'browser did not receive the synthetic preflight push');
+        t.diagnostic('browser received synthetic preflight push before shutdown');
         // Match the setup broker's graceful close. A dropped reply is expected
         // if the pipe closes first; process and group shutdown are checked below.
         await call('Browser.close').catch(() => {});
