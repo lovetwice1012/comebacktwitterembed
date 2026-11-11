@@ -4,10 +4,13 @@ const assert = require('node:assert/strict');
 const { runEdgeWnsGateway } = require('../../src/automation/edge-wns-gateway');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { EventEmitter } = require('node:events');
+const net = require('node:net');
+const { createFrameDecoder } = require('../../src/automation/edge-wns-framing');
 const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
 function envelope(command, body = '') { const payload = Buffer.from(`MS-CV: synthetic\r\n\r\n${body}`); return Buffer.concat([Buffer.from(`${command} ${payload.length}\r\n`), payload]); }
 function notification(site, id = 'synthetic-id') { const body = Buffer.from(`Channel: ${site}\r\nMsg-Id: ${id}\r\nContent-Encoding: aes128gcm\r\n\r\ncipher`); return Buffer.concat([Buffer.from(`NFY 5 WNS\\NOTIF ${body.length}\r\n`), body]); }
 function harness(overrides = {}) {
+    const localLease = overrides.lease || lease;
     const controller = new AbortController(), calls = [], received = [], savedToken = Buffer.from('previous-token'); let inbox;
     const queue = [envelope('CNT 1 CON', '<connect/>'), envelope('ATH 2 CON'),
         envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>rotated-token</reconnect-token></wns>'), envelope('PUT 4 WNS'), notification('other'), notification('target')];
@@ -17,16 +20,101 @@ function harness(overrides = {}) {
     const store = { async readWnsTokenState(_lease, { authorize }) { await authorize(); calls.push('read-state'); return { generation: 2, token: savedToken }; },
         async saveWnsTokenState(_lease, { authorize, token, expectedGeneration }) { await authorize(); calls.push(`save:${expectedGeneration}`); assert.equal(token.toString(), 'rotated-token'); return { generation: expectedGeneration + 1 }; },
         async assertLease(_lease, { authorize }) { await authorize(); calls.push('guard'); },
-        async recordFrame(_lease, entry, { authorize }) { await authorize(); calls.push('persist'); inbox = { ...lease, ...entry, id: '1', duplicate: false }; return inbox; },
+        async recordFrame(_lease, entry, { authorize }) { await authorize(); calls.push('persist'); inbox = { ...localLease, ...entry, id: '1', duplicate: false }; return inbox; },
         async getInbox() { return inbox; }, ...overrides.store };
     const credentials = { agent: { os: 'Test OS', osVersion: '1', architecture: 'x64', locale: 'en' },
         client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
         deviceKey: Buffer.alloc(32, 7), reconnectToken: Buffer.from('initial-token'), productKey: Buffer.from('0123456789abcdef'),
         productId: Buffer.from('fedcba9876543210'), siteChannel: Buffer.from('target') };
-    const options = { store, lease, vault: {}, authorize: async () => {}, credentials, signal: controller.signal,
+    const options = { store, lease: localLease, vault: {}, authorize: async () => {}, credentials, signal: controller.signal,
         transportFactory: () => transport, onReady: async () => calls.push('ready'), onReceived: async value => { received.push(value); controller.abort(); }, ...overrides.options };
     return { options, controller, calls, received, savedToken, queue, frames };
 }
+test('one process isolates 1000 simulated Edge receivers', { timeout: 30000 }, async () => {
+    const count = 1000, sessions = Array.from({ length: count }, (_, index) => {
+        const identity = { subscriptionId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+            ownerUserId: String(100000000000000000n + BigInt(index)), revision: 1 };
+        const h = harness({ lease: identity });
+        if (index % 2) h.options.credentials.connectVersion = '2';
+        return { identity, h };
+    });
+    try {
+        const results = await Promise.all(sessions.map(({ h }) => runEdgeWnsGateway(h.options)));
+        assert(results.every(result => result.state === 'stopped'));
+        for (const { identity, h } of sessions) {
+            assert.equal(h.received.length, 1);
+            assert.equal(h.received[0].lease.subscriptionId, identity.subscriptionId);
+            assert.equal(h.received[0].inbox.ownerUserId, identity.ownerUserId);
+            assert.equal(h.calls.filter(call => call === 'persist').length, 1);
+            assert(h.calls.indexOf('persist') < h.calls.lastIndexOf('send:ACK'));
+        }
+    } finally { for (const { h } of sessions) { h.controller.abort(); h.frames.forEach(frame => frame.fill(0)); } }
+});
+test('one process handles 1000 isolated Edge sessions over loopback sockets', { timeout: 60000 }, async () => {
+    const serverSockets = new Set(), readySockets = [], socketErrors = new Map(); let accepted = 0;
+    const server = net.createServer(socket => {
+        serverSockets.add(socket); accepted++; socket.once('close', () => serverSockets.delete(socket)); socket.on('error', () => {});
+        const decoder = createFrameDecoder();
+        socket.on('data', chunk => {
+            try {
+                for (const frame of decoder.push(chunk)) {
+                    const command = frame.subarray(0, frame.indexOf(' ')).toString('ascii');
+                    if (command === 'CNT') socket.write(envelope('CNT 1 CON', '<connect/>'));
+                    else if (command === 'ATH') socket.write(envelope('ATH 2 CON'));
+                    else if (command === 'BND') {
+                        socket.write(envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>synthetic-nonce</nonce><reconnect-token>rotated-token</reconnect-token></wns>'));
+                        readySockets.push(socket);
+                        if (readySockets.length === 1000) for (const ready of readySockets) ready.write(notification('target'));
+                    }
+                    frame.fill(0);
+                }
+            } catch { socket.destroy(); }
+        });
+    });
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port: 0, backlog: 2048 }, resolve); });
+    const port = server.address().port;
+    const sessions = Array.from({ length: 1000 }, (_, index) => {
+        const identity = { subscriptionId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+            ownerUserId: String(100000000000000000n + BigInt(index)), revision: 1 };
+        const h = harness({ lease: identity });
+        delete h.options.credentials.productKey; delete h.options.credentials.productId;
+        h.options.credentials.authenticationMode = 'bound';
+        if (index % 2) h.options.credentials.connectVersion = '2';
+        h.options.transportFactory = ({ signal }) => createEdgeWnsTransport({ signal, timeoutMs: 30000, socketFactory: () => {
+            // Loopback fixture only: no TLS is claimed by this socket test.
+            const socket = net.connect({ host: '127.0.0.1', port });
+            socket.on('error', error => { const code = /^[A-Z0-9_]+$/.test(error.code || '') ? error.code : 'OTHER';
+                socketErrors.set(code, (socketErrors.get(code) || 0) + 1); });
+            socket.once('connect', () => socket.emit('secureConnect'));
+            return socket;
+        } });
+        return { identity, h };
+    });
+    try {
+        const running = [];
+        for (let index = 0; index < sessions.length; index += 64) {
+            for (const { h } of sessions.slice(index, index + 64))
+                running.push(runEdgeWnsGateway(h.options).then(value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason })));
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        const settled = await Promise.all(running);
+        const rejected = settled.filter(result => result.status === 'rejected');
+        assert.equal(rejected.length, 0, `loopback sessions failed: ${JSON.stringify(Object.fromEntries(socketErrors))}`);
+        const results = settled.map(result => result.value);
+        assert.equal(accepted, sessions.length);
+        assert(results.every(result => result.state === 'stopped'));
+        for (const { identity, h } of sessions) {
+            assert.equal(h.received.length, 1);
+            assert.equal(h.received[0].inbox.subscriptionId, identity.subscriptionId);
+            assert.equal(h.received[0].inbox.ownerUserId, identity.ownerUserId);
+            assert.equal(h.calls.filter(call => call === 'persist').length, 1);
+        }
+    } finally {
+        for (const { h } of sessions) h.controller.abort();
+        for (const socket of serverSockets) socket.destroy();
+        await new Promise(resolve => server.close(resolve));
+    }
+});
 test('gateway preserves version 2 and rejects unknown versions before connecting', async () => {
     const h = harness(); h.options.credentials.connectVersion = '2';
     try { assert.deepEqual(await runEdgeWnsGateway(h.options), { state: 'stopped' });
