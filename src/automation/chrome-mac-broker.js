@@ -13,26 +13,37 @@ const { startChromeBroker } = require('./chrome-private-broker');
 const execFileAsync = promisify(execFile);
 const APP = '/Applications/Google Chrome.app';
 const EXECUTABLE = path.join(APP, 'Contents/MacOS/Google Chrome');
+const PLIST = path.join(APP, 'Contents/Info.plist');
 const REQUIREMENT = '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"';
 const fail = code => Object.assign(new Error(code), { code });
 
-async function verifyInstalledChrome() {
+async function verifyChromeInstallation() {
     if (process.platform !== 'darwin') throw fail('X_CHROME_MAC_BROWSER_UNSUPPORTED');
     try {
-        const bundle = await fs.lstat(APP), binary = await fs.lstat(EXECUTABLE);
-        if (!bundle.isDirectory() || bundle.isSymbolicLink() || !binary.isFile() || binary.isSymbolicLink()
-            || await fs.realpath(APP) !== APP || await fs.realpath(EXECUTABLE) !== EXECUTABLE) throw new Error();
+        const paths = [[APP, 'directory'], [EXECUTABLE, 'file'], [PLIST, 'file']];
+        async function inspect(filename, kind) {
+            const stat = await fs.lstat(filename);
+            if (stat.isSymbolicLink() || (kind === 'directory' ? !stat.isDirectory() : !stat.isFile())
+                || await fs.realpath(filename) !== filename) throw new Error();
+            return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs];
+        }
+        const before = [];
+        for (const [filename, kind] of paths) before.push(await inspect(filename, kind));
         // Verify identity and signature without a shell. A bundle identifier by
         // itself does not prove the signer. Never log codesign output.
         await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', REQUIREMENT, APP],
             { timeout: 120000, maxBuffer: 16384, windowsHide: true });
-        return EXECUTABLE;
+        const after = [];
+        for (const [filename, kind] of paths) after.push(await inspect(filename, kind));
+        if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error();
+        return { executable: EXECUTABLE, identity: JSON.stringify(after) };
     } catch { throw fail('X_CHROME_MAC_BROWSER_INVALID'); }
 }
+async function verifyInstalledChrome() { return (await verifyChromeInstallation()).executable; }
 
 async function startMacChromeBroker({ rootPath, profileId }) {
     const profile = await verifyMacChromeProfile(rootPath, profileId);
-    const chromePath = await verifyInstalledChrome();
+    const browser = await verifyChromeInstallation(), chromePath = browser.executable;
     let lease, operation, broker, launchedClosed = false;
     /** @type {import('node:child_process').ChildProcess | null} */
     let launched = null;
@@ -47,7 +58,8 @@ async function startMacChromeBroker({ rootPath, profileId }) {
         await verifyMacChromeProfile(rootPath, profileId);
         broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath,
             spawnChrome: /** @type {typeof import('node:child_process').spawn} */ (/** @type {unknown} */ (spawnOwned)) });
-        if (await verifyInstalledChrome() !== chromePath) throw fail('X_CHROME_MAC_BROKER_INVALID');
+        const afterLaunch = await verifyChromeInstallation();
+        if (afterLaunch.executable !== chromePath || afterLaunch.identity !== browser.identity) throw fail('X_CHROME_MAC_BROKER_INVALID');
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {

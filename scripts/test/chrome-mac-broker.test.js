@@ -16,11 +16,12 @@ test('Mac broker retains its profile lease until close, including startup failur
     });
     const profile = await createMacChromeProfile(base); let chrome;
     const app = '/Applications/Google Chrome.app', executable = app + '/Contents/MacOS/Google Chrome';
-    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false;
+    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false;
     const fakeFs = { ...fs,
-        async lstat(name) { if (name === app) return { isDirectory: () => true, isSymbolicLink: () => false };
-            if (name === executable) return { isFile: () => true, isSymbolicLink: () => false }; return fs.lstat(name); },
-        async realpath(name) { return name === app || name === executable ? name : fs.realpath(name); } };
+        async lstat(name) { if ([app, executable, app + '/Contents/Info.plist'].includes(name)) return {
+            isDirectory: () => name === app, isFile: () => name !== app, isSymbolicLink: () => false,
+            dev: 1, ino: name === executable && changed ? 2 : 1, size: 1, mtimeMs: 1, ctimeMs: 1 }; return fs.lstat(name); },
+        async realpath(name) { return [app, executable, app + '/Contents/Info.plist'].includes(name) ? name : fs.realpath(name); } };
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
@@ -28,7 +29,9 @@ test('Mac broker retains its profile lease until close, including startup failur
         spawn() { chrome = new EventEmitter(); chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
         if (name === './chrome-private-broker') return { startChromeBroker: async options => {
             calls++; captured = options; options.spawnChrome('synthetic', [], {});
-            if (failAfterSpawn) throw new Error('synthetic failure'); return { chrome, stop: async () => {} };
+            if (failAfterSpawn) throw new Error('synthetic failure');
+            if (calls === 3) changed = true;
+            return { chrome, stop: async () => {} };
         } };
         if (name.startsWith('./')) return require(path.join(__dirname, '../../src/automation', name));
         return require(name);
@@ -53,6 +56,12 @@ test('Mac broker retains its profile lease until close, including startup failur
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
     chrome.emit('close');
     const lock = path.join(profile.rootPath, 'broker.lock');
+    for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
+    await assert.rejects(fs.access(lock), { code: 'ENOENT' });
+    failAfterSpawn = false;
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_CLEANUP_PENDING' });
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
+    chrome.emit('close');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });
 });
