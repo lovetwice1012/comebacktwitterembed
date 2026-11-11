@@ -9,13 +9,14 @@ const { randomBytes } = require('node:crypto');
 const webpush = require('web-push');
 const { createFrameDecoder } = require('../../src/automation/chrome-mcs-framing');
 const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
+const { loginResponse } = require('../../src/automation/chrome-mcs-protobuf');
 
 async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion }) {
     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
     const marker = randomBytes(16).toString('hex'), pending = new Set();
     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
     const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', timeout: 15000 });
-    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login';
+    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login', loginDetail = 'none';
     const session = createChromeMcsSession({ credentials: { deviceId, securityToken, clientVersion: browserVersion },
         route: { expectedCategory: category, expectedAppId: appId, expectedSender: encryption.authorizedEntity },
         send: data => new Promise((resolve, reject) => socket.write(data, error => error ? reject(new Error('FIXTURE_MCS_WRITE_FAILED')) : resolve())),
@@ -39,6 +40,13 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
             socket.on('data', chunk => {
                 queue = queue.then(async () => {
                     for (const frame of decoder.push(chunk)) {
+                        if (stage === 'login') {
+                            loginDetail = `tag${frame.tag}`;
+                            if (frame.tag === 3) {
+                                try { const reply = loginResponse(frame.payload); loginDetail += reply.accepted ? '_accepted' : `_error${reply.code}`; }
+                                catch { loginDetail += '_invalid'; }
+                            }
+                        }
                         const result = await session.receive(frame);
                         if (result.state === 'listening' && !sent) {
                             sent = true; stage = 'send';
@@ -51,7 +59,7 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                 }).catch(error => {
                     const code = typeof error?.code === 'string' && /^X_CHROME_[A-Z_]+$/.test(error.code) ? error.code
                         : typeof error?.message === 'string' && /^FIXTURE_MCS_SEND_FAILED_(?:[0-9]{3}|UNKNOWN)$/.test(error.message) ? error.message : 'UNKNOWN';
-                    reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}`));
+                    reject(new Error(`FIXTURE_MCS_PROCESSING_FAILED_${stage}_${code}_${loginDetail}`));
                 });
             });
         });
