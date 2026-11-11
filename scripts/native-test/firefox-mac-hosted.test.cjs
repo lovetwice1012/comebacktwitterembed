@@ -78,6 +78,16 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
             t.diagnostic(`${name}: status=${value.status} error=${value.error?.code || 'none'} stderr=${(value.stderr || '').slice(0, 1000)}`);
         }
         assert.equal(inline.error, undefined); assert.equal(inline.status, 0); assert.match(inline.stdout, /CBTE_SYNTHETIC_STDIN_OK/);
+        // readline() consumes a private, bounded ASCII JSON line even though
+        // using stdin as an entire -f script is unsupported on these Macs.
+        const privateInput = JSON.stringify({ tag: 'synthetic-only', path: '日本語/通知' })
+            .replace(/[\u007f-\uffff]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+        assert(Buffer.byteLength(privateInput) < 4095);
+        const stdinScript = 'const v=JSON.parse(readline());if(v.tag==="synthetic-only"&&v.path==="\\u65e5\\u672c\\u8a9e/\\u901a\\u77e5")print("CBTE_PRIVATE_PIPE_OK");else quit(9);quit(0);';
+        const privatePipe = execute(['-xpcshell', '-e', stdinScript], { ...options, input: `${privateInput}\n` });
+        assert.equal(Boolean(privatePipe.error), false); assert.equal(privatePipe.status, 0);
+        assert.match(privatePipe.stdout, /CBTE_PRIVATE_PIPE_OK/);
+        assert(!privatePipe.stdout.includes(privateInput)); assert(!(privatePipe.stderr || '').includes(privateInput));
 
         if (useSandbox) {
             const finish = `function finish(value) {
