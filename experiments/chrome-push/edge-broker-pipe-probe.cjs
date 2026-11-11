@@ -124,6 +124,7 @@ async function main() {
     const onlineBatch = process.env.EDGE_PROBE_BATCH_ONLINE === '1';
     const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
     const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
+    const distinctTopics = process.env.EDGE_PROBE_DISTINCT_TOPICS === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
@@ -133,6 +134,7 @@ async function main() {
     if (onlineBatch && !offlineBatch) throw new Error('PROBE_MODE_INVALID');
     if (offlineSettle && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     if (overlap && (!takeover || reimport)) throw new Error('PROBE_MODE_INVALID');
+    if (distinctTopics && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'edge-profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
@@ -508,7 +510,15 @@ async function main() {
                         if (offlineSettle) await wait(5000);
                         if (offlineMessage && !onlineBatch) {
                             const messages = offlineBatch ? ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'] : ['synthetic-offline-queued'];
-                            for (const text of messages) await webpush.sendNotification(expected, JSON.stringify({ text }), { TTL: 300 });
+                            for (const [index, text] of messages.entries()) {
+                                try { await webpush.sendNotification(expected, JSON.stringify({ text }),
+                                    { TTL: 300, ...(distinctTopics ? { topic: `synthetic${index + 1}` } : {}) }); }
+                                catch (error) {
+                                    if (distinctTopics && Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500)
+                                        throw new Error('PROBE_TOPIC_SEND_REJECTED');
+                                    throw error;
+                                }
+                            }
                         }
                         const claim = () => wnsGateway.store.claim({ ...identity, workerId: 'synthetic-edge-after-crash' });
                         let recoveredLease = await claim();
