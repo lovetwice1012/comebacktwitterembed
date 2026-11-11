@@ -17,7 +17,7 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
     });
     const profile = await createMacEdgeProfile(base), chromeProfile = await createMacChromeProfile(base);
     const app = '/Applications/Microsoft Edge.app', executable = app + '/Contents/MacOS/Microsoft Edge';
-    const children = []; let accepted = false, captured, signing, failAfterSpawn = false;
+    const children = []; let accepted = false, captured, signing, failAfterSpawn = false, groupGone = Promise.resolve(true);
     const fakeFs = { ...fs,
         async lstat(name) { if (name === app) return { isDirectory: () => true, isSymbolicLink: () => false };
             if (name === executable) return { isFile: () => true, isSymbolicLink: () => false }; return fs.lstat(name); },
@@ -26,13 +26,15 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
             signing = { file, args, opts }; callback(accepted ? null : new Error('signature rejected'), '', ''); },
-            spawn() { const child = new EventEmitter(); child.exitCode = null; child.signalCode = null; children.push(child); return child; } };
+            spawn(_file, _args, options) { assert.equal(options.detached, true); const child = new EventEmitter(); child.pid = 12345; child.exitCode = null; child.signalCode = null; children.push(child); return child; } };
         if (name === './chrome-mac-profile') return require('../../src/automation/chrome-mac-profile');
         if (name === './chrome-mac-profile-lease') return require('../../src/automation/chrome-mac-profile-lease');
+        if (name === './chrome-mac-process-group') return { waitForMacProcessGroupExit: () => groupGone };
         if (name === './edge-private-broker') return { startChromeBroker: async options => {
             captured = options;
-            if (failAfterSpawn) { options.spawnChrome('fixture', [], {}); throw new Error('synthetic start failure'); }
-            const chrome = new EventEmitter(); chrome.exitCode = null; children.push(chrome); return { chrome };
+            const chrome = options.spawnChrome('fixture', [], {});
+            if (failAfterSpawn) throw new Error('synthetic start failure');
+            return { chrome };
         } };
         return require(name);
     };
@@ -46,6 +48,7 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
     accepted = true;
     await assert.rejects(startMacEdgeBroker({ rootPath: chromeProfile.rootPath, profileId: chromeProfile.profileId, suppressReceive: false }), { code: 'X_CHROME_MAC_PROFILE_INVALID' });
     for (const suppressReceive of [false, true]) {
+        let finishGroup; groupGone = new Promise(resolve => { finishGroup = resolve; });
         const broker = await startMacEdgeBroker({ ...args, suppressReceive });
         assert.equal(signing.file, '/usr/bin/codesign'); assert(signing.args.some(arg => arg.includes('UBF8T346G9') && arg.includes('com.microsoft.edgemac')));
         assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
@@ -53,8 +56,10 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
         await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
         const child = children.at(-1); child.exitCode = 0; child.emit('exit');
         await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
-        child.emit('close'); assert.equal(await broker.releaseComplete, true);
+        child.emit('close'); await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
+        finishGroup(true); assert.equal(await broker.releaseComplete, true);
     }
+    groupGone = Promise.resolve(true);
     const leaseArgs = { ...args, browser: 'edge' }, lease = await acquireMacProfileLease(leaseArgs);
     const inspection = beginMacProfileLease(lease, leaseArgs); inspection.end();
     const handedOff = await startMacEdgeBroker({ ...args, suppressReceive: true, profileLease: lease });
@@ -73,4 +78,8 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
     const lock = path.join(profile.rootPath, 'broker.lock');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });
+    failAfterSpawn = false; groupGone = Promise.resolve(false);
+    const uncertain = await startMacEdgeBroker({ ...args, suppressReceive: true });
+    children.at(-1).emit('close'); assert.equal(await uncertain.releaseComplete, false);
+    await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive: true }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
 });

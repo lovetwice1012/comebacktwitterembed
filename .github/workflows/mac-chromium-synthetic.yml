@@ -26,6 +26,7 @@ on:
       - scripts/native-test/brave-mac-composed.test.cjs
       - scripts/test/chrome-mac-broker.test.js
       - scripts/test/chrome-mac-setup-session.test.js
+      - scripts/test/edge-mac-broker.test.js
       - client/angelic-setup/mac/lock-notification-stores.c
       - package-lock.json
 
@@ -96,4 +97,5 @@ jobs:
             scripts/test/chrome-mac-login-error.test.js \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \
+            scripts/test/edge-mac-broker.test.js \
             scripts/test/chrome-mac-setup-session.test.js

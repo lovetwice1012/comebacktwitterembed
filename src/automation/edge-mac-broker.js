@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 const { verifyMacEdgeProfile } = require('./chrome-mac-profile');
 const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('./chrome-mac-profile-lease');
 const { startChromeBroker } = require('./edge-private-broker');
+const { waitForMacProcessGroupExit } = require('./chrome-mac-process-group');
 const execFileAsync = promisify(execFile);
 const APP = '/Applications/Microsoft Edge.app';
 const EXECUTABLE = path.join(APP, 'Contents/MacOS/Microsoft Edge');
@@ -35,7 +36,7 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
     /** @type {import('node:child_process').ChildProcess | null} */
     let launched = null;
     const spawnOwned = (file, args, options) => {
-        launched = spawn(file, args, options); launched.once('close', () => { launchedClosed = true; }); return launched;
+        launched = spawn(file, args, { ...options, detached: true }); launched.once('close', () => { launchedClosed = true; }); return launched;
     };
     try {
         if (ownsLease) lease = await acquireMacProfileLease({ rootPath, profileId, browser: 'edge' });
@@ -48,13 +49,15 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
             if (released) return; released = true; let ok = false;
-            operation.end();
-            try { await releaseMacProfileLease(lease); ok = true; }
+            try {
+                if (!broker.chrome.pid || !await waitForMacProcessGroupExit(broker.chrome.pid)) return;
+                operation.end(); await releaseMacProfileLease(lease); ok = true;
+            }
             catch { /* A stale lock fails closed. */ }
             finally { settleRelease(ok); }
         };
-        // Keep the profile lease until the child's stdio has also closed.
-        // This is stronger than `exit`, but not proof all descendants stopped.
+        // Close and an empty process group are necessary, but descendants may
+        // still escape the group; callers must not treat this as complete proof.
         broker.chrome.once('close', () => { void release(); });
         if (launchedClosed) await release();
         return { ...broker, releaseComplete };
@@ -63,14 +66,17 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
         // closed the child's streams. Keep the profile locked until close,
         // including the gap between `exit` and `close`.
         const active = /** @type {import('node:child_process').ChildProcess | null} */ (launched);
-        if (operation && active && !launchedClosed) {
+        if (operation && active) {
             let finished = false;
             const releaseAfterClose = async () => {
-                if (finished) return; finished = true; operation.end();
-                await releaseMacProfileLease(lease).catch(() => {});
+                if (finished) return; finished = true;
+                try {
+                    if (!active.pid || !await waitForMacProcessGroupExit(active.pid)) return;
+                    operation.end(); await releaseMacProfileLease(lease);
+                } catch { /* Retain the lease when termination is uncertain. */ }
             };
-            active.once('close', () => { void releaseAfterClose(); });
-            if (launchedClosed) void releaseAfterClose();
+            if (!launchedClosed) active.once('close', () => { void releaseAfterClose(); });
+            else void releaseAfterClose();
             throw fail('X_EDGE_MAC_BROKER_CLEANUP_PENDING');
         }
         operation?.end();
