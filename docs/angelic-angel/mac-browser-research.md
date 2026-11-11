@@ -14,6 +14,8 @@ Chromeの試験用起動処理は、プロセスの `exit` から入出力が閉
 
 追加の[構成観測](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42979287358)では、Intel環境のフレームワークに、正常な初回起動後から署名エラーまでの間に新バージョンのディレクトリが加わった。更新との競合を示唆するが、更新プロセスを特定したわけではない。署名検証中と起動前後にアプリ・実行ファイル・設定ファイルの識別情報が変わった場合は処理を中止するようにした。同試験ではApple Siliconの一時プロフィール削除が親プロセス終了後に競合する例も観測した。全子孫プロセスの終了確認は未解決であり、配布アプリに接続しない。
 
+Chromeを専用プロセスグループで起動し、親の終了後もグループが残る場合や状態を確認できない場合はプロフィールのロックを保持する処理を追加した。[macOS試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42980544506)では両CPUでそれぞれ15件が成功し、実Chromeによる試験用Push購読の作成・再取得も通過した。この試験で確認したのはプロセスグループの消滅までであり、グループを離れた子孫が存在しないことの証明ではない。更新競合が起きない保証もない。実X、Keychain、サーバー受信、配布アプリは未検証である。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
