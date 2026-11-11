@@ -7,13 +7,17 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseUniqueJson } = require('./strict-json');
-const { createMacChromeProfile, verifyMacChromeProfile, createMacFirefoxProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
+const { createMacChromeProfile, verifyMacChromeProfile, createMacBraveProfile, verifyMacBraveProfile,
+    createMacFirefoxProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
 const fail = code => Object.assign(new Error(code), { code });
 
 async function getOrCreateMacProfile(directory, browser) {
     const config = browser === 'chrome'
         ? { create: createMacChromeProfile, verify: verifyMacChromeProfile, index: 'setup-profile.json', lock: 'registry.lock',
             orphan: /^x-notification-setup-[0-9a-f]{32}$/, temporary: '.setup-profile-' }
+        : browser === 'brave'
+            ? { create: createMacBraveProfile, verify: verifyMacBraveProfile, index: 'brave-setup-profile.json', lock: 'brave-registry.lock',
+                orphan: /^x-notification-brave-[0-9a-f]{32}$/, temporary: '.brave-setup-profile-' }
         : browser === 'firefox'
             ? { create: createMacFirefoxProfile, verify: verifyMacFirefoxProfile, index: 'firefox-setup-profile.json', lock: 'firefox-registry.lock',
                 orphan: /^x-notification-firefox-[0-9a-f]{32}$/, temporary: '.firefox-setup-profile-' }
@@ -82,9 +86,12 @@ async function getOrCreateMacProfile(directory, browser) {
             try { await unlinkOwned(lockPath, lockStat); } catch { cleanupFailed = true; }
             finally { await lock.close().catch(() => { cleanupFailed = true; }); }
         }
+        // Cleanup failure must override a successful return: ownership is uncertain.
+        // eslint-disable-next-line no-unsafe-finally
         if (cleanupFailed) throw fail('X_CHROME_MAC_REGISTRY_CLEANUP_FAILED');
     }
 }
 const getOrCreateMacChromeProfile = directory => getOrCreateMacProfile(directory, 'chrome');
+const getOrCreateMacBraveProfile = directory => getOrCreateMacProfile(directory, 'brave');
 const getOrCreateMacFirefoxProfile = directory => getOrCreateMacProfile(directory, 'firefox');
-module.exports = { getOrCreateMacChromeProfile, getOrCreateMacFirefoxProfile };
+module.exports = { getOrCreateMacChromeProfile, getOrCreateMacBraveProfile, getOrCreateMacFirefoxProfile };

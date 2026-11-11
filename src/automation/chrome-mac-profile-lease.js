@@ -4,12 +4,12 @@
 // profile. The lock remains held across separate snapshot and launch steps.
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { verifyMacChromeProfile, verifyMacEdgeProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
+const { verifyMacChromeProfile, verifyMacEdgeProfile, verifyMacBraveProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
 const fail = code => Object.assign(new Error(code), { code });
 const leases = new WeakMap();
 
 async function acquireMacProfileLease({ rootPath, profileId, browser }) {
-    const verifiers = { chrome: verifyMacChromeProfile, edge: verifyMacEdgeProfile, firefox: verifyMacFirefoxProfile };
+    const verifiers = { chrome: verifyMacChromeProfile, edge: verifyMacEdgeProfile, brave: verifyMacBraveProfile, firefox: verifyMacFirefoxProfile };
     if (!Object.hasOwn(verifiers, browser)) throw fail('X_CHROME_MAC_LEASE_INVALID');
     const verify = verifiers[browser];
     const profile = await verify(rootPath, profileId);

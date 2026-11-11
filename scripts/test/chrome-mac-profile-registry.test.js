@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { getOrCreateMacChromeProfile, getOrCreateMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile-registry');
+const { getOrCreateMacChromeProfile, getOrCreateMacBraveProfile, getOrCreateMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile-registry');
 
 test('profile registry reuses the same dedicated profile and rejects tampered or missing identity', { skip: process.platform === 'win32' }, async t => {
     const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-registry-test-'));
@@ -48,11 +48,12 @@ test('Firefox profile persists independently of Chrome and fails closed on repla
         const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
         assert.match(path.basename(real), /^cbte-mac-firefox-registry-/); await fs.rm(real, { recursive: true });
     });
-    const [chrome, firefox] = await Promise.all([getOrCreateMacChromeProfile(base), getOrCreateMacFirefoxProfile(base)]);
+    const [chrome, firefox, brave] = await Promise.all([getOrCreateMacChromeProfile(base), getOrCreateMacFirefoxProfile(base), getOrCreateMacBraveProfile(base)]);
     assert.notEqual(chrome.rootPath, firefox.rootPath);
     await fs.writeFile(path.join(firefox.profilePath, 'synthetic-existing-data'), 'preserve');
     assert.deepEqual(await getOrCreateMacFirefoxProfile(base), firefox);
     assert.deepEqual(await getOrCreateMacChromeProfile(base), chrome);
+    assert.deepEqual(await getOrCreateMacBraveProfile(base), brave);
     const index = path.join(base, 'firefox-setup-profile.json');
     assert.equal((await fs.stat(index)).mode & 0o777, 0o600);
     await fs.writeFile(index, JSON.stringify({ rootPath: chrome.rootPath, profileId: chrome.profileId }));
@@ -61,4 +62,9 @@ test('Firefox profile persists independently of Chrome and fails closed on repla
     await assert.rejects(getOrCreateMacFirefoxProfile(base), { code: 'X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED' });
     assert.equal(await fs.readFile(path.join(firefox.profilePath, 'synthetic-existing-data'), 'utf8'), 'preserve');
     assert.deepEqual(await getOrCreateMacChromeProfile(base), chrome);
+    const braveIndex = path.join(base, 'brave-setup-profile.json');
+    await fs.writeFile(braveIndex, JSON.stringify({ rootPath: firefox.rootPath, profileId: firefox.profileId }));
+    await assert.rejects(getOrCreateMacBraveProfile(base), { code: 'X_CHROME_MAC_PROFILE_INVALID' });
+    await fs.unlink(braveIndex);
+    await assert.rejects(getOrCreateMacBraveProfile(base), { code: 'X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED' });
 });

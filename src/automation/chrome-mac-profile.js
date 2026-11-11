@@ -12,6 +12,7 @@ const fail = code => Object.assign(new Error(code), { code });
 const APP_ID = 'x-notification-setup';
 const BROWSERS = Object.freeze({ chrome: { prefix: 'x-notification-setup-', folder: 'chrome-profile' },
     edge: { prefix: 'x-notification-edge-', folder: 'edge-profile' },
+    brave: { prefix: 'x-notification-brave-', folder: 'brave-profile' },
     firefox: { prefix: 'x-notification-firefox-', folder: 'firefox-profile' } });
 function requirePosix() {
     if (process.platform === 'win32' || typeof process.getuid !== 'function' || !constants.O_NOFOLLOW)
@@ -86,7 +87,9 @@ const createMacChromeProfile = parent => createMacBrowserProfile(parent, 'chrome
 const verifyMacChromeProfile = (root, id) => verifyMacBrowserProfile(root, id, 'chrome');
 const createMacEdgeProfile = parent => createMacBrowserProfile(parent, 'edge');
 const verifyMacEdgeProfile = (root, id) => verifyMacBrowserProfile(root, id, 'edge');
+const createMacBraveProfile = parent => createMacBrowserProfile(parent, 'brave');
+const verifyMacBraveProfile = (root, id) => verifyMacBrowserProfile(root, id, 'brave');
 const createMacFirefoxProfile = parent => createMacBrowserProfile(parent, 'firefox');
 const verifyMacFirefoxProfile = (root, id) => verifyMacBrowserProfile(root, id, 'firefox');
-module.exports = { createMacChromeProfile, verifyMacChromeProfile, createMacEdgeProfile, verifyMacEdgeProfile,
+module.exports = { createMacChromeProfile, verifyMacChromeProfile, createMacEdgeProfile, verifyMacEdgeProfile, createMacBraveProfile, verifyMacBraveProfile,
     createMacFirefoxProfile, verifyMacFirefoxProfile };

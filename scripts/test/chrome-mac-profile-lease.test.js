@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createMacEdgeProfile, createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
+const { createMacEdgeProfile, createMacChromeProfile, createMacBraveProfile } = require('../../src/automation/chrome-mac-profile');
 const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('../../src/automation/chrome-mac-profile-lease');
 
 test('profile lease retains exclusive ownership across multiple operations', { skip: process.platform === 'win32' }, async t => {
@@ -28,4 +28,10 @@ test('profile lease retains exclusive ownership across multiple operations', { s
     await releaseMacProfileLease(lease); await releaseMacProfileLease(lease);
     assert.throws(() => beginMacProfileLease(lease, args), { code: 'X_CHROME_MAC_LEASE_INVALID' });
     const next = await acquireMacProfileLease(args); await releaseMacProfileLease(next);
+    const brave = await createMacBraveProfile(base), braveArgs = { rootPath: brave.rootPath, profileId: brave.profileId, browser: 'brave' };
+    const braveLease = await acquireMacProfileLease(braveArgs);
+    await assert.rejects(acquireMacProfileLease(braveArgs), { code: 'X_CHROME_MAC_LEASE_BUSY' });
+    assert.throws(() => beginMacProfileLease(braveLease, args), { code: 'X_CHROME_MAC_LEASE_INVALID' });
+    const braveOperation = beginMacProfileLease(braveLease, braveArgs); assert.equal(braveOperation.profile.profilePath, brave.profilePath);
+    braveOperation.end(); await releaseMacProfileLease(braveLease);
 });
