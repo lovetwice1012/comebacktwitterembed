@@ -24,6 +24,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [登録形式と暗号化保管の追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42985771654)は両CPUで成功した。ローカル試験サイトの識別子だけをテスト内でX形式に置き換え、実Chromeで生成した鍵・端末情報を既存の登録ファイル検証と公開鍵による暗号化、所有者に紐づくワーカー側の復号へ通した。別の所有者では復号できないことも確認した。実際の購読先は変更していない。この試験は管理画面のHTTP操作、DBへの保存、実X購読の代替ではない。
 
+[macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
