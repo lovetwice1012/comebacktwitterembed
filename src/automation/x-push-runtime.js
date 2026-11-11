@@ -266,8 +266,20 @@ function createXPushRuntime(db, queue, options = {}) {
                 const eligibleIds = new Set(refreshed.map(row => row.id));
                 for (const id of refreshPending.keys()) if (!eligibleIds.has(id)) refreshPending.delete(id);
             }
-            for (const candidate of [...refreshed, ...page]) {
-                if (stopped || sessions.size >= maxConnections) break;
+            // Refreshes can accumulate beyond one page when many settings
+            // change at once. Bound starts across both sources, not just the
+            // ordinary paginated query, so recovery cannot create a burst.
+            // Interleave the sources so ongoing refreshes cannot indefinitely
+            // starve registrations found by the ordinary cursor.
+            function* candidates() {
+                for (let index = 0; index < Math.max(refreshed.length, page.length); index++) {
+                    if (index < refreshed.length) yield refreshed[index];
+                    if (index < page.length) yield page[index];
+                }
+            }
+            let started = 0;
+            for (const candidate of candidates()) {
+                if (stopped || sessions.size >= maxConnections || started >= pageSize) break;
                 if (sessions.has(candidate.id)) continue;
                 if ((cooldowns.get(candidate.id) || 0) > clock()) continue;
                 const policy = await evaluateXRollout(db.queryDatabase, { userId: candidate.owner_user_id }, rolloutOptions);
@@ -303,6 +315,7 @@ function createXPushRuntime(db, queue, options = {}) {
                         if (sessionControls.get(candidate.id) === record) sessionControls.delete(candidate.id);
                     });
                 sessions.set(candidate.id, pending);
+                started++;
                 refreshPending.delete(candidate.id);
             }
             // Thousands of live subscriptions must not all acquire database

@@ -102,3 +102,33 @@ test('expired local cooldowns are removed while future retry deadlines remain', 
     pruneExpiredCooldowns(cooldowns, 1001);
     assert.deepEqual([...cooldowns], [['backoff', 1801000]]);
 });
+
+test('simultaneous subscription refreshes start at most one page per tick without losing candidates', async t => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({ id: String(index + 1).padStart(2, '0'),
+        owner_user_id: U, revision: 1, updated_at_ms: 0 }));
+    const starts = [];
+    const gateway = { run: input => {
+        starts.push(input.subscriptionId);
+        return new Promise(resolve => { if (input.signal.aborted) return resolve({ state: 'stopped' });
+            input.signal.addEventListener('abort', () => resolve({ state: 'stopped' }), { once: true }); });
+    }, store: {} };
+    const runtime = createXPushRuntime({ queryDatabase: async () => assert.fail('unexpected query') }, {}, {
+        enabled: true, processingPolicy: 'batch', rolloutMode: 'public', gateway, assertAllowed: () => {}, pageSize: 2,
+        listCandidates: async cursor => rows.filter(row => row.id > cursor).slice(0, 2).map(row => ({ ...row })),
+        listActiveSessions: async ids => rows.filter(row => ids.includes(row.id)).map(row => ({ ...row })),
+    });
+    t.after(() => runtime.stop());
+    for (let i = 0; i < 3; i++) { await runtime.tick(); await flush(); }
+    assert.equal(runtime.status().sessions, 6);
+    assert.deepEqual(starts, rows.map(row => row.id));
+    rows.forEach(row => { row.updated_at_ms = 1; });
+    rows.push({ id: '07', owner_user_id: U, revision: 1, updated_at_ms: 0 });
+    for (let i = 0; i < 4; i++) {
+        const before = starts.length;
+        await runtime.tick(); await flush();
+        assert(starts.length - before <= 2);
+        if (i === 0) assert(starts.slice(before).includes('07'), 'new registrations must not be starved by refreshes');
+    }
+    assert.equal(runtime.status().sessions, 7);
+    assert.deepEqual(starts.slice(6).sort(), rows.map(row => row.id));
+});
