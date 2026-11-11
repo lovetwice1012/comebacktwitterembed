@@ -33,7 +33,7 @@ async function terminateReadySyntheticWorker({ schema, identity, privateKey }) {
                 if (!child.kill()) reject(new Error('PROBE_FORCED_EXIT_FAILED'));
             });
             child.on('exit', (code, signal) => ready && (code !== 0 || signal) ? resolve() : reject(new Error('PROBE_FORCED_EXIT_FAILED')));
-            child.send({ schema, ...identity, privateKey }, error => { if (error) reject(new Error('PROBE_FORCED_EXIT_FAILED')); });
+            child.send({ schema, ...identity, privateKey, versionTwo: process.env.EDGE_PROBE_CONNECT_VERSION === '2' }, error => { if (error) reject(new Error('PROBE_FORCED_EXIT_FAILED')); });
         });
     } finally {
         clearTimeout(timeout);
@@ -63,7 +63,7 @@ async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotifi
                 else reject(new Error('PROBE_RESTART_FAILED'));
             });
             child.on('exit', code => code === 0 && ready && received ? resolve() : reject(new Error('PROBE_RESTART_FAILED')));
-            child.send({ schema, ...identity, privateKey, expectedText, batch }, error => { if (error) reject(new Error('PROBE_RESTART_FAILED')); });
+            child.send({ schema, ...identity, privateKey, expectedText, batch, versionTwo: process.env.EDGE_PROBE_CONNECT_VERSION === '2' }, error => { if (error) reject(new Error('PROBE_RESTART_FAILED')); });
         });
     } finally {
         clearTimeout(timeout);
@@ -126,7 +126,7 @@ async function main() {
     const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
     const distinctTopics = process.env.EDGE_PROBE_DISTINCT_TOPICS === '1';
     const versionTwo = process.env.EDGE_PROBE_CONNECT_VERSION === '2';
-    if (process.env.EDGE_PROBE_CONNECT_VERSION && !versionTwo || versionTwo && (!realWns || takeover)) throw new Error('PROBE_MODE_INVALID');
+    if (process.env.EDGE_PROBE_CONNECT_VERSION && !versionTwo || versionTwo && (!realWns || overlap)) throw new Error('PROBE_MODE_INVALID');
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');

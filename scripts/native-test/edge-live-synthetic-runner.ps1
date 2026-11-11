@@ -1,6 +1,6 @@
 param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle, [switch] $OverlapProbe, [switch] $DistinctTopics, [switch] $ConnectVersionTwo)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($ConnectVersionTwo -and $Takeover) -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch)) -or ($OverlapProbe -and (-not $Takeover -or $Reimport)) -or ($DistinctTopics -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($ConnectVersionTwo -and $OverlapProbe) -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch)) -or ($OverlapProbe -and (-not $Takeover -or $Reimport)) -or ($DistinctTopics -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }

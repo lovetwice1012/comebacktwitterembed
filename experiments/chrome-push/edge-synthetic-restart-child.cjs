@@ -13,7 +13,8 @@ process.once('message', async input => {
             || !/^[0-9a-f-]{36}$/.test(input.subscriptionId) || input.ownerUserId !== '123456789'
             || typeof input.privateKey !== 'string' || !input.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')
             || input.expectedText !== undefined && !['synthetic-after-process-restart', 'synthetic-offline-queued'].includes(input.expectedText)
-            || input.batch !== undefined && typeof input.batch !== 'boolean') throw new Error();
+            || input.batch !== undefined && typeof input.batch !== 'boolean'
+            || input.versionTwo !== undefined && typeof input.versionTwo !== 'boolean') throw new Error();
         pool = mysql.createPool({ host: '127.0.0.1', port: 33621, user: 'root', password: '', database: input.schema,
             connectionLimit: 4, supportBigNumbers: true, bigNumberStrings: true });
         const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
@@ -27,8 +28,19 @@ process.once('message', async input => {
             },
         };
         const keyConfig = { activeKeyId: 'test', privateKeys: { test: input.privateKey } };
-        const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, rolloutMode: 'public',
-            privateWorkerVault: createTransferPrivateWorkerVault(keyConfig), edgeTokenVault: createWnsTokenWorkerVault(keyConfig) });
+        let versionChecked = false;
+        const versionObserver = input.versionTwo ? { createEdgeTransport: ({ signal }) => {
+            const transport = require('../../src/automation/edge-wns-transport').createEdgeWnsTransport({ signal });
+            return { ...transport, async send(frame) {
+                if (!versionChecked && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
+                    if (!frame.includes(Buffer.from('<connect><ver>2</ver>'))) throw new Error();
+                    versionChecked = true;
+                }
+                return transport.send(frame);
+            } };
+        } } : {};
+        const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, edgeConnectV2Enabled: input.versionTwo === true, rolloutMode: 'public',
+            privateWorkerVault: createTransferPrivateWorkerVault(keyConfig), edgeTokenVault: createWnsTokenWorkerVault(keyConfig), ...versionObserver });
         const controller = new AbortController();
         let received = false, timer, checking = false, allSeenAt = 0, scanFailed = false, observedMask = 0;
         const deadline = setTimeout(() => {
@@ -63,6 +75,7 @@ process.once('message', async input => {
             await gateway.run({ subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId,
                 workerId: 'synthetic-edge-restarted-process', signal: controller.signal,
                 onSession: async ({ lease }) => {
+                    if (input.versionTwo && !versionChecked) throw new Error();
                     process.send({ state: 'ready' });
                     if (input.batch) timer = setInterval(() => { void scanBatch(lease); }, 300);
                 },
