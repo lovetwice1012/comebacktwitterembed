@@ -32,6 +32,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [終了前後の比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525175)では、Apple Silicon・Intelの各試験で、Chromeを閉じる前の試験通知送信がすでに `410` となった。一方、[別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525255)では、同じ手順でブラウザー起動中の通知と、通常終了後のMCSによる通知の両方を受信できた。このため、少なくとも観測した `410` の一部は移譲後のサーバー受信処理より前に起きている。原因と再発条件は未確定である。
 
+[続く試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42991190681)ではApple Siliconの通知試験は成功し、IntelはChromeの厳格な署名検証が120秒でタイムアウトして通知試験へ進まなかった。実際の署名不正と検証の時間切れは区別できるよう内部エラーを分けた。`410` の応答本文は出力せず、既知のエラー種別だけを分類する試験コードも追加したが、この実行では `410` が再現せず分類結果は得られていない。
+
 [macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
 
 ## 調査で確認した範囲

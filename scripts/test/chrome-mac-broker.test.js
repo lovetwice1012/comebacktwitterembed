@@ -16,7 +16,7 @@ test('Mac broker retains its profile lease until close, including startup failur
     });
     const profile = await createMacChromeProfile(base); let chrome;
     const app = '/Applications/Google Chrome.app', executable = app + '/Contents/MacOS/Google Chrome';
-    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false, finishGroup;
+    let accepted = false, timedOut = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false, finishGroup;
     let groupGone = new Promise(resolve => { finishGroup = resolve; });
     const fakeFs = { ...fs,
         async lstat(name) { if ([app, executable, app + '/Contents/Info.plist'].includes(name)) return {
@@ -26,7 +26,9 @@ test('Mac broker retains its profile lease until close, including startup failur
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
-            signing = { file, args, opts }; callback(accepted ? null : new Error('signature rejected'), '', ''); },
+            signing = { file, args, opts };
+            const error = timedOut ? Object.assign(new Error('private diagnostic'), { killed: true, signal: 'SIGTERM' }) : new Error('signature rejected');
+            callback(accepted ? null : error, '', ''); },
         spawn(file, args, options) { assert.equal(options.detached, true); chrome = new EventEmitter(); chrome.pid = 12345; chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
         if (name === './chrome-mac-process-group') return { waitForMacProcessGroupExit: () => groupGone };
         if (name === './chrome-private-broker') return { startChromeBroker: async options => {
@@ -45,6 +47,9 @@ test('Mac broker retains its profile lease until close, including startup failur
     const { startMacChromeBroker } = module.exports;
     const params = { rootPath: profile.rootPath, profileId: profile.profileId };
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROWSER_INVALID' }); assert.equal(calls, 0);
+    timedOut = true;
+    await assert.rejects(startMacChromeBroker(params), error => error.code === 'X_CHROME_MAC_BROWSER_TIMEOUT' && !error.message.includes('private'));
+    assert.equal(calls, 0); timedOut = false;
     accepted = true; const broker = await startMacChromeBroker(params);
     assert.equal(signing.file, '/usr/bin/codesign'); assert(signing.args.some(arg => arg.includes('EQHXZ8M8AV')));
     assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);

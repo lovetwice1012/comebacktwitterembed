@@ -38,7 +38,10 @@ async function verifyChromeInstallation() {
         for (const [filename, kind] of paths) after.push(await inspect(filename, kind));
         if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error();
         return { executable: EXECUTABLE, identity: JSON.stringify(after) };
-    } catch { throw fail('X_CHROME_MAC_BROWSER_INVALID'); }
+    } catch (error) {
+        if (error?.killed === true && error?.signal === 'SIGTERM') throw fail('X_CHROME_MAC_BROWSER_TIMEOUT');
+        throw fail('X_CHROME_MAC_BROWSER_INVALID');
+    }
 }
 async function verifyInstalledChrome() { return (await verifyChromeInstallation()).executable; }
 
