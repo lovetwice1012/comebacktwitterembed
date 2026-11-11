@@ -17,6 +17,8 @@ function expectRefusal(args, reason = 'SYNTHETIC_TEST_ONLY') {
 
 test('requires explicit test-only consent', { skip: process.platform !== 'win32' }, () => {
   expectRefusal([]);
+  expectRefusal(['-ConnectVersionTwo']);
+  expectRefusal(['-TestOnly', '-ConnectVersionTwo', '-Takeover']);
 });
 
 test('reimport requires the takeover scenario', { skip: process.platform !== 'win32' }, () => {

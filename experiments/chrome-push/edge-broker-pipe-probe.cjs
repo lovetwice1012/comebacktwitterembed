@@ -125,6 +125,8 @@ async function main() {
     const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
     const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
     const distinctTopics = process.env.EDGE_PROBE_DISTINCT_TOPICS === '1';
+    const versionTwo = process.env.EDGE_PROBE_CONNECT_VERSION === '2';
+    if (process.env.EDGE_PROBE_CONNECT_VERSION && !versionTwo || versionTwo && (!realWns || takeover)) throw new Error('PROBE_MODE_INVALID');
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
@@ -396,7 +398,7 @@ async function main() {
         const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
         const wire = encryptFixture(cryptoKeys, JSON.stringify({ text: 'synthetic' }));
         if (decryptNotification(wire.data, wire.headers, cryptoKeys)?.text !== 'synthetic') throw new Error('PROBE_DECRYPT_FAILED');
-        let databaseRecovery = false, realWnsWorkerTested = false, takeoverResult = null;
+        let databaseRecovery = false, realWnsWorkerTested = false, takeoverResult = null, explicitConnectVersion;
         if (process.env.EDGE_PROBE_DATABASE === '1') {
             if (Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621) throw new Error('PROBE_MODE_INVALID');
             stage = 'database';
@@ -405,6 +407,15 @@ async function main() {
             const service = createXSetup(testDb, { sealer, rolloutMode: 'public', edgeEnabled: true, receiverEnabled: true });
             const actor = { userId: context.ownerUserId }, session = await service.startSession(actor, { consent: true });
             const saved = await service.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(result.file), consent: true });
+            if (versionTwo) {
+                // Synthetic process only: exercise the real gateway with the
+                // explicit session version without changing production intake.
+                const sessionId = require.resolve('../../src/automation/edge-wns-session');
+                const session = require(sessionId), create = session.createEdgeWnsSession;
+                require.cache[sessionId].exports = { ...session, createEdgeWnsSession: options => {
+                    explicitConnectVersion = '2'; return create({ ...options, connectVersion: '2' });
+                } };
+            }
             const { createXPushGateway } = require('../../src/automation/x-push-gateway');
             const gateway = createXPushGateway(testDb, { enabled: true, privateWorkerVault: vault, rolloutMode: 'public' });
             const identity = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId };
@@ -547,7 +558,8 @@ async function main() {
         for (const field of Object.values(cryptoKeys)) field.fill(0);
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
             snapshotSelected: true, packagedExport: true, packagedSnapshotCleaned: true, otherSiteConsentRequired: true, ownerBoundVault: true, fixtureDecrypted: true,
-            databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult };
+            databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult,
+            ...(versionTwo ? { explicitConnectVersion } : {}) };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));
     } finally {

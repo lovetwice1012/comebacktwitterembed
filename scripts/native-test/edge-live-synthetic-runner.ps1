@@ -1,6 +1,6 @@
-param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle, [switch] $OverlapProbe, [switch] $DistinctTopics)
+param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle, [switch] $OverlapProbe, [switch] $DistinctTopics, [switch] $ConnectVersionTwo)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch)) -or ($OverlapProbe -and (-not $Takeover -or $Reimport)) -or ($DistinctTopics -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($ConnectVersionTwo -and $Takeover) -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch)) -or ($OverlapProbe -and (-not $Takeover -or $Reimport)) -or ($DistinctTopics -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }
@@ -23,6 +23,7 @@ foreach ($key in $variables.Keys) {
 }
 $items.Add('NODE_ENV=test'); $items.Add('NODE_PATH=' + $deps); $items.Add('AUTOMATION_TEST_DB_PORT=33621')
 foreach ($name in @('EDGE_PROBE_DATABASE','EDGE_PROBE_REAL_WNS','EDGE_PROBE_RELAY_CALIBRATION','EDGE_PROBE_CALIBRATION_RUNNER')) { $items.Add($name + '=1') }
+if ($ConnectVersionTwo) { $items.Add('EDGE_PROBE_CONNECT_VERSION=2') }
 if ($Takeover) { $items.Add('EDGE_PROBE_TAKEOVER=1'); $items.Add('EDGE_PROBE_BLOCK_WNS=1') }
 if ($Reimport) { $items.Add('EDGE_PROBE_REIMPORT=1') }
 if ($OfflineMessage) { $items.Add('EDGE_PROBE_OFFLINE_MESSAGE=1') }
@@ -47,6 +48,7 @@ try {
         throw 'SYNTHETIC_PROBE_FAILED'
     }
     $result = ConvertFrom-Json -InputObject $text
+    if ($ConnectVersionTwo -and $result.explicitConnectVersion -cne '2') { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     if ($OverlapProbe) {
         if ($result.syntheticProfile -ne $true -or $null -eq $result.overlapResult) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
         Write-Output $text; return
