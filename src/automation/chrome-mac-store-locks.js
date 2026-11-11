@@ -25,6 +25,7 @@ async function checkedHelper(filename, expectedHash) {
     return resolved;
 }
 async function lockFilePaths(profilePath, browser) {
+    if (browser === 'firefox') return [path.join(profilePath, '.parentlock')];
     let current = profilePath;
     const parts = browser === 'edge' ? ['Default', 'EdgePushStorageWithConnectTokenAndKey'] : ['Default', 'GCM Store', 'Encryption'];
     for (const part of parts) {
@@ -38,7 +39,7 @@ async function lockFilePaths(profilePath, browser) {
     return [path.join(store, 'LOCK'), path.join(store, 'Encryption', 'LOCK')];
 }
 async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work, browser = 'chrome', profileLease }) {
-    if (typeof work !== 'function' || !['chrome', 'edge'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
+    if (typeof work !== 'function' || !['chrome', 'edge', 'firefox'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
     const ownsLease = profileLease === undefined; let lease = profileLease, operation, child, exited, closing = false, acquired = false;
     const controller = new AbortController();
     try {
@@ -46,6 +47,21 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
         operation = beginMacProfileLease(lease, { rootPath, profileId, browser });
         const profile = operation.profile;
         const helper = await checkedHelper(helperPath, expectedSha256), lockPaths = await lockFilePaths(profile.profilePath, browser);
+        let firefoxLockIdentity;
+        if (browser === 'firefox') {
+            firefoxLockIdentity = await fs.lstat(lockPaths[0]);
+            if (!firefoxLockIdentity.isFile() || firefoxLockIdentity.isSymbolicLink()
+                || firefoxLockIdentity.uid !== process.getuid() || firefoxLockIdentity.nlink !== 1)
+                throw fail('X_CHROME_MAC_LOCK_INVALID');
+        }
+        async function checkFirefoxLockIdentity() {
+            if (!firefoxLockIdentity) return;
+            let current;
+            try { current = await fs.lstat(lockPaths[0]); } catch { throw fail('X_CHROME_MAC_LOCK_LOST'); }
+            if (!current.isFile() || current.isSymbolicLink() || current.uid !== process.getuid() || current.nlink !== 1
+                || current.dev !== firefoxLockIdentity.dev || current.ino !== firefoxLockIdentity.ino)
+                throw fail('X_CHROME_MAC_LOCK_LOST');
+        }
         child = spawn(helper, lockPaths, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
         child.stdin.on('error', () => {}); // A helper that exits early closes this pipe.
         exited = new Promise(resolve => {
@@ -63,9 +79,11 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
         if (status === 'B') throw fail('X_CHROME_MAC_LOCK_BUSY');
         if (status !== 'R' || controller.signal.aborted || child.exitCode !== null || child.signalCode !== null) throw fail('X_CHROME_MAC_LOCK_FAILED');
         acquired = true;
+        await checkFirefoxLockIdentity();
         // If the helper dies while work is running, signal cancellation and
         // wait for the work to settle before reporting failure.
         const value = await work({ profilePath: profile.profilePath, signal: controller.signal });
+        await checkFirefoxLockIdentity();
         if (controller.signal.aborted || child.exitCode !== null || child.signalCode !== null) throw fail('X_CHROME_MAC_LOCK_LOST');
         return value;
     } catch (error) {
