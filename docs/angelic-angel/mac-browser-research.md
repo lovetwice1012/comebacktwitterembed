@@ -54,11 +54,17 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 終了確認の失敗時に、試験専用プロセスグループの生存・終了待ちを件数だけで記録する診断を追加した。プロセスID・パス・引数は記録しない。[再試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43006422607)ではIntel側の通知・終了試験は成功したため、終了確認失敗の内訳は取得できていない。Apple Silicon側は終了確認前の試験通知で `410` が発生した。
 
+グループ検査で `EPERM` が返った場合は終了とみなさず、期限内に `ESRCH` が確認されるまで待つようにした。最後まで確認できない場合は引き続きロックを保持する。模擬した `EPERM` からの回復と、消滅しない場合の失敗を検証したが、以前の終了確認失敗が `EPERM` によるものかは未確定。
+
+[同じ変更での通知試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43013373850)はApple Siliconが成功し、IntelではChrome終了前の試験通知送信で `410` が発生した。試験全体の成功や断続的なエラーの解消は確認できていない。
+
 利用者がセットアップを途中でやめた場合、専用Chromeに通常終了を依頼し、応答しない場合だけ起動した子プロセスへ終了信号を送るようにした。[macOSでの試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43008068751)では両CPUで、通常終了を3回繰り返した際のプロセスグループ消滅と、専用ブラウザーの終了を確認した。Apple Siliconの別の通知試験は `410` で失敗している。この終了試験は、グループから分離した子孫が存在しないことや、過去の終了確認失敗がすべて解消したことを証明しない。
 
 [続く試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42991190681)ではApple Siliconの通知試験は成功し、IntelはChromeの厳格な署名検証が120秒でタイムアウトして通知試験へ進まなかった。実際の署名不正と検証の時間切れは区別できるよう内部エラーを分けた。`410` の応答本文は出力せず、既知のエラー種別だけを分類する試験コードも追加したが、この実行では `410` が再現せず分類結果は得られていない。
 
 [macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
+
+試験用のアドホック署名では、スクリプトを実行コード用ディレクトリに置く旧構成で署名が失敗したため、スクリプトと文書をResourcesへ移し、ネイティブ部品と区別した。[再試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43013373648)では両CPUで署名検証、同梱Node・LevelDBの読み書き、署名済み試験アプリの初期ダイアログ要求まで成功した。これはアドホック署名と使い捨て環境での確認で、Developer ID署名、Appleによる公証、Finder操作や実X設定の証明ではない。
 
 [起動入口の追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43001105169)では、両CPUで展開済み `.app` の起動スクリプトを試験用ホームから直接実行し、初期ダイアログを要求する `osascript` プロセスの起動まで確認した。試験後は起動したプロセスグループの終了を確認する。ダイアログの描画・操作の目視、Finderでのダブルクリック、署名・公証、Chromeログインとファイル保存は確認していない。利用者のホームや既存ブラウザープロファイルは使用していない。
 
