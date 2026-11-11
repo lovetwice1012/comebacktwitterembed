@@ -124,7 +124,28 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
         try { await webpush.sendNotification(value, 'preflight', { TTL: 60 }); }
-        catch (error) { throw new Error(`FIXTURE_PREFLIGHT_SEND_${classifyPushError(error)}`); }
+        catch (error) {
+            const original = classifyPushError(error);
+            if (original.startsWith('410_')) {
+                try {
+                    const current = await call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.toJSON():null})()`,
+                        awaitPromise: true, returnByValue: true }, attached.sessionId);
+                    const currentValue = current.result?.value;
+                    t.diagnostic(`original synthetic subscription still present=${Boolean(currentValue)} unchanged=${Boolean(currentValue && currentValue.endpoint === value.endpoint)}`);
+                    const probe = `(async()=>{const r=await navigator.serviceWorker.register('/sw.js',{scope:'/secondary/'});` +
+                        `if(!r.active)await new Promise((resolve,reject)=>{const w=r.installing||r.waiting;if(!w)return reject(Error('worker'));` +
+                        `w.addEventListener('statechange',()=>{if(w.state==='activated')resolve();if(w.state==='redundant')reject(Error('worker'))})});` +
+                        `return(await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:${JSON.stringify(publicKey)}})).toJSON()})()`;
+                    const second = await call('Runtime.evaluate', { expression: probe, awaitPromise: true, returnByValue: true }, attached.sessionId, 60000);
+                    if (second.exceptionDetails || typeof second.result?.value?.endpoint !== 'string') throw new Error('FIXTURE_SECONDARY_INVALID');
+                    try { await webpush.sendNotification(second.result.value, 'secondary', { TTL: 60 }); t.diagnostic('secondary synthetic subscription send accepted'); }
+                    catch (secondaryError) { t.diagnostic(`secondary synthetic subscription send=${classifyPushError(secondaryError)}`); }
+                } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
+            }
+            // A successful secondary attempt never turns the failed original
+            // subscription into a passing result.
+            throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
+        }
         for (let attempt = 0; attempt < 100 && !preflightReceived; attempt++) await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(preflightReceived, true, 'browser did not receive the synthetic preflight push');
         t.diagnostic('browser received synthetic preflight push before shutdown');
