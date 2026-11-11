@@ -1,6 +1,6 @@
-param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle)
+param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle, [switch] $OverlapProbe)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch)) -or ($OverlapProbe -and (-not $Takeover -or $Reimport))) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }
@@ -29,6 +29,7 @@ if ($OfflineMessage) { $items.Add('EDGE_PROBE_OFFLINE_MESSAGE=1') }
 if ($OfflineBatch) { $items.Add('EDGE_PROBE_OFFLINE_BATCH=1') }
 if ($OnlineBatch) { $items.Add('EDGE_PROBE_BATCH_ONLINE=1') }
 if ($OfflineSettle) { $items.Add('EDGE_PROBE_OFFLINE_SETTLE=1') }
+if ($OverlapProbe) { $items.Add('EDGE_PROBE_OVERLAP=1') }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $probe = [IO.Path]::Combine($repo, 'experiments', 'chrome-push', 'edge-broker-pipe-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $probe + '"'), $repo, $environment)
@@ -44,6 +45,10 @@ try {
         throw 'SYNTHETIC_PROBE_FAILED'
     }
     $result = ConvertFrom-Json -InputObject $text
+    if ($OverlapProbe) {
+        if ($result.syntheticProfile -ne $true -or $null -eq $result.overlapResult) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+        Write-Output $text; return
+    }
     if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true -or
         $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true -or $result.otherSiteConsentRequired -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     if ($Reimport -and ($result.takeoverResult.receivedInNewWorkerProcess -ne $true -or

@@ -39,6 +39,11 @@ test('offline settling requires an offline batch', { skip: process.platform !== 
   expectRefusal(['-TestOnly', '-OfflineSettle']);
 });
 
+test('overlap probe requires takeover and cannot use reimport', { skip: process.platform !== 'win32' }, () => {
+  expectRefusal(['-TestOnly', '-OverlapProbe']);
+  expectRefusal(['-TestOnly', '-Takeover', '-Reimport', '-OverlapProbe']);
+});
+
 test('refuses to run without the disposable database', { skip: process.platform !== 'win32' }, (t) => {
   const inspect = spawnSync('docker', ['inspect', 'cbte-edge-live-synthetic-20261111'], {
     stdio: 'ignore', windowsHide: true, timeout: 10000,

@@ -74,6 +74,44 @@ async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotifi
         }
     }
 }
+async function probeOverlappingWnsSessions({ file, lease, gateway, tokenVault, events, getOutcome, sendNotification, decrypt, cryptoKeys }) {
+    const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
+    const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
+    const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+    const state = await gateway.store.readWnsTokenState(lease, { vault: tokenVault, authorize: async () => {} });
+    if (!state || !Buffer.isBuffer(state.token)) throw new Error('PROBE_OVERLAP_FAILED');
+    let captured, second;
+    const localStore = { assertLease: async () => true, recordFrame: async (owner, frame) => {
+        captured = frame;
+        return { ...frame, subscriptionId: owner.subscriptionId, ownerUserId: owner.ownerUserId,
+            revision: owner.revision, id: '1', duplicate: false };
+    } };
+    try {
+        return await withEdgeWnsCredentials(file, async credentials => {
+            const transport = createEdgeWnsTransport({});
+            try {
+                second = createEdgeWnsSession({ ...credentials, reconnectToken: state.token, transport, store: localStore, lease,
+                    authorize: async () => {}, saveRotatedToken: async () => {} });
+                try { await second.start(); } catch (error) {
+                    return { secondConnected: false, primaryStoppedBeforeSend: Boolean(getOutcome()),
+                        secondFailureCode: /^X_EDGE_WNS_[A-Z_]+$/.test(error?.code || '') ? error.code : 'OTHER' };
+                }
+                await wait(1500);
+                const primaryStoppedBeforeSend = Boolean(getOutcome());
+                const receiving = second.next(5000).then(value => ({ value }), () => ({ stopped: true }));
+                await sendNotification();
+                const received = await receiving, secondResult = received.value, secondStopped = received.stopped === true;
+                await wait(1500);
+                let secondReceived = false;
+                if (secondResult?.state === 'persisted' && captured)
+                    secondReceived = decrypt(captured.data, captured.headers, cryptoKeys)?.text === 'synthetic-overlap';
+                return { secondConnected: true, primaryStoppedBeforeSend, secondStopped,
+                    primaryStoppedAfterSend: Boolean(getOutcome()),
+                    primaryReceived: events.some(event => event.payload?.text === 'synthetic-overlap'), secondReceived };
+            } finally { second?.close(); transport.close(); }
+        });
+    } finally { state.token.fill(0); }
+}
 let stage = 'start';
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
@@ -85,6 +123,7 @@ async function main() {
     const offlineBatch = process.env.EDGE_PROBE_OFFLINE_BATCH === '1';
     const onlineBatch = process.env.EDGE_PROBE_BATCH_ONLINE === '1';
     const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
+    const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
@@ -93,6 +132,7 @@ async function main() {
     if (offlineBatch && !offlineMessage) throw new Error('PROBE_MODE_INVALID');
     if (onlineBatch && !offlineBatch) throw new Error('PROBE_MODE_INVALID');
     if (offlineSettle && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
+    if (overlap && (!takeover || reimport)) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'edge-profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
@@ -383,9 +423,9 @@ async function main() {
                 webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
                 try {
                     if (takeover) {
-                        let ready; const started = new Promise(resolve => { ready = resolve; }); const events = []; let outcome;
+                        let ready, sessionLease; const started = new Promise(resolve => { ready = resolve; }); const events = []; let outcome;
                         const running = wnsGateway.run({ ...identity, workerId: 'synthetic-edge-wns', signal: controller.signal,
-                            onSession: async () => ready(), onReceived: async event => { events.push(event); } })
+                            onSession: async ({ lease: activeLease }) => { sessionLease = activeLease; ready(); }, onReceived: async event => { events.push(event); } })
                             .then(() => { outcome = 'stopped'; }, error => { outcome = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'failed'; });
                         await Promise.race([started, running]);
                         if (outcome) throw new Error('PROBE_WNS_PIPELINE_FAILED');
@@ -393,6 +433,17 @@ async function main() {
                         for (let i = 0; i < 120 && !events.length && !outcome; i++) await wait(100);
                         if (events[0]?.payload?.text !== 'synthetic-before-reopen') throw new Error('PROBE_WNS_PIPELINE_FAILED');
                         received = events[0];
+                        if (overlap) {
+                            const overlapResult = await probeOverlappingWnsSessions({ file: result.file, lease: sessionLease, gateway: wnsGateway,
+                                tokenVault, events, getOutcome: () => outcome, decrypt: decryptNotification, cryptoKeys,
+                                sendNotification: () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-overlap' }), { TTL: 60 }) });
+                            controller.abort(); await running;
+                            for (const field of Object.values(cryptoKeys)) field.fill(0);
+                            const summary = { syntheticProfile: true, overlapResult };
+                            if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
+                            else console.log(JSON.stringify(summary));
+                            return;
+                        }
                         const blockWns = process.env.EDGE_PROBE_BLOCK_WNS === '1';
                         broker = await startChromeBroker({ chromePath: edge, profilePath: profile, origin, browserMode: 'edge', includeApplicationServerKey: true,
                             suppressReceive: blockWns, extraArgs: ['--headless=new'] });
