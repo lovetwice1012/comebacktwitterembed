@@ -38,12 +38,21 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const fixturePath = path.resolve(__dirname, 'firefox-xpcshell-fixture.js');
         const readerPath = path.resolve(__dirname, '../../client/angelic-setup/Read-PushSubscription.js');
         const bootstrapPath = path.resolve(__dirname, '../../client/angelic-setup/mac/FirefoxXPCShellReader.js');
-        const seedScript = await fs.readFile(fixturePath, 'utf8'), bootstrap = await fs.readFile(bootstrapPath, 'utf8');
+        const seedSource = await fs.readFile(fixturePath, 'utf8'), bootstrap = await fs.readFile(bootstrapPath, 'utf8');
+        // Fixed, synthetic-only progress labels identify where this headless
+        // host stalls; they never include subscription data or paths.
+        const seedScript = seedSource
+            .replace("load(Services.env.get('CBTE_SYNTHETIC_READER'));", "dump('CBTE_STAGE_READER_LOADED\\n'); load(Services.env.get('CBTE_SYNTHETIC_READER')); dump('CBTE_STAGE_READER_READY\\n');")
+            .replace('const pair = await crypto.subtle.generateKey', "dump('CBTE_STAGE_KEY_START\\n'); const pair = await crypto.subtle.generateKey")
+            .replace('const publicKey = new Uint8Array', "dump('CBTE_STAGE_KEY_READY\\n'); const publicKey = new Uint8Array")
+            .replace("const request = indexedDB.openForPrincipal", "dump('CBTE_STAGE_DB_OPEN\\n'); const request = indexedDB.openForPrincipal")
+            .replace('tx.oncomplete = () => { db.close(); resolve(); };', "tx.oncomplete = () => { dump('CBTE_STAGE_DB_DONE\\n'); db.close(); resolve(); };");
+        assert.notEqual(seedScript, seedSource);
         const readerHash = createHash('sha256').update(await fs.readFile(readerPath)).digest('hex');
         const baseEnv = { ...options.env, CBTE_SYNTHETIC_PROFILE: seed, CBTE_SYNTHETIC_MODE: 'seed',
             CBTE_SYNTHETIC_READER: readerPath, CBTE_SYNTHETIC_RESULT: path.join(root, 'result-seed.txt') };
         const seeded = spawnSync(browser.executable, ['-xpcshell', '-e', seedScript], { ...options, input: '', env: baseEnv });
-        t.diagnostic(`seed: status=${seeded.status} error=${seeded.error?.code || 'none'} stderr=${(seeded.stderr || '').slice(0, 2000)}`);
+        t.diagnostic(`seed: status=${seeded.status} error=${seeded.error?.code || 'none'} stdout=${(seeded.stdout || '').slice(0, 2000)} stderr=${(seeded.stderr || '').slice(0, 2000)}`);
         assert.equal(Boolean(seeded.error), false, 'synthetic seed process failed');
         assert.equal(seeded.status, 0, `synthetic seed stderr: ${(seeded.stderr || '').slice(0, 4000)}`);
         assert.equal(await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
