@@ -44,6 +44,7 @@ jobs:
           test "$(uname -s)" = Darwin
           node --test --test-concurrency=1 \
             scripts/native-test/firefox-mac-hosted.test.cjs \
+            scripts/native-test/firefox-mac-setup-browser-hosted.test.cjs \
             scripts/native-test/macos-sandbox-probe.test.cjs \
             scripts/test/firefox-mac-reader-protocol.test.js \
             scripts/test/firefox-mac-reader-result.test.js \
