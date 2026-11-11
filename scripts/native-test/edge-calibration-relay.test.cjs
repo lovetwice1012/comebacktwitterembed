@@ -30,7 +30,7 @@ test('Mac calibration captures synthetic agent and client from the same authenti
         client.write(first.subarray(0, 7)); await new Promise(resolve => setTimeout(resolve, 20));
         client.write(Buffer.concat([first.subarray(7), second]));
         const metadata = await relay.metadata;
-        assert.deepEqual(metadata.agent, agent); assert.deepEqual(metadata.client, { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' });
+        assert.equal(metadata.connectVersion, '1'); assert.deepEqual(metadata.agent, agent); assert.deepEqual(metadata.client, { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' });
         assert(!JSON.stringify(metadata).includes('PRIVATE-SYNTHETIC-TOKEN')); client.destroy();
     } finally { first.fill(0); second.fill(0); await relay.close(); await new Promise(resolve => upstream.close(resolve)); cert.pfx.fill(0); }
 });

@@ -15,7 +15,7 @@ $ErrorActionPreference='Stop'
 $request=[pscustomobject]@{ action=$Action; privateRoot=$PrivateRoot; outputPath=$OutputPath;
     prompt=[bool]$PromptForOtherNotifications; allow=[bool]$AllowOtherNotifications }
 $packageRoot=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$packageVersion='0.1.0-edge-preview.8'
+$packageVersion='0.1.0-edge-preview.9'
 function Assert-EdgeBootstrapPath([string]$Path) {
     $current=[IO.Path]::GetPathRoot($Path)
     foreach($part in $Path.Substring($current.Length).Split([char]92)) {

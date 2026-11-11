@@ -23,9 +23,9 @@ function parseEdgeAgentMetadata(frame) {
         }
         const body = frame.subarray(separator + 4);
         if (!body.length || body.length > 4096 || body.some(byte => byte < 0x20 || byte > 0x7e)) throw fail();
-        const match = /^<connect><ver>1<\/ver><agent><os>([^<>&]{1,128})<\/os><osVer>([^<>&]{1,128})<\/osVer><proc>([^<>&]{1,128})<\/proc><lcid>([^<>&]{1,128})<\/lcid><\/agent><\/connect>$/.exec(body.toString('ascii'));
+        const match = /^<connect><ver>([12])<\/ver><agent><os>([^<>&]{1,128})<\/os><osVer>([^<>&]{1,128})<\/osVer><proc>([^<>&]{1,128})<\/proc><lcid>([^<>&]{1,128})<\/lcid><\/agent><\/connect>$/.exec(body.toString('ascii'));
         if (!match) throw fail();
-        return { os: match[1], osVersion: match[2], architecture: match[3], locale: match[4] };
+        return { connectVersion: match[1], agent: { os: match[2], osVersion: match[3], architecture: match[4], locale: match[5] } };
     } catch { throw fail(); }
 }
 module.exports = { parseEdgeAgentMetadata };

@@ -35,6 +35,8 @@ async function runMacEdgeCalibration({ rootPath, token, pfx, passphrase, certifi
             if (!closed) throw Object.assign(new Error('X_EDGE_CALIBRATION_CLEANUP_FAILED'), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
         } finally { clearTimeout(timer); }
     }
+    if (!result || !['1', '2'].includes(result.connectVersion) || !result.agent || !result.client)
+        throw Object.assign(new Error('X_EDGE_CALIBRATION_PROTOCOL_INVALID'), { code: 'X_EDGE_CALIBRATION_PROTOCOL_INVALID' });
     const after = await readVerifiedMacEdgeVersion();
     if (result.browserVersion !== browser.browserVersion || after.browserVersion !== browser.browserVersion
         || after.executable !== browser.executable)

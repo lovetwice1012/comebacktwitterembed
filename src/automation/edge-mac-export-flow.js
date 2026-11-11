@@ -16,9 +16,12 @@ function exact(value, names) {
 }
 
 async function exportExperimentalMacEdgeNotifications({ rootPath, profileId, helperPath, expectedSha256, subscription,
-    browserVersion, agent, client, confirmSave, experimental, signal = undefined }) {
+    browserVersion, connectVersion, agent, client, confirmSave, experimental, signal = undefined }) {
     if (experimental !== true || typeof confirmSave !== 'function' || signal !== undefined && !(signal instanceof AbortSignal))
         throw fail('X_EDGE_MAC_FLOW_INVALID');
+    // The current transferable format replays connect version 1. Never
+    // silently downgrade an observed version 2 handshake into that format.
+    if (connectVersion !== '1') throw fail('X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED');
     function check() { if (signal?.aborted) throw fail('X_EDGE_MAC_FLOW_CANCELLED'); }
     const allocated = [];
     function decode(value, size) {

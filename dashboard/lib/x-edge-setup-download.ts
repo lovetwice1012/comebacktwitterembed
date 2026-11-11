@@ -7,10 +7,10 @@ import { repoRoot } from "@/lib/env";
 // The dashboard serves only this pinned, prebuilt archive; it never builds a
 // Windows executable or accepts a filesystem path from a request.
 export const X_EDGE_SETUP_DOWNLOAD = Object.freeze({
-  version: "0.1.0-edge-preview.8",
-  filename: "edge-setup-0.1.0-edge-preview.8.zip",
-  sha256: "9c4e9d4440e90cc67f1ab723f42d961df9e7fe587903a25491a69d7569aac157",
-  bytes: 35993436,
+  version: "0.1.0-edge-preview.9",
+  filename: "edge-setup-0.1.0-edge-preview.9.zip",
+  sha256: "2b7492cc83e19aa195fb6c21e1b88b4bae1ddebf427aefb54de616ffda851867",
+  bytes: 35993449,
   href: "/api/automation/x-setup/download-edge",
 });
 async function readVerified(): Promise<Uint8Array> {

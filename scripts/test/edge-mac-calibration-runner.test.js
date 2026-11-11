@@ -34,7 +34,7 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
         if (name === './edge-calibration-relay') return { createEdgeCalibrationRelay: async ({ authorizePeer, captureAgent }) => {
             assert.equal(captureAgent, true); return { port: 23457,
             metadata: new Promise((resolve, reject) => setImmediate(async () => {
-                if (await authorizePeer({ clientPort: 30001, serverPort: 23457 })) resolve({ agent: expectedAgent, client: expectedClient });
+                if (await authorizePeer({ clientPort: 30001, serverPort: 23457 })) resolve({ connectVersion: '2', agent: expectedAgent, client: expectedClient });
                 else reject(Object.assign(new Error('peer denied'), { code: 'X_EDGE_CALIBRATION_PEER_FAILED' }));
             })), close: async () => {} }; } };
         if (name.startsWith('./')) return require(path.join(path.dirname(sourceFile), name));
@@ -47,7 +47,7 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
         spawnBrowser: () => { const browser = new EventEmitter(); browser.pid = nextPid++; browser.exitCode = null; browser.signalCode = null; return browser; },
         captureIdentity: async () => '1700000000:123456', authorizePeer: async input => { authorizeCalls++; captured = input; return true; } };
     const result = await module.exports.runEdgeCalibration(args);
-    assert.equal(result.browserVersion, '157.0.0.1'); assert.equal(result.client, expectedClient); assert.equal(result.agent, expectedAgent); assert.equal(authorizeCalls, 1);
+    assert.equal(result.browserVersion, '157.0.0.1'); assert.equal(result.connectVersion, '2'); assert.equal(result.client, expectedClient); assert.equal(result.agent, expectedAgent); assert.equal(authorizeCalls, 1);
     assert.equal(captured.browserStartTicks, '1700000000:123456'); assert.equal(captured.browserExecutable, edgePath);
     authorizeCalls = 0;
     await assert.rejects(module.exports.runEdgeCalibration({ ...args, captureIdentity: async () => 'pid-only' }), { code: 'X_EDGE_CALIBRATION_PEER_FAILED' });

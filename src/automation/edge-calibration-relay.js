@@ -39,7 +39,7 @@ async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, conn
                     if (!upstream || typeof upstream.on !== 'function' || typeof upstream.destroy !== 'function') throw new Error();
                 } catch { active = false; incoming.destroy(); finishError('X_EDGE_CALIBRATION_CONNECT_FAILED'); return; }
                 upstreams.add(upstream); upstream.once('close', () => { upstreams.delete(upstream); active = false; });
-                const decoder = createFrameDecoder(); let parsed = false, agent;
+                const decoder = createFrameDecoder(); let parsed = false, connect;
                 const inspect = new Transform({ transform(chunk, _encoding, done) {
                     if (parsed) { done(null, chunk); return; }
                     let frames, found;
@@ -47,15 +47,15 @@ async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, conn
                         frames = decoder.push(chunk);
                         for (const frame of frames) {
                             if (captureAgent && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
-                                if (agent || found) throw new Error();
-                                agent = parseEdgeAgentMetadata(frame);
+                                if (connect || found) throw new Error();
+                                connect = parseEdgeAgentMetadata(frame);
                             }
                             if (frame.subarray(0, 4).toString('ascii') === 'BND ') {
-                                if (completed || found || captureAgent && !agent) throw new Error();
+                                if (completed || found || captureAgent && !connect) throw new Error();
                                 found = parseEdgeClientMetadata(frame);
                             }
                         }
-                        if (found) { parsed = true; completed = true; try { decoder.finish(); } catch {} resolveMetadata(captureAgent ? { agent, client: found } : found); }
+                        if (found) { parsed = true; completed = true; try { decoder.finish(); } catch {} resolveMetadata(captureAgent ? { ...connect, client: found } : found); }
                         done(null, chunk);
                     } catch { done(fail('X_EDGE_CALIBRATION_PROTOCOL_INVALID')); }
                     finally { if (frames) for (const frame of frames) frame.fill(0); }

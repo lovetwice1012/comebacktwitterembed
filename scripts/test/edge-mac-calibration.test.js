@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 
 test('Mac calibration verifies Edge before wiring peer checks into the isolated runner', async () => {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/edge-mac-calibration.js'), 'utf8');
-    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false;
+    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false, missingMetadata = false;
     const captureIdentity = () => {}, authorizePeer = () => {};
     const mockedRequire = name => {
         if (name === './edge-mac-browser-version') return { readVerifiedMacEdgeVersion: async () => {
@@ -28,7 +28,7 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
                 child.emit('exit', 0);
                 if (childMode === 'close') setImmediate(() => { calls.push('child-close'); child.emit('close', 0); });
             }
-            return { browserVersion: engineVersion };
+            return { browserVersion: engineVersion, connectVersion: missingMetadata ? undefined : '2', agent: {}, client: {} };
         } };
         return require(name);
     };
@@ -49,6 +49,9 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
     changeAfter = false; engineVersion = '158.0.0.1';
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_BROWSER_CHANGED' });
     engineVersion = '157.0.0.1';
+    missingMetadata = true;
+    await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_PROTOCOL_INVALID' });
+    missingMetadata = false;
     calls.length = 0; childMode = 'close';
     assert.equal((await module.exports.runMacEdgeCalibration(input)).browserVersion, '157.0.0.1');
     assert(calls.indexOf('child-close') < calls.lastIndexOf('signature'));

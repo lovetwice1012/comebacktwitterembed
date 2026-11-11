@@ -327,7 +327,7 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
     const { exportExperimentalMacEdgeNotifications } = require('../../src/automation/edge-mac-export-flow');
     const flow = { ...args, subscription: { scope: 'https://x.com/', endpoint: expected.endpoint,
         keys: { p256dh: expected.publicKey.toString('base64url'), auth: expected.auth.toString('base64url') },
-        applicationServerKey: expected.applicationServerKey.toString('base64url') }, browserVersion: '157.0.0.1',
+        applicationServerKey: expected.applicationServerKey.toString('base64url') }, browserVersion: '157.0.0.1', connectVersion: '1',
         agent: { os: 'Fixture OS', osVersion: '1', architecture: 'fixture', locale: 'en' },
         client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' }, experimental: true };
     const confirm = async details => {
@@ -336,6 +336,7 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
         assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
     };
     await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, experimental: false, confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_INVALID' });
+    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, connectVersion: '2', confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_PROTOCOL_UNSUPPORTED' });
     let invokedGetter = false;
     const hostile = { ...flow.subscription };
     Object.defineProperty(hostile, 'keys', { enumerable: true, get() { invokedGetter = true; throw new Error('private'); } });

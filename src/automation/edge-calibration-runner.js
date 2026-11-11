@@ -109,7 +109,7 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         const secondVersion = await wait(resumed.pipe.ready());
         if (secondVersion !== version) throw fail('X_EDGE_CALIBRATION_BROWSER_CHANGED');
         const [metadata] = await wait(Promise.all([relay.metadata, identityPromise]));
-        return platform === 'macos' ? { browserVersion: version, agent: metadata.agent, client: metadata.client }
+        return platform === 'macos' ? { browserVersion: version, connectVersion: metadata.connectVersion, agent: metadata.agent, client: metadata.client }
             : { browserVersion: version, client: metadata };
     } catch (error) {
         if (controller.signal.aborted) throw fail(abortCode);
