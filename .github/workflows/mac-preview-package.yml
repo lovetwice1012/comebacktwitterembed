@@ -8,6 +8,7 @@ on:
       - scripts/build-mac-chrome-preview.cjs
       - scripts/build-mac-chrome-setup-bundle.cjs
       - scripts/native-test/chrome-mac-preview-hosted.test.cjs
+      - scripts/native-test/chrome-mac-open-hosted.test.cjs
       - scripts/chrome-mac-app.cjs
       - src/automation/chrome-mac-*.js
       - client/angelic-setup/mac/lock-notification-stores.c
@@ -45,4 +46,4 @@ jobs:
       - name: Load packaged runtime and native addon
         env:
           MAC_PREVIEW_ZIP: ${{ runner.temp }}/cbte-preview.zip
-        run: node --test scripts/native-test/chrome-mac-preview-hosted.test.cjs
+        run: node --test --test-concurrency=1 scripts/native-test/chrome-mac-preview-hosted.test.cjs scripts/native-test/chrome-mac-open-hosted.test.cjs
