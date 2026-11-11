@@ -9,6 +9,29 @@ const os = require('node:os');
 const { randomBytes } = require('node:crypto');
 const { createWindowsEdgePeerVerifier } = require('../../src/automation/edge-windows-peer');
 const { withMacEdgeEphemeralCertificate } = require('../../src/automation/edge-mac-ephemeral-certificate');
+const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+const { connectFrame } = require('../../src/automation/edge-wns-protocol');
+const { reply } = require('../../src/automation/edge-wns-session');
+
+// Test only the unauthenticated CNT exchange on separate connections. No
+// subscription or device credentials are sent; response contents are wiped.
+async function probeConnectVersion(agent, version) {
+    let transport, outgoing, incoming;
+    try {
+        outgoing = connectFrame(agent, 1);
+        const needle = Buffer.from('<connect><ver>1</ver>'), index = outgoing.indexOf(needle);
+        if (index < 0 || outgoing.indexOf(needle, index + 1) !== -1) throw new Error('PROBE_FRAME_INVALID');
+        if (version === '2') outgoing[index + Buffer.byteLength('<connect><ver>')] = '2'.charCodeAt(0);
+        transport = createEdgeWnsTransport({ timeoutMs: 10000 });
+        await transport.connect(); await transport.send(outgoing); incoming = await transport.next(10000);
+        reply(incoming, 'CNT', 1, 'CON');
+        return { version, status: 'accepted' };
+    } catch (error) {
+        const allowed = new Set(['X_EDGE_WNS_CONNECT_TIMEOUT', 'X_EDGE_WNS_CONNECT_FAILED', 'X_EDGE_WNS_SOCKET_FAILED',
+            'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_RECEIVE_TIMEOUT', 'X_EDGE_WNS_REPLY_INVALID', 'X_EDGE_WNS_FRAME_INVALID']);
+        return { version, status: allowed.has(error?.code) ? error.code : 'PROBE_EXCHANGE_FAILED' };
+    } finally { outgoing?.fill(0); incoming?.fill(0); transport?.close(); }
+}
 
 async function main() {
     if (process.platform !== 'win32' || process.env.CBTE_EDGE_AGENT_PROBE !== '1') throw new Error('PROBE_UNAVAILABLE');
@@ -47,7 +70,10 @@ async function main() {
         const result = await withMacEdgeEphemeralCertificate(material => runEdgeCalibration({ rootPath, token, edgePath, ...material,
             captureIdentity: peer.captureIdentity, authorizePeer: peer.authorizePeer, timeoutMs: 60000 }));
         if (!result.client?.agent || !result.client?.client || !['1', '2'].includes(result.client.connectVersion)) throw new Error('PROBE_METADATA_INVALID');
-        return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion };
+        const connections = process.env.CBTE_EDGE_PROBE_CONNECT_VERSIONS === '1'
+            ? [await probeConnectVersion(result.client.agent, '1'), await probeConnectVersion(result.client.agent, '2')] : undefined;
+        return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion,
+            ...(connections ? { connections } : {}) };
     } catch (error) {
         return { ok: false, code: /^X_EDGE_CALIBRATION_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_FAILED',
             ...(diagnostic ? { diagnostic } : {}) };

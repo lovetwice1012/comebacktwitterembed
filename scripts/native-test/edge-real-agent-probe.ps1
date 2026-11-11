@@ -15,6 +15,7 @@ foreach ($key in $vars.Keys) {
         @('NODE_OPTIONS','NODE_PATH','NODE_REPL_EXTERNAL_MODULE') -notcontains $name) { $items.Add(($name + '=' + [string]$vars[$key])) }
 }
 $items.Add('CBTE_EDGE_AGENT_PROBE=1'); $items.Add('CBTE_EDGE_PROBE_BASE=' + $basePath)
+if ($env:CBTE_RUN_EDGE_CONNECT_PROBE -ceq '1') { $items.Add('CBTE_EDGE_PROBE_CONNECT_VERSIONS=1') }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $script = [IO.Path]::Combine($repo, 'scripts', 'native-test', 'edge-real-agent-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $script + '"'), $repo, $environment)
