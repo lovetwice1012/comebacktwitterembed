@@ -6,6 +6,8 @@ MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファ�
 
 これは試験用の内部経路であり、利用者向けの画面や配布物には接続していない。`sandbox-exec` は非推奨で、試験したプロセス生成・ネットワークの制約やプロセスグループの終了確認は、同一ユーザーの全操作や分離した子孫に対する完全な安全性の証明ではない。実際のX通知、サーバー受信、署名済み配布物の動作は未検証であり、これらを確認するまでは有効化しない。
 
+Chromeの試験用起動処理は、プロセスの `exit` から入出力が閉じる `close` まで専用プロフィールのロックを保持する。起動途中の失敗時も、起動したプロセスの終了を確認するまでロックを解放しない。[macOSの合成試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42976233075)では、Apple SiliconとIntelそれぞれ12件が成功した。実際のLevelDBロックと合成プロファイルを使い、排他、スナップショット、片付けも確認している。ブラウザーの署名・起動とKeychainは模擬しており、実Chromeによる通知受信や分離した子孫の終了は確認していない。配布アプリへの接続は引き続き未完了。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
