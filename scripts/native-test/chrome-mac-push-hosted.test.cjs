@@ -67,9 +67,15 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         try { executable = await verifyInstalledChrome(); }
         catch (error) {
             const app = '/Applications/Google Chrome.app';
+            for (const filename of [app, path.join(app, 'Contents/Info.plist'), path.join(app, 'Contents/MacOS/Google Chrome')]) {
+                try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} size=${stat.size}`); }
+                catch (reason) { t.diagnostic(`installed ${path.basename(filename)}: ${reason.code}`); }
+            }
             const check = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"', app],
                 { encoding: 'utf8', timeout: 120000 });
             t.diagnostic(`codesign status=${check.status} signal=${check.signal} error=${check.error?.code || 'none'} stderr=${(check.stderr || '').slice(0, 2048)}`);
+            const display = spawnSync('/usr/bin/codesign', ['--display', '--verbose=2', app], { encoding: 'utf8', timeout: 30000 });
+            t.diagnostic(`signature metadata status=${display.status} stderr=${(display.stderr || '').slice(0, 2048)}`);
             throw error;
         }
         spawnOwned(executable, ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${profile.profilePath}`,
