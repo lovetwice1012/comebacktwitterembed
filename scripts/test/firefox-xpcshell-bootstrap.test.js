@@ -8,8 +8,8 @@ const source = fs.readFileSync(path.join(__dirname, '../../client/angelic-setup/
 const token = 'a'.repeat(32), parent = '/synthetic/setup';
 const defaults = { CBTE_GECKO_SNAPSHOT: `${parent}/firefox-snapshot-${token}`,
     CBTE_GECKO_RESULT: `${parent}/firefox-result-${token}.json`, CBTE_GECKO_READER: '/trusted/Read-PushSubscription.js',
-    CBTE_GECKO_UAID: '0123456789abcdef0123456789abcdef', CBTE_GECKO_VERSION: '160.0' };
-function invoke(changes = {}, existing = false) {
+    CBTE_GECKO_READER_SHA256: 'aa'.repeat(32), CBTE_GECKO_UAID: '0123456789abcdef0123456789abcdef', CBTE_GECKO_VERSION: '160.0' };
+function invoke(changes = {}, existing = false, linkedReader = false) {
     const values = { ...defaults, ...changes }; let touchedProfile = false;
     class File {
         initWithPath(name) { this.path = name; }
@@ -17,9 +17,16 @@ function invoke(changes = {}, existing = false) {
         get parent() { const file = new File(); file.path = path.posix.dirname(this.path); return file; }
         equals(other) { return this.path === other.path; }
         isDirectory() { return true; }
+        isFile() { return true; }
+        isSymlink() { return linkedReader; }
+        get fileSize() { return 10; }
+        get lastModifiedTime() { return 10; }
         exists() { return existing; }
     }
-    const context = { Cc: { '@mozilla.org/file/local;1': { createInstance: () => new File() } }, Ci: { nsIFile: {}, nsIDirectoryService: {} },
+    const context = { Cc: { '@mozilla.org/file/local;1': { createInstance: () => new File() },
+        '@mozilla.org/network/file-input-stream;1': { createInstance: () => ({ init() {}, close() {} }) },
+        '@mozilla.org/security/hash;1': { createInstance: () => ({ SHA256: 1, init() {}, updateFromStream() {}, finish: () => String.fromCharCode(0xaa).repeat(32) }) } },
+        Ci: { nsIFile: {}, nsIFileInputStream: {}, nsICryptoHash: {}, nsIDirectoryService: {} },
         ChromeUtils: { generateQI: () => () => {} }, Services: { env: { get: name => values[name] },
             dirsvc: { QueryInterface: () => ({ registerProvider() { touchedProfile = true; throw new Error('SYNTHETIC_VALIDATION_REACHED'); } }) } } };
     let failure;
@@ -31,7 +38,8 @@ test('Gecko bootstrap rejects unsafe file identities and malformed metadata befo
         { CBTE_GECKO_SNAPSHOT: '/synthetic/setup/user-profile' },
         { CBTE_GECKO_RESULT: `/other/firefox-result-${token}.json` },
         { CBTE_GECKO_RESULT: `${parent}/firefox-result-${'b'.repeat(32)}.json` },
-        { CBTE_GECKO_READER: '/trusted/other.js' }, { CBTE_GECKO_UAID: 'bad' },
+        { CBTE_GECKO_READER: '/trusted/other.js' }, { CBTE_GECKO_READER_SHA256: 'ab'.repeat(32) },
+        { CBTE_GECKO_READER_SHA256: 'bad' }, { CBTE_GECKO_UAID: 'bad' },
         { CBTE_GECKO_VERSION: '160.0\nmalicious' }, { CBTE_GECKO_VERSION: 'x'.repeat(65) },
     ]) {
         const result = invoke(changes); assert.match(String(result.failure), /X_FIREFOX_MAC_READER_INVALID/);
@@ -39,6 +47,8 @@ test('Gecko bootstrap rejects unsafe file identities and malformed metadata befo
     }
     const existing = invoke({}, true); assert.match(String(existing.failure), /X_FIREFOX_MAC_READER_INVALID/);
     assert.equal(existing.touchedProfile, false);
+    const linked = invoke({}, false, true); assert.match(String(linked.failure), /X_FIREFOX_MAC_READER_INVALID/);
+    assert.equal(linked.touchedProfile, false);
     const valid = invoke(); assert.match(String(valid.failure), /SYNTHETIC_VALIDATION_REACHED/);
     assert.equal(valid.touchedProfile, true);
 });

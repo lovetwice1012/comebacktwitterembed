@@ -12,13 +12,30 @@ const localFile = value => {
 const snapshot = localFile(Services.env.get('CBTE_GECKO_SNAPSHOT'));
 const resultFile = localFile(Services.env.get('CBTE_GECKO_RESULT'));
 const readerFile = localFile(Services.env.get('CBTE_GECKO_READER'));
+const expectedReaderHash = Services.env.get('CBTE_GECKO_READER_SHA256');
 const uaid = Services.env.get('CBTE_GECKO_UAID');
 const browserVersion = Services.env.get('CBTE_GECKO_VERSION');
 const token = /^firefox-snapshot-([0-9a-f]{32})$/.exec(snapshot.leafName);
 if (!token || !snapshot.parent || !resultFile.parent || !resultFile.parent.equals(snapshot.parent)
     || resultFile.leafName !== `firefox-result-${token[1]}.json` || readerFile.leafName !== 'Read-PushSubscription.js'
+    || !/^[0-9a-f]{64}$/.test(expectedReaderHash)
     || !/^(?:[0-9a-f]{32}|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/.test(uaid)
     || !/^[0-9A-Za-z._+-]{1,64}$/.test(browserVersion) || !snapshot.isDirectory() || resultFile.exists())
+    throw new Error('X_FIREFOX_MAC_READER_INVALID');
+// The parent supplies the digest from its verified package manifest. Reject
+// missing, linked, oversized or altered reader scripts before opening a DB.
+if (!readerFile.isFile() || readerFile.isSymlink() || readerFile.fileSize < 1 || readerFile.fileSize > 1024 * 1024)
+    throw new Error('X_FIREFOX_MAC_READER_INVALID');
+const beforeSize = readerFile.fileSize, beforeModified = readerFile.lastModifiedTime;
+const input = Cc['@mozilla.org/network/file-input-stream;1'].createInstance(Ci.nsIFileInputStream);
+let readerDigest;
+try {
+    input.init(readerFile, 0x01, 0, 0);
+    const hash = Cc['@mozilla.org/security/hash;1'].createInstance(Ci.nsICryptoHash);
+    hash.init(hash.SHA256); hash.updateFromStream(input, beforeSize);
+    readerDigest = Array.from(hash.finish(false), ch => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+} finally { input.close(); }
+if (readerDigest !== expectedReaderHash || readerFile.fileSize !== beforeSize || readerFile.lastModifiedTime !== beforeModified)
     throw new Error('X_FIREFOX_MAC_READER_INVALID');
 const provider = {
     getFile(key, persistent) {

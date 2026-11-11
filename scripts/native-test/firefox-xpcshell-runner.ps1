@@ -37,7 +37,12 @@ function Invoke-SyntheticGecko([string] $Mode, [string] $Profile, [string] $Expe
     $items.Add('CBTE_SYNTHETIC_READER=' + [IO.Path]::Combine($repo, 'client', 'angelic-setup', 'Read-PushSubscription.js'))
     $items.Add('CBTE_SYNTHETIC_RESULT=' + $result)
     $items.Add('CBTE_GECKO_SNAPSHOT=' + $Profile)
-    $items.Add('CBTE_GECKO_READER=' + [IO.Path]::Combine($repo, 'client', 'angelic-setup', 'Read-PushSubscription.js'))
+    $readerPath = [IO.Path]::Combine($repo, 'client', 'angelic-setup', 'Read-PushSubscription.js')
+    $readerHash = [Security.Cryptography.SHA256]::Create()
+    try { $digest = [BitConverter]::ToString($readerHash.ComputeHash([IO.File]::ReadAllBytes($readerPath))).Replace('-', '').ToLowerInvariant() }
+    finally { $readerHash.Dispose() }
+    $items.Add('CBTE_GECKO_READER=' + $readerPath)
+    $items.Add('CBTE_GECKO_READER_SHA256=' + $digest)
     $items.Add('CBTE_GECKO_RESULT=' + $result)
     $items.Add('CBTE_GECKO_UAID=22222222-2222-4222-8222-222222222222')
     $items.Add('CBTE_GECKO_VERSION=160.0-synthetic')
