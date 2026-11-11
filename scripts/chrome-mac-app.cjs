@@ -27,7 +27,7 @@ async function main() {
             || typeof manifest.lockSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(manifest.lockSha256)) throw new Error('invalid manifest');
         const home = await fs.realpath(os.homedir());
         const result = await runMacChromeApp({ applicationSupport: path.join(home, 'Library', 'Application Support'),
-            helperPath: path.join(__dirname, 'MacStoreLock'), expectedSha256: manifest.lockSha256, ui });
+            helperPath: path.join(__dirname, '..', 'MacOS', 'MacStoreLock'), expectedSha256: manifest.lockSha256, ui });
         if (result.state === 'saved') await ui.showSaved();
     } catch (error) {
         await ui.showError(typeof error?.code === 'string' ? error.code : 'X_CHROME_MAC_APP_INVALID');

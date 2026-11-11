@@ -28,9 +28,9 @@ function assembleMacApp({ bundle, runtime, launcher, helper, license, projectLic
     const plist = browser === 'brave' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.brave-setup') : PLIST;
     const contents = { [`${APP}Info.plist`]: [Buffer.from(plist), false], [`${APP}MacOS/Launch`]: [launcher, true],
         [`${APP}MacOS/MacNode`]: [runtime, true], [`${APP}MacOS/MacStoreLock`]: [helper, true],
-        [`${APP}MacOS/MacSetup-manifest.json`]: [manifest, false], [`${APP}MacOS/Node-LICENSE.txt`]: [license, false],
-        [`${APP}MacOS/LICENSE.txt`]: [projectLicense, false], 'はじめに.txt': [guide, false] };
-    for (const [name, data] of Object.entries(bundle)) contents[`${APP}MacOS/${name}`] = [data, false];
+        [`${APP}Resources/MacSetup-manifest.json`]: [manifest, false], [`${APP}Resources/Node-LICENSE.txt`]: [license, false],
+        [`${APP}Resources/LICENSE.txt`]: [projectLicense, false], 'はじめに.txt': [guide, false] };
+    for (const [name, data] of Object.entries(bundle)) contents[`${APP}${name === 'MacLevelDB.node' ? 'MacOS' : 'Resources'}/${name}`] = [data, false];
     const entries = Object.fromEntries(Object.entries(contents).map(([name, [data, executable]]) => [name,
         [data, { mtime: new Date('2020-01-01T00:00:00Z'), os: 3, attrs: ((executable ? 0o100755 : 0o100644) << 16) >>> 0 }]]));
     return Buffer.from(zipSync(entries, { level: 6 }));

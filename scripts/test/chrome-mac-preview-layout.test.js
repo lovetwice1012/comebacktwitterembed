@@ -29,12 +29,12 @@ test('unsigned Mac preview layout preserves executable permissions and local man
     const runtime = macho(0x0100000c), launcher = restrictedMacho(0x0100000c), helper = macho(0x0100000c), bundle = { 'MacSetup.cjs': Buffer.from('fixture'), 'MacLevelDB.node': Buffer.from('fixture') };
     const zip = assembleMacApp({ bundle, runtime, launcher, helper, license: Buffer.from('test license'),
         projectLicense: Buffer.from('project license'), guide: Buffer.from('test guide') }), files = unzipSync(zip);
-    const root = 'X通知の準備.app/Contents/', manifest = JSON.parse(Buffer.from(files[`${root}MacOS/MacSetup-manifest.json`]).toString());
+    const root = 'X通知の準備.app/Contents/', manifest = JSON.parse(Buffer.from(files[`${root}Resources/MacSetup-manifest.json`]).toString());
     assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('<key>LSMinimumSystemVersion</key><string>13.5</string>'));
     assert.equal(manifest.packageId, 'x-notification-mac-chrome-setup');
     assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
     assert.equal(Buffer.from(files['はじめに.txt']).toString(), 'test guide');
-    assert.equal(Buffer.from(files[`${root}MacOS/LICENSE.txt`]).toString(), 'project license');
+    assert.equal(Buffer.from(files[`${root}Resources/LICENSE.txt`]).toString(), 'project license');
     assert.deepEqual(Buffer.from(files[`${root}MacOS/Launch`]), launcher);
     const modes = {};
     for (let pos = 0; pos < zip.length - 46; pos++) {
@@ -44,7 +44,7 @@ test('unsigned Mac preview layout preserves executable permissions and local man
         modes[name] = zip.readUInt32LE(pos + 38) >>> 16; pos += 45 + length + extra + comment;
     }
     for (const name of ['Launch', 'MacNode', 'MacStoreLock']) assert.equal(modes[`${root}MacOS/${name}`], 0o100755);
-    assert.equal(modes[`${root}MacOS/MacSetup.cjs`], 0o100644);
+    assert.equal(modes[`${root}Resources/MacSetup.cjs`], 0o100644);
     assert(isMachOExecutable(runtime, 'arm64')); assert(!isMachOExecutable(runtime, 'x64'));
     assert(!isMachOExecutable(macho(0x0100000c, 0x000e0000), 'arm64'));
     assert(!isMachOExecutable(runtime.subarray(0, 40), 'arm64'));
@@ -56,7 +56,7 @@ test('experimental Brave preview uses its own identity and rejects unverified in
     const runtime = macho(0x0100000c), helper = macho(0x0100000c), bundle = { 'MacSetup.cjs': Buffer.from('fixture') };
     const args = { bundle, runtime, launcher: restrictedMacho(0x0100000c), helper, license: Buffer.from('test'), projectLicense: Buffer.from('project'), guide: Buffer.from('internal preview') };
     const files = unzipSync(assembleMacApp({ ...args, browser: 'brave' })), root = 'X通知の準備.app/Contents/';
-    const manifest = JSON.parse(Buffer.from(files[`${root}MacOS/MacSetup-manifest.json`]).toString());
+    const manifest = JSON.parse(Buffer.from(files[`${root}Resources/MacSetup-manifest.json`]).toString());
     assert.equal(manifest.packageId, 'x-notification-mac-brave-setup'); assert.equal(manifest.version, '0.1.0-mac-brave-preview.1');
     assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
     assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('jp.cbte.xnotification.brave-setup'));

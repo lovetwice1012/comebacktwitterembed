@@ -25,7 +25,7 @@ async function harness({ enabled = true, manifest, result = { state: 'saved' }, 
         if (name === '../src/automation/strict-json') return require('../../src/automation/strict-json');
         return require(name);
     };
-    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, __dirname: '/package', Buffer, Object,
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, __dirname: '/package/Resources', Buffer, Object,
         process: { env: enabled ? { CBTE_EXPERIMENTAL_BRAVE_MAC_LOCAL: '1' } : {}, exitCode: 0 } });
     return { main: module.exports.main, calls };
 }
@@ -35,9 +35,9 @@ test('experimental Brave entry is disabled unless explicitly selected', async ()
 });
 test('Brave entry checks fixed package metadata and provides local helper paths', async () => {
     const h = await harness(); await h.main();
-    assert.equal(h.calls[0], 'dialogs'); assert.equal(h.calls[1], 'manifest:/package/MacSetup-manifest.json');
+    assert.equal(h.calls[0], 'dialogs'); assert.equal(h.calls[1], 'manifest:/package/Resources/MacSetup-manifest.json');
     assert.equal(h.calls[2].applicationSupport, '/Users/test/Library/Application Support');
-    assert.equal(h.calls[2].helperPath, '/package/MacStoreLock'); assert.equal(h.calls[2].expectedSha256, 'a'.repeat(64));
+    assert.equal(h.calls[2].helperPath, '/package/MacOS/MacStoreLock'); assert.equal(h.calls[2].expectedSha256, 'a'.repeat(64));
     assert.equal(h.calls[2].experimental, true); assert.equal(h.calls[3], 'saved');
 });
 test('invalid manifests, cancellation and failures never claim a saved file', async () => {

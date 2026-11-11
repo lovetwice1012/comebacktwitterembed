@@ -16,7 +16,7 @@ async function buildMacBundle(entry) {
         build.onResolve({ filter: /^\.\/binding$/ }, args => /[\\/]classic-level[\\/][^\\/]+\.js$/.test(args.importer)
             ? { path: 'binding', namespace: 'mac-level-binding' } : undefined);
         build.onLoad({ filter: /.*/, namespace: 'mac-level-binding' }, () => ({ contents:
-            "module.exports = require(require('node:path').join(__dirname, 'MacLevelDB.node'));", loader: 'js' }));
+            "module.exports = require(require('node:path').join(__dirname, '..', 'MacOS', 'MacLevelDB.node'));", loader: 'js' }));
     } };
     const result = await esbuild.build({ entryPoints: [path.join(__dirname, entry)], absWorkingDir: root,
         bundle: true, write: false, platform: 'node', format: 'cjs', target: 'node24', logLevel: 'silent',

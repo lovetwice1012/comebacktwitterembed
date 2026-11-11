@@ -27,7 +27,7 @@ int main(void) {
     if (!last || strcmp(last + 1, "Launch") != 0) return 2;
     *last = '\0';
     int a = snprintf(executable, sizeof(executable), "%s/MacNode", resolved);
-    int b = snprintf(script, sizeof(script), "%s/MacSetup.cjs", resolved);
+    int b = snprintf(script, sizeof(script), "%s/../Resources/MacSetup.cjs", resolved);
     if (a < 0 || b < 0 || (size_t)a >= sizeof(executable) || (size_t)b >= sizeof(script)) return 2;
     for (size_t i = 0; clear[i]; i++) if (unsetenv(clear[i]) != 0) return 2;
     execl(executable, executable, script, (char *)NULL);

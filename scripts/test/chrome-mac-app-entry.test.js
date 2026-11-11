@@ -22,13 +22,13 @@ async function harness({ manifest, result = { state: 'saved' }, error } = {}) {
         if (name === '../src/automation/strict-json') return require('../../src/automation/strict-json');
         return require(name);
     };
-    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, __dirname: '/package', process: { exitCode: 0 }, Buffer, Object });
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, __dirname: '/package/Resources', process: { exitCode: 0 }, Buffer, Object });
     return { main: module.exports.main, calls };
 }
 test('app entry uses local bundled helper and reports a saved file', async () => {
     const h = await harness(); await h.main();
     assert.equal(h.calls.length, 2); assert.equal(h.calls[0].applicationSupport, '/Users/test/Library/Application Support');
-    assert.equal(h.calls[0].helperPath, '/package/MacStoreLock'); assert.equal(h.calls[0].expectedSha256, 'a'.repeat(64));
+    assert.equal(h.calls[0].helperPath, '/package/MacOS/MacStoreLock'); assert.equal(h.calls[0].expectedSha256, 'a'.repeat(64));
     assert.equal(h.calls[1], 'saved');
 });
 test('invalid package, cancellation and setup errors never claim a saved file', async () => {

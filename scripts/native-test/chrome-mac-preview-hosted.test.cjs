@@ -27,7 +27,7 @@ test('unpacked macOS preview loads bundled runtime, application and LevelDB',
         }
         // Load the real bundled entry without executing its UI, then create a
         // disposable database with the packaged addon and bundled runtime.
-        const probe = `require(${JSON.stringify(path.join(bin, 'MacSetup.cjs'))});` +
+        const probe = `require(${JSON.stringify(path.join(app, 'Resources', 'MacSetup.cjs'))});` +
             `const addon=require(${JSON.stringify(path.join(bin, 'MacLevelDB.node'))});` +
             `(async()=>{const db=addon.db_init();await addon.db_open(db,${JSON.stringify(path.join(root, 'synthetic-leveldb'))},` +
             `{createIfMissing:true});try{await addon.db_put(db,'fixture','value',{});}finally{await addon.db_close(db);}` +
