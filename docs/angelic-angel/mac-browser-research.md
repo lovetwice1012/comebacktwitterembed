@@ -12,6 +12,8 @@ Chromeの試験用起動処理は、プロセスの `exit` から入出力が閉
 
 さらに[試験用購読の作成と取得](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42978559629)を実行した。Apple Siliconではローカル試験サイトでGoogleのPush購読を作り、ブラウザー再起動後に専用パイプ経由で同じ購読を取得できた。Intelでは直前のブラウザー起動試験は成功したが、その後の厳格な署名検証でChrome内部フレームワークの資源の整合性エラーが発生し、購読試験を開始できなかった。Chrome本体の署名者情報はGoogleだったが、エラー原因は未確定。検証を省略せず調査する。通知情報の抽出、Keychain、サーバーでの受信、実XとDiscordへの配送はこの試験に含まれない。
 
+追加の[構成観測](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42979287358)では、Intel環境のフレームワークに、正常な初回起動後から署名エラーまでの間に新バージョンのディレクトリが加わった。更新との競合を示唆するが、更新プロセスを特定したわけではない。署名検証中と起動前後にアプリ・実行ファイル・設定ファイルの識別情報が変わった場合は処理を中止するようにした。同試験ではApple Siliconの一時プロフィール削除が親プロセス終了後に競合する例も観測した。全子孫プロセスの終了確認は未解決であり、配布アプリに接続しない。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
