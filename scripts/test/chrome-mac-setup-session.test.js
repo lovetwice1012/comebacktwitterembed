@@ -5,12 +5,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness() {
+async function harness({ closeFails = false } = {}) {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/chrome-mac-setup-session.js'), 'utf8');
     const module = { exports: {} }, events = []; let finish, captureCount = 0;
     const released = new Promise(resolve => { finish = resolve; });
     const chrome = { exitCode: null, signalCode: null, kill(signal) { events.push(`kill:${signal}`); chrome.signalCode = signal; finish(true); } };
     const broker = { port: 12345, token: 'a'.repeat(64), chrome, engineVersion: '140.0.7339.42', releaseComplete: released,
+        async closeBrowser() { events.push('close'); if (closeFails) throw new Error('synthetic close failure'); chrome.exitCode = 0; finish(true); },
         async stop() { events.push('stop'); } };
     const subscription = { scope: 'https://x.com/' };
     const mockedRequire = name => {
@@ -40,11 +41,14 @@ test('cancelling before or after browser launch stops only the created session',
     assert.equal((await first.run({ ui: first.ui })).state, 'cancelled'); assert.deepEqual(first.events, []);
     const second = await harness(); second.ui.confirmNotifications = async () => false;
     assert.equal((await second.run({ ui: second.ui })).state, 'cancelled');
-    assert.deepEqual(second.events, ['open', 'kill:SIGTERM', 'stop']);
+    assert.deepEqual(second.events, ['open', 'close', 'stop']);
     const third = await harness(); third.ui.retryCapture = async () => false;
     assert.equal((await third.run({ ui: third.ui })).state, 'cancelled');
-    assert.deepEqual(third.events, ['open', 'capture', 'kill:SIGTERM', 'stop']);
+    assert.deepEqual(third.events, ['open', 'capture', 'close', 'stop']);
     const fourth = await harness(); fourth.ui.confirmKeychain = async () => false;
     assert.equal((await fourth.run({ ui: fourth.ui })).state, 'cancelled');
     assert.deepEqual(fourth.events, ['open', 'capture', 'capture', 'released', 'stop']);
+    const fallback = await harness({ closeFails: true }); fallback.ui.confirmNotifications = async () => false;
+    assert.equal((await fallback.run({ ui: fallback.ui })).state, 'cancelled');
+    assert.deepEqual(fallback.events, ['open', 'close', 'kill:SIGTERM', 'stop']);
 });

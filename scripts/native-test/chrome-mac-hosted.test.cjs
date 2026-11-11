@@ -23,6 +23,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
         const closePromise = new Promise(resolve => { resolveClosed = resolve; });
         const server = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>Test</title>'); });
         t.after(async () => {
+            if (broker && child && !closed) await broker.closeBrowser().catch(() => {});
             if (child && !closed) {
                 try { child.kill('SIGTERM'); } catch { /* Preserve the profile if shutdown cannot be confirmed. */ }
                 let timer;

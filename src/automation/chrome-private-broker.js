@@ -79,6 +79,7 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
         if (chrome.exitCode === null) chrome.kill();
         throw fault('X_CHROME_BROKER_INVALID');
     }
-    return { port: address.port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion, stop, chrome };
+    return { port: address.port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion,
+        closeBrowser: () => pipe.closeBrowser(), stop, chrome };
 }
 module.exports = { startChromeBroker };

@@ -31,12 +31,18 @@ async function runMacChromeSetup({ rootPath, profileId, helperPath, expectedSha2
             browserVersion: broker.engineVersion, keychainConfirmed: true, confirmSave: ui.confirmSave });
     } finally {
         if (broker) {
-            // Only the specific child started by this session may be stopped.
-            if (broker.chrome.exitCode === null && broker.chrome.signalCode === null) broker.chrome.kill('SIGTERM');
+            // Ask only this dedicated browser to close normally first. If it
+            // does not respond, signal only the child started by this session.
+            if (broker.chrome.exitCode === null && broker.chrome.signalCode === null) {
+                try { await broker.closeBrowser(); } catch { /* Fall back to the specific child below. */ }
+                if (broker.chrome.exitCode === null && broker.chrome.signalCode === null) broker.chrome.kill('SIGTERM');
+            }
             let timer;
             try {
                 const stopped = await Promise.race([broker.releaseComplete,
                     new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); timer.unref(); })]);
+                // An unconfirmed shutdown must override an earlier result.
+                // eslint-disable-next-line no-unsafe-finally
                 if (!stopped) throw fail('X_CHROME_MAC_SETUP_CLEANUP_FAILED');
             } finally { clearTimeout(timer); await broker.stop(); }
         }

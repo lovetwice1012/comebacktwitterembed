@@ -49,6 +49,12 @@ test('broker rejects invalid pipe timeouts before launching a browser', async ()
     }
     assert.equal(spawned, false);
 });
+test('broker can close its dedicated browser through the private pipe', async () => {
+    const chrome = fakeChrome();
+    const broker = await startChromeBroker({ chromePath: 'synthetic', profilePath: 'synthetic', spawnChrome: () => chrome });
+    try { await broker.closeBrowser(); assert.equal(chrome.exitCode, 0); }
+    finally { await broker.stop(); }
+});
 test('broker exposes no DevTools TCP interface and requires its private capability', async () => {
     let args;
     const broker = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: (_exe, argv) => { args = argv; return fakeChrome(); } });
