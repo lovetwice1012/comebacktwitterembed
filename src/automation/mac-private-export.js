@@ -7,7 +7,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 
 async function publishMacPrivateFile({ directory, filename, body, signal, errorPrefix }) {
-    if (!['X_CHROME_EXPORT', 'X_FIREFOX_MAC_EXPORT', 'X_BRAVE_MAC_EXPORT'].includes(errorPrefix)) throw new Error('Invalid export error prefix');
+    if (!['X_CHROME_EXPORT', 'X_FIREFOX_MAC_EXPORT', 'X_BRAVE_MAC_EXPORT', 'X_EDGE_MAC_EXPORT'].includes(errorPrefix)) throw new Error('Invalid export error prefix');
     const fail = suffix => Object.assign(new Error(`${errorPrefix}_${suffix}`), { code: `${errorPrefix}_${suffix}` });
     if (process.platform === 'win32' || typeof process.getuid !== 'function'
         || typeof directory !== 'string' || !path.isAbsolute(directory) || typeof filename !== 'string'

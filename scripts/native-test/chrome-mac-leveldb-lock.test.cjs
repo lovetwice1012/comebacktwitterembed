@@ -324,6 +324,34 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
     assert.equal(result.file.version, 3); assert.equal(result.file.push.scope, 'https://x.com/');
     assert.equal(result.otherNotificationsPossible, true); assert.equal(result.unclassifiedRecordCount, 1);
     await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' });
+    const { exportExperimentalMacEdgeNotifications } = require('../../src/automation/edge-mac-export-flow');
+    const flow = { ...args, subscription: { scope: 'https://x.com/', endpoint: expected.endpoint,
+        keys: { p256dh: expected.publicKey.toString('base64url'), auth: expected.auth.toString('base64url') },
+        applicationServerKey: expected.applicationServerKey.toString('base64url') }, browserVersion: '157.0.0.1',
+        agent: { os: 'Fixture OS', osVersion: '1', architecture: 'fixture', locale: 'en' },
+        client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' }, experimental: true };
+    const confirm = async details => {
+        assert.equal(details.otherSubscriptionCount, 0); assert.equal(details.unclassifiedRecordCount, 1);
+        assert.equal(details.otherNotificationsPossible, true);
+        assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
+    };
+    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, experimental: false, confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_INVALID' });
+    let invokedGetter = false;
+    const hostile = { ...flow.subscription };
+    Object.defineProperty(hostile, 'keys', { enumerable: true, get() { invokedGetter = true; throw new Error('private'); } });
+    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, subscription: hostile, confirmSave: async () => null }), { code: 'X_EDGE_MAC_FLOW_INVALID' });
+    assert.equal(invokedGetter, false);
+    assert.equal((await exportExperimentalMacEdgeNotifications({ ...flow, confirmSave: async details => { await confirm(details); return null; } })).state, 'cancelled');
+    await assert.rejects(exportExperimentalMacEdgeNotifications({ ...flow, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: false, directory: base, filename: 'rejected.json' };
+    } }), { code: 'X_EDGE_MAC_FLOW_CONFIRMATION_REQUIRED' });
+    await assert.rejects(fs.access(path.join(base, 'rejected.json')), { code: 'ENOENT' });
+    const saved = await exportExperimentalMacEdgeNotifications({ ...flow, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: true, directory: base, filename: 'edge-notifications.json' };
+    } });
+    assert.equal(saved.state, 'saved'); assert.equal(saved.uploaded, false); assert.equal(saved.encrypted, false);
+    const savedFile = require('../../src/automation/x-setup-transfer').parseTransferFile(await fs.readFile(path.join(base, 'edge-notifications.json'), 'utf8'));
+    assert.equal(savedFile.push.scope, 'https://x.com/'); assert.equal(savedFile.provenance.browserVersion, '157.0.0.1');
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
     await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {} }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
     assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
