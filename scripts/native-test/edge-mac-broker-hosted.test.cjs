@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { acquireMacProfileLease } = require('../../src/automation/chrome-mac-profile-lease');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
@@ -46,7 +46,23 @@ test('signed Edge uses its isolated Mac profile and releases only after terminat
                 child.once('close', () => { childClosed = true; }); return child;
             } };
         } });
-        broker = await mod.exports.startMacEdgeBroker({ rootPath: profile.rootPath, profileId: profile.profileId, suppressReceive: false });
+        try { broker = await mod.exports.startMacEdgeBroker({ rootPath: profile.rootPath, profileId: profile.profileId, suppressReceive: false }); }
+        catch (error) {
+            const app = '/Applications/Microsoft Edge.app', executable = path.join(app, 'Contents/MacOS/Microsoft Edge');
+            for (const filename of [app, executable]) {
+                try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} canonical=${await fs.realpath(filename) === filename}`); }
+                catch (reason) { t.diagnostic(`installed ${path.basename(filename)}: ${reason.code}`); }
+            }
+            const requirement = '=anchor apple generic and identifier "com.microsoft.edgemac" and certificate leaf[subject.OU] = "UBF8T346G9"';
+            const check = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', requirement, app], { encoding: 'utf8', timeout: 120000 });
+            const diagnostic = /resource fork|Finder information|unsealed contents/i.test(check.stderr || '') ? 'resource-metadata'
+                : /not signed|signature|invalid/i.test(check.stderr || '') ? 'signature' : 'other';
+            t.diagnostic(`signature check status=${check.status} signal=${check.signal || 'none'} class=${check.status === 0 ? 'ok' : diagnostic}`);
+            const info = spawnSync('/usr/bin/codesign', ['--display', '--verbose=4', app], { encoding: 'utf8', timeout: 30000 });
+            const identifier = /^Identifier=(.+)$/m.exec(info.stderr || '')?.[1], team = /^TeamIdentifier=(.+)$/m.exec(info.stderr || '')?.[1];
+            t.diagnostic(`signature identity expectedIdentifier=${identifier === 'com.microsoft.edgemac'} expectedTeam=${team === 'UBF8T346G9'}`);
+            throw error;
+        }
         assert.equal(typeof broker.engineVersion, 'string'); assert(child && !childClosed);
         await assert.rejects(acquireMacProfileLease({ rootPath: profile.rootPath, profileId: profile.profileId, browser: 'edge' }),
             { code: 'X_CHROME_MAC_LEASE_BUSY' });
