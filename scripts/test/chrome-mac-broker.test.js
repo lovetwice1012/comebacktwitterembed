@@ -16,18 +16,27 @@ test('Mac broker retains its profile lease until close, including startup failur
     });
     const profile = await createMacChromeProfile(base); let chrome;
     const app = '/Applications/Google Chrome.app', executable = app + '/Contents/MacOS/Google Chrome';
+    const versions = app + '/Contents/Frameworks/Google Chrome Framework.framework/Versions';
     let accepted = false, timedOut = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false, finishGroup;
+    let frameworkVersion = '151.0.7922.174', flipDuringSignature = false;
     let groupGone = new Promise(resolve => { finishGroup = resolve; });
     const fakeFs = { ...fs,
-        async lstat(name) { if ([app, executable, app + '/Contents/Info.plist'].includes(name)) return {
-            isDirectory: () => name === app, isFile: () => name !== app, isSymbolicLink: () => false,
+        async lstat(name) { if ([app, executable, app + '/Contents/Info.plist', versions + '/Current',
+            versions + '/' + frameworkVersion, versions + '/' + frameworkVersion + '/Google Chrome Framework'].includes(name)) return {
+            isDirectory: () => name === app || name === versions + '/' + frameworkVersion,
+            isFile: () => name !== app && name !== versions + '/Current' && name !== versions + '/' + frameworkVersion,
+            isSymbolicLink: () => name === versions + '/Current',
             dev: 1, ino: name === executable && changed ? 2 : 1, size: 1, mtimeMs: 1, ctimeMs: 1 }; return fs.lstat(name); },
-        async realpath(name) { return [app, executable, app + '/Contents/Info.plist'].includes(name) ? name : fs.realpath(name); } };
+        async realpath(name) { if (name === versions + '/Current') return versions + '/' + frameworkVersion;
+            return [app, executable, app + '/Contents/Info.plist', versions + '/' + frameworkVersion,
+                versions + '/' + frameworkVersion + '/Google Chrome Framework'].includes(name) ? name : fs.realpath(name); },
+        async readlink(name) { if (name === versions + '/Current') return frameworkVersion; return fs.readlink(name); } };
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
             signing = { file, args, opts };
             const error = timedOut ? Object.assign(new Error('private diagnostic'), { killed: true, signal: 'SIGTERM' }) : new Error('signature rejected');
+            if (flipDuringSignature) frameworkVersion = '157.0.8103.39';
             callback(accepted ? null : error, '', ''); },
         spawn(file, args, options) { assert.equal(options.detached, true); chrome = new EventEmitter(); chrome.pid = 12345; chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
         if (name === './chrome-mac-process-group') return { waitForMacProcessGroupExit: () => groupGone };
@@ -50,7 +59,10 @@ test('Mac broker retains its profile lease until close, including startup failur
     timedOut = true;
     await assert.rejects(startMacChromeBroker(params), error => error.code === 'X_CHROME_MAC_BROWSER_TIMEOUT' && !error.message.includes('private'));
     assert.equal(calls, 0); timedOut = false;
-    accepted = true; const broker = await startMacChromeBroker(params);
+    accepted = true; flipDuringSignature = true;
+    await assert.rejects(module.exports.verifyInstalledChrome(), { code: 'X_CHROME_MAC_BROWSER_INVALID' });
+    flipDuringSignature = false; frameworkVersion = '151.0.7922.174';
+    const broker = await startMacChromeBroker(params);
     assert.equal(signing.file, '/usr/bin/codesign'); assert(signing.args.some(arg => arg.includes('EQHXZ8M8AV')));
     assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' }); assert.equal(calls, 1);

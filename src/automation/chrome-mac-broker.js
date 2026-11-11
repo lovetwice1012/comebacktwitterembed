@@ -15,6 +15,7 @@ const execFileAsync = promisify(execFile);
 const APP = '/Applications/Google Chrome.app';
 const EXECUTABLE = path.join(APP, 'Contents/MacOS/Google Chrome');
 const PLIST = path.join(APP, 'Contents/Info.plist');
+const FRAMEWORK_VERSIONS = path.join(APP, 'Contents/Frameworks/Google Chrome Framework.framework/Versions');
 const REQUIREMENT = '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"';
 const fail = code => Object.assign(new Error(code), { code });
 
@@ -28,14 +29,25 @@ async function verifyChromeInstallation() {
                 || await fs.realpath(filename) !== filename) throw new Error();
             return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs];
         }
+        async function inspectFramework() {
+            const current = path.join(FRAMEWORK_VERSIONS, 'Current'), link = await fs.lstat(current);
+            const version = await fs.readlink(current);
+            if (!link.isSymbolicLink() || !/^[0-9]+(?:\.[0-9]+){3}$/.test(version)) throw new Error();
+            const target = path.join(FRAMEWORK_VERSIONS, version);
+            if (await fs.realpath(current) !== target) throw new Error();
+            return [version, [link.dev, link.ino, link.size, link.mtimeMs, link.ctimeMs],
+                await inspect(target, 'directory'), await inspect(path.join(target, 'Google Chrome Framework'), 'file')];
+        }
         const before = [];
         for (const [filename, kind] of paths) before.push(await inspect(filename, kind));
+        before.push(await inspectFramework());
         // Verify identity and signature without a shell. A bundle identifier by
         // itself does not prove the signer. Never log codesign output.
         await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', REQUIREMENT, APP],
             { timeout: 120000, maxBuffer: 16384, windowsHide: true });
         const after = [];
         for (const [filename, kind] of paths) after.push(await inspect(filename, kind));
+        after.push(await inspectFramework());
         if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error();
         return { executable: EXECUTABLE, identity: JSON.stringify(after) };
     } catch (error) {
