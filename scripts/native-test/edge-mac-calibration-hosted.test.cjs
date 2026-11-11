@@ -9,6 +9,8 @@ const { fork } = require('node:child_process');
 const { ClassicLevel } = require('classic-level');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const { partitionStoreRecords, selectDeviceRecord } = require('../../src/automation/edge-wns-record');
+const { buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-snapshot');
+const { selectSyntheticEdgeRecord, rewriteSyntheticOrigin } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
 
 test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -64,6 +66,31 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
             try { assert.equal(device.deviceKey.length, 32); assert(device.reconnectToken.length > 0); }
             finally { device.deviceKey.fill(0); device.reconnectToken.fill(0); }
             assert(partition.siteRecords.length >= 1);
+            const captured = result.subscription;
+            assert(captured && /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(captured.scope));
+            const expected = { endpoint: captured.endpoint, publicKey: Buffer.from(captured.keys.p256dh, 'base64url'),
+                auth: Buffer.from(captured.keys.auth, 'base64url'), applicationServerKey: Buffer.from(captured.applicationServerKey, 'base64url') };
+            let selected, rewritten;
+            try {
+                selected = selectSyntheticEdgeRecord(partition.siteRecords, captured.scope);
+                assert(selected.endpoint === expected.endpoint && selected.publicKey.equals(expected.publicKey)
+                    && selected.auth.equals(expected.auth) && selected.applicationServerKey.equals(expected.applicationServerKey), 'synthetic browser subscription did not match its store');
+                const matches = partition.siteRecords.filter(record => record.includes(Buffer.from(captured.scope)));
+                assert.equal(matches.length, 1); rewritten = rewriteSyntheticOrigin(matches[0], captured.scope);
+                // Adapt the local test origin in memory only; actual profile
+                // files are never changed and no data is uploaded.
+                const inputRecords = records.map(record => record === matches[0] ? rewritten : record);
+                const output = await buildEdgeTransferFromStore({ records: inputRecords, expected, browserVersion: result.browserVersion,
+                    agent: result.agent, client: result.client, ...(result.connectVersion === '2' ? { connectVersion: '2' } : {}) });
+                assert.equal(output.file.push.scope, 'https://x.com/');
+                assert.equal(output.file.push.connectVersion || '1', result.connectVersion);
+                assert.equal(output.unclassifiedRecordCount, partition.unknownCount);
+                assert.equal(output.otherNotificationsPossible, partition.unknownCount > 0 || output.otherSubscriptionCount > 0);
+            } finally {
+                for (const value of [expected.publicKey, expected.auth, expected.applicationServerKey, rewritten]) value?.fill(0);
+                if (selected) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0);
+            }
             t.diagnostic(`synthetic store parsed: siteRecords=${partition.siteRecords.length} unknownRecords=${partition.unknownCount}`);
+            t.diagnostic('synthetic browser subscription matched its store and the X-format converter');
         } finally { records.forEach(record => record.fill(0)); await db.close().catch(() => {}); }
     });
