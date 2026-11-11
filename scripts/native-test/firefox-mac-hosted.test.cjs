@@ -9,6 +9,7 @@ const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { randomBytes, createHash } = require('node:crypto');
 const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
+const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
 
 test('signed macOS Firefox reads a synthetic Push database with XPCShell',
     { skip: process.platform !== 'darwin', timeout: 480000 }, async t => {
@@ -127,5 +128,8 @@ test('signed macOS Firefox reads a synthetic Push database with XPCShell',
         const result = JSON.parse(await fs.readFile(resultPath, 'utf8'));
         assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0);
         assert.equal(result.export.push.scope, 'https://x.com/'); assert.equal(result.export.provenance.browserVersion, browser.version);
+        const normalized = parseTransferFile(JSON.stringify(result.export));
+        assert.equal(normalized.push.uaid, '22222222-2222-4222-8222-222222222222');
+        assert.equal(normalized.push.scope, 'https://x.com/');
         const after = await verifyInstalledMacFirefox(); assert.deepEqual(after, browser);
     });
