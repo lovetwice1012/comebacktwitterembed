@@ -52,7 +52,7 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                         const result = await session.receive(frame);
                         if (result.state === 'listening' && !sent) {
                             sent = true; stage = 'send';
-                            try { await webpush.sendNotification(subscription, marker, { TTL: 60 }); }
+                            try { await webpush.sendNotification(subscription, marker, { TTL: 60, timeout: 15000 }); }
                             catch (error) { throw new Error(`FIXTURE_MCS_SEND_FAILED_${classifyPushError(error)}`); }
                             stage = 'receive';
                         }

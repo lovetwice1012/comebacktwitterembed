@@ -123,7 +123,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         assert.equal(typeof value?.endpoint, 'string'); assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(value.endpoint), 'unexpected push provider');
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
-        try { await webpush.sendNotification(value, 'preflight', { TTL: 60 }); }
+        try { await webpush.sendNotification(value, 'preflight', { TTL: 60, timeout: 15000 }); }
         catch (error) {
             const original = classifyPushError(error);
             if (original.startsWith('410_')) {
@@ -140,8 +140,15 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     const second = await call('Runtime.evaluate', { expression: probe, awaitPromise: true, returnByValue: true }, attached.sessionId, 60000);
                     if (second.exceptionDetails || typeof second.result?.value?.endpoint !== 'string') throw new Error('FIXTURE_SECONDARY_INVALID');
                     webpush.setVapidDetails('mailto:fixture@example.com', secondaryVapid.publicKey, secondaryVapid.privateKey);
-                    try { await webpush.sendNotification(second.result.value, 'secondary', { TTL: 60 }); t.diagnostic('secondary synthetic subscription send accepted'); }
+                    try { await webpush.sendNotification(second.result.value, 'secondary', { TTL: 60, timeout: 15000 }); t.diagnostic('secondary synthetic subscription send accepted'); }
                     catch (secondaryError) { t.diagnostic(`secondary synthetic subscription send=${classifyPushError(secondaryError)}`); }
+                    // One controlled diagnostic retry only, never production
+                    // behavior: establish whether this exact synthetic token
+                    // remains rejected after a short registration delay.
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
+                    try { await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 }); t.diagnostic('original synthetic subscription accepted on delayed recheck'); }
+                    catch (retryError) { t.diagnostic(`original synthetic subscription delayed recheck=${classifyPushError(retryError)}`); }
                 } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
             }
             // A successful secondary attempt never turns the failed original
