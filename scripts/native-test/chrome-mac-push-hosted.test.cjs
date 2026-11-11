@@ -115,7 +115,9 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         value = response.result?.value;
         assert.equal(typeof value?.endpoint, 'string'); assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(value.endpoint), 'unexpected push provider');
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
-        child.kill('SIGTERM');
+        // Match the setup broker's graceful close. A dropped reply is expected
+        // if the pipe closes first; process and group shutdown are checked below.
+        await call('Browser.close').catch(() => {});
         let timer;
         const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000); })]);
         clearTimeout(timer); assert.equal(stopped, true, 'first browser did not stop');
