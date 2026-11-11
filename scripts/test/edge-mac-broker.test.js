@@ -51,19 +51,25 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
         assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
         assert.equal(captured.browserMode, 'edge'); assert.equal(captured.includeApplicationServerKey, true); assert.equal(captured.suppressReceive, suppressReceive);
         await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
-        const child = children.at(-1); child.exitCode = 0; child.emit('exit'); assert.equal(await broker.releaseComplete, true);
+        const child = children.at(-1); child.exitCode = 0; child.emit('exit');
+        await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
+        child.emit('close'); assert.equal(await broker.releaseComplete, true);
     }
     const leaseArgs = { ...args, browser: 'edge' }, lease = await acquireMacProfileLease(leaseArgs);
     const inspection = beginMacProfileLease(lease, leaseArgs); inspection.end();
     const handedOff = await startMacEdgeBroker({ ...args, suppressReceive: true, profileLease: lease });
     await assert.rejects(acquireMacProfileLease(leaseArgs), { code: 'X_CHROME_MAC_LEASE_BUSY' });
     const handedOffChild = children.at(-1); handedOffChild.exitCode = 0; handedOffChild.emit('exit');
+    await assert.rejects(acquireMacProfileLease(leaseArgs), { code: 'X_CHROME_MAC_LEASE_BUSY' });
+    handedOffChild.emit('close');
     assert.equal(await handedOff.releaseComplete, true);
     const replacement = await acquireMacProfileLease(leaseArgs); await releaseMacProfileLease(replacement);
     failAfterSpawn = true;
     await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive: true }), { code: 'X_EDGE_MAC_BROKER_CLEANUP_PENDING' });
     await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive: true }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
     const failed = children.at(-1); failed.signalCode = 'SIGTERM'; failed.emit('exit');
+    await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive: true }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
+    failed.emit('close');
     const lock = path.join(profile.rootPath, 'broker.lock');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });

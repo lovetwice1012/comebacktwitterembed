@@ -53,23 +53,24 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
             catch { /* A stale lock fails closed. */ }
             finally { settleRelease(ok); }
         };
-        broker.chrome.once('exit', () => { void release(); });
-        if (broker.chrome.exitCode !== null) await release();
+        // Keep the profile lease until the child's stdio has also closed.
+        // This is stronger than `exit`, but not proof all descendants stopped.
+        broker.chrome.once('close', () => { void release(); });
+        if (launchedClosed) await release();
         return { ...broker, releaseComplete };
     } catch (error) {
         // A failed handshake can request termination before the OS has
-        // reported that the child actually exited. Keep the profile locked
-        // until then, rather than letting another setup start in that gap.
+        // closed the child's streams. Keep the profile locked until close,
+        // including the gap between `exit` and `close`.
         const active = /** @type {import('node:child_process').ChildProcess | null} */ (launched);
-        if (operation && active && !launchedClosed && active.exitCode === null && active.signalCode === null) {
+        if (operation && active && !launchedClosed) {
             let finished = false;
-            const releaseAfterExit = async () => {
+            const releaseAfterClose = async () => {
                 if (finished) return; finished = true; operation.end();
                 await releaseMacProfileLease(lease).catch(() => {});
             };
-            active.once('exit', () => { void releaseAfterExit(); });
-            active.once('close', () => { void releaseAfterExit(); });
-            if (launchedClosed || active.exitCode !== null || active.signalCode !== null) void releaseAfterExit();
+            active.once('close', () => { void releaseAfterClose(); });
+            if (launchedClosed) void releaseAfterClose();
             throw fail('X_EDGE_MAC_BROKER_CLEANUP_PENDING');
         }
         operation?.end();

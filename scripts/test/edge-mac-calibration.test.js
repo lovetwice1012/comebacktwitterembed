@@ -4,10 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
+const { EventEmitter } = require('node:events');
 
 test('Mac calibration verifies Edge before wiring peer checks into the isolated runner', async () => {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/edge-mac-calibration.js'), 'utf8');
-    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1';
+    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false;
     const captureIdentity = () => {}, authorizePeer = () => {};
     const mockedRequire = name => {
         if (name === './edge-mac-browser-version') return { readVerifiedMacEdgeVersion: async () => {
@@ -19,10 +20,20 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
         if (name === './edge-mac-ephemeral-certificate') return { withMacEdgeEphemeralCertificate: async work => {
             calls.push('certificate'); return work({ pfx: Buffer.from('pfx'), passphrase: 'fixture', certificate: Buffer.from('cert') });
         } };
-        if (name === './edge-calibration-runner') return { runEdgeCalibration: async options => { calls.push(options); return { browserVersion: engineVersion }; } };
+        if (name === 'node:child_process') return { spawn: () => new EventEmitter() };
+        if (name === './edge-calibration-runner') return { runEdgeCalibration: async options => {
+            calls.push(options);
+            if (childMode !== 'none') {
+                const child = options.spawnBrowser('/synthetic', [], {});
+                child.emit('exit', 0);
+                if (childMode === 'close') setImmediate(() => { calls.push('child-close'); child.emit('close', 0); });
+            }
+            return { browserVersion: engineVersion };
+        } };
         return require(name);
     };
-    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire });
+    const timer = (callback, ms) => setTimeout(callback, shortTimeout ? 0 : ms);
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, setTimeout: timer, clearTimeout });
     const input = { rootPath: '/fixture', token: 'a'.repeat(32), pfx: Buffer.from('pfx'), passphrase: 'fixture', certificate: Buffer.from('cert'),
         identityPath: '/tmp/MacEdgeIdentity', identitySha256: '1'.repeat(64), peerPath: '/tmp/MacEdgeSocketOwner', peerSha256: '2'.repeat(64) };
     assert.equal((await module.exports.runMacEdgeCalibration(input)).browserVersion, '157.0.0.1');
@@ -38,6 +49,13 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
     changeAfter = false; engineVersion = '158.0.0.1';
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_BROWSER_CHANGED' });
     engineVersion = '157.0.0.1';
+    calls.length = 0; childMode = 'close';
+    assert.equal((await module.exports.runMacEdgeCalibration(input)).browserVersion, '157.0.0.1');
+    assert(calls.indexOf('child-close') < calls.lastIndexOf('signature'));
+    calls.length = 0; childMode = 'hang'; shortTimeout = true;
+    await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
+    assert.equal(calls.filter(item => item === 'signature').length, 1);
+    childMode = 'none'; shortTimeout = false;
     calls.length = 0; allowed = false;
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_MAC_BROWSER_INVALID' });
     assert.deepEqual(calls, ['signature']);
