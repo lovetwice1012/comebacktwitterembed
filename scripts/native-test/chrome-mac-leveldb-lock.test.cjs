@@ -58,7 +58,41 @@ test('experimental Brave Mac snapshot reads only its gated synthetic GCM records
     assert.equal(output.file.provenance.kind, 'brave-gcm'); assert.equal(output.file.push.productCategory, 'com.brave.macosx');
     assert.equal(output.file.push.securityToken, '456'); assert.equal(output.otherSubscriptionCount, 1);
     assert.throws(() => require('../../src/automation/x-setup-transfer').parseTransferFile(JSON.stringify(output.file)), error => error.code === 'X_SETUP_INVALID_FILE');
-    await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' }); password.fill(0);
+    await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' });
+    const flowSource = await fs.readFile(path.join(__dirname, '../../src/automation/brave-mac-export-flow.js'), 'utf8');
+    const module = { exports: {} }; let borrowed;
+    const mockedRequire = name => {
+        if (name === './chrome-mac-keychain') return { withMacBraveKeychainPassword: async options => {
+            assert.equal(options.confirmed, true); borrowed = Buffer.from(password);
+            try { return await options.work(borrowed); } finally { borrowed.fill(0); }
+        } };
+        if (name.startsWith('.')) return require(path.join(__dirname, '../../src/automation', name));
+        return require(name);
+    };
+    vm.runInNewContext(flowSource, { module, exports: module.exports, require: mockedRequire, AbortSignal, Object, Number });
+    const exportFlow = module.exports.exportExperimentalMacBraveNotifications;
+    const flow = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper,
+        expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex'), subscription,
+        browserVersion: '157.1.99.55', engineVersion: '157.0.8103.39', keychainConfirmed: true, experimental: true };
+    const confirm = async details => {
+        assert.equal(details.otherSubscriptionCount, 1); assert.equal(details.otherNotificationsMayReachServer, true);
+        assert(borrowed.every(byte => byte === 0));
+        assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('brave-snapshot-')));
+    };
+    await assert.rejects(exportFlow({ ...flow, experimental: false, confirmSave: async () => null }), { code: 'X_BRAVE_MAC_FLOW_INVALID' });
+    assert.equal((await exportFlow({ ...flow, confirmSave: async details => { await confirm(details); return null; } })).state, 'cancelled');
+    await assert.rejects(exportFlow({ ...flow, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: false, directory: base, filename: 'rejected.json' };
+    } }), { code: 'X_BRAVE_MAC_FLOW_CONFIRMATION_REQUIRED' });
+    await assert.rejects(fs.access(path.join(base, 'rejected.json')), { code: 'ENOENT' });
+    const saved = await exportFlow({ ...flow, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: true, directory: base, filename: 'brave-notifications.json' };
+    } });
+    assert.equal(saved.state, 'saved'); assert.equal(saved.uploaded, false); assert.equal(saved.encrypted, false);
+    const file = JSON.parse(await fs.readFile(path.join(base, 'brave-notifications.json'), 'utf8'));
+    assert.equal(file.push.productCategory, 'com.brave.macosx'); assert(!JSON.stringify(file).includes('synthetic-password'));
+    assert.throws(() => require('../../src/automation/x-setup-transfer').parseTransferFile(JSON.stringify(file)), error => error.code === 'X_SETUP_INVALID_FILE');
+    password.fill(0);
 });
 
 test('experimental Brave profile locks both assumed Chromium stores and rejects Chrome profiles', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
