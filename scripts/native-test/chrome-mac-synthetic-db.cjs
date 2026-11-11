@@ -12,21 +12,31 @@ const { createXPushGateway } = require('../../src/automation/x-push-gateway');
 const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
 const { createQueue } = require('../../src/automation/queue');
 const entitlements = require('../../src/automation/entitlements');
+const { createSyntheticSetupHttp } = require('./chrome-mac-synthetic-http.cjs');
 
 async function verifySyntheticMacDatabaseTransfer(file, work) {
     if (process.env.CBTE_MAC_DB_FIXTURE !== '1' || process.env.AUTOMATION_TEST_DB_PORT !== '33621') throw new Error('FIXTURE_DB_NOT_ENABLED');
     const db = await createTestDatabase(33621);
+    const previousUrl = process.env.NEXTAUTH_URL;
     try {
+        process.env.NEXTAUTH_URL = 'https://automation.example.test';
         const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
         const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey } });
         const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: keys.privateKey } });
         const setup = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: true, receiverEnabled: true, rolloutMode: 'public' });
         const owner = { userId: '222222222222222222' }, other = { userId: '333333333333333333' };
-        const session = await setup.startSession(owner, { consent: true });
+        const http = await createSyntheticSetupHttp(db, setup);
+        assert.equal((await http.post('x-setup/sessions', { consent: true }, 'https://wrong.example.test')).status, 403);
+        const sessionResult = await http.post('x-setup/sessions', { consent: true });
+        assert.equal(sessionResult.status, 200); assert.equal(sessionResult.cacheControl, 'private, no-store');
+        const session = sessionResult.body;
         const text = JSON.stringify(file);
-        const preview = await setup.validate(owner, { sessionId: session.sessionId, fileText: text });
-        assert.equal(preview.valid, true);
-        const saved = await setup.importFile(owner, { sessionId: session.sessionId, fileText: text, consent: true });
+        const preview = await http.post('x-setup/validate', { sessionId: session.sessionId, fileText: text });
+        assert.equal(preview.status, 200); assert.equal(preview.body.valid, true);
+        const imported = await http.post('x-setup/import', { sessionId: session.sessionId, fileText: text, consent: true });
+        assert.equal(imported.status, 200); assert.equal(imported.cacheControl, 'private, no-store');
+        assert.ok(!JSON.stringify(imported.body).includes(file.push.securityToken), 'private token found in response');
+        const saved = imported.body;
         const rows = await db.queryDatabase('SELECT id,owner_user_id,revision,sealed_json FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]);
         assert.equal(rows.length, 1); assert.equal(rows[0].owner_user_id, owner.userId);
         assert.ok(!String(rows[0].sealed_json).includes(file.push.securityToken), 'plaintext token found in storage');
@@ -34,8 +44,10 @@ async function verifySyntheticMacDatabaseTransfer(file, work) {
         const opened = vault.open(JSON.parse(rows[0].sealed_json), context);
         assert.ok(JSON.stringify(opened) === text, 'worker vault did not recover imported transfer');
         assert.throws(() => vault.open(JSON.parse(rows[0].sealed_json), { ...context, ownerUserId: other.userId }), { code: 'X_SETUP_DECRYPT_FAILED' });
-        const foreignSession = await setup.startSession(other, { consent: true });
-        await assert.rejects(setup.importFile(other, { sessionId: foreignSession.sessionId, fileText: text, consent: true }), { code: 'X_SETUP_SUBSCRIPTION_CONFLICT' });
+        http.setUser(other.userId);
+        const foreignSession = await http.post('x-setup/sessions', { consent: true }); assert.equal(foreignSession.status, 200);
+        const conflict = await http.post('x-setup/import', { sessionId: foreignSession.body.sessionId, fileText: text, consent: true });
+        assert.equal(conflict.status, 409); assert.equal(conflict.body.code, 'X_SETUP_SUBSCRIPTION_CONFLICT');
         if (typeof work === 'function') {
             for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
             await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
@@ -67,6 +79,9 @@ async function verifySyntheticMacDatabaseTransfer(file, work) {
                 } finally { await runtime.stop(); }
             }
         }
-    } finally { await db.close(); }
+    } finally {
+        if (previousUrl === undefined) delete process.env.NEXTAUTH_URL; else process.env.NEXTAUTH_URL = previousUrl;
+        await db.close();
+    }
 }
 module.exports = { verifySyntheticMacDatabaseTransfer };
