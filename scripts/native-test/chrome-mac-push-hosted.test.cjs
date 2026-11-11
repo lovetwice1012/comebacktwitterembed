@@ -61,7 +61,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set();
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set(); let initialPushFailed = false;
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') {
                 res.writeHead(200, { 'Content-Type': 'application/javascript' });
@@ -160,9 +160,13 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     catch (retryError) { t.diagnostic(`original synthetic subscription delayed recheck=${classifyPushError(retryError)}`); }
                 } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
             }
-            // A successful secondary attempt never turns the failed original
-            // subscription into a passing result.
-            throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
+            // Only the disposable database investigation may continue after
+            // verifying delivery of the original retry. Its final result must
+            // still fail to preserve the initial 410 as a release gate.
+            if (process.env.CBTE_MAC_DB_FIXTURE === '1' && delivered.has('original-recheck')) {
+                initialPushFailed = true; delivered.add('preflight');
+                t.diagnostic('continuing disposable DB investigation after initial push failure; final result will remain failed');
+            } else throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
         }
         for (let attempt = 0; attempt < 100 && !delivered.has('preflight'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(delivered.has('preflight'), true, 'browser did not receive the synthetic preflight push');
@@ -246,5 +250,6 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         assert.ok(captured?.endpoint === value.endpoint && captured.keys?.p256dh === value.keys.p256dh && captured.keys?.auth === value.keys.auth,
             'captured subscription did not match');
         t.diagnostic('synthetic local subscription created and captured; credentials omitted');
+        assert.equal(initialPushFailed, false, 'initial synthetic push failed despite diagnostic recovery');
         value = null;
     });
