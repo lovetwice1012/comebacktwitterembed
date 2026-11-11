@@ -1,0 +1,46 @@
+name: macOS Firefox synthetic validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-firefox-synthetic.yml
+      - src/automation/firefox-mac-*.js
+      - scripts/native-test/firefox-mac-*.cjs
+      - client/angelic-setup/mac/lock-notification-stores.c
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Build temporary lock helper
+        run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+      - name: Run synthetic Firefox checks
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 \
+            scripts/native-test/firefox-mac-hosted.test.cjs \
+            scripts/native-test/firefox-mac-export-flow.test.cjs \
+            scripts/native-test/firefox-mac-reader-directory.test.cjs \
+            scripts/native-test/firefox-mac-reader-script.test.cjs \
+            scripts/native-test/firefox-mac-reader-artifacts.test.cjs \
+            scripts/native-test/firefox-mac-snapshot.test.cjs \
+            scripts/native-test/firefox-mac-local-flow.test.cjs \
+            scripts/native-test/firefox-mac-profile-lock.test.cjs
