@@ -61,7 +61,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set(); let initialPushFailed = false;
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set(); let initialPushFailed = false, initialLoginFailed = false;
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') {
                 res.writeHead(200, { 'Content-Type': 'application/javascript' });
@@ -222,15 +222,22 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                 // Diagnostic only: the gateway currently logs in before check-in.
                 // Retry solely after a rejected login, before any push was sent.
                 if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error[0-9]+_matchedfalse$/.test(error?.message || '')) throw error;
+                initialLoginFailed = true;
                 t.diagnostic('first MCS login rejected; trying a synthetic Mac check-in with the same credentials');
                 await checkin({ deviceId: fixtureCredentials.deviceId, securityToken: fixtureCredentials.securityToken, browserVersion, platform: 'macos' });
                 t.diagnostic('synthetic Mac check-in accepted unchanged credentials; retrying login');
                 try { await receive(); }
                 catch (retryError) {
                     if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error401_matchedfalse$/.test(retryError?.message || '')) throw retryError;
-                    t.diagnostic('second login rejected; comparing the alternate MCS port with identical synthetic credentials');
-                    await receive(5228);
-                    t.diagnostic('alternate MCS port accepted the synthetic credentials');
+                    t.diagnostic('second login rejected; waiting five seconds before comparing the same port');
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    try { await receive(); t.diagnostic('delayed MCS login accepted the synthetic credentials'); }
+                    catch (delayedError) {
+                        if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error401_matchedfalse$/.test(delayedError?.message || '')) throw delayedError;
+                        t.diagnostic('delayed login rejected; comparing the alternate MCS port with identical synthetic credentials');
+                        await receive(5228);
+                        t.diagnostic('alternate MCS port accepted the synthetic credentials');
+                    }
                 }
             }
         }
@@ -255,5 +262,6 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             'captured subscription did not match');
         t.diagnostic('synthetic local subscription created and captured; credentials omitted');
         assert.equal(initialPushFailed, false, 'initial synthetic push failed despite diagnostic recovery');
+        assert.equal(initialLoginFailed, false, 'initial MCS login failed despite diagnostic recovery');
         value = null;
     });
