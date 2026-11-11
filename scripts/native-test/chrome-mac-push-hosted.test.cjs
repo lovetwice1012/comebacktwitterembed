@@ -157,7 +157,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             await verifySyntheticMacDatabaseTransfer(transfer);
             t.diagnostic('synthetic Mac transfer validated and imported into disposable database; credentials omitted');
         }
-        const receive = () => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion });
+        t.diagnostic(`synthetic credential ranges: deviceHighBit=${BigInt(fixtureCredentials.deviceId) >= (1n << 63n)} tokenHighBit=${BigInt(fixtureCredentials.securityToken) >= (1n << 63n)}`);
+        const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port });
         try { await receive(); }
         catch (error) {
             // Diagnostic only: the gateway currently logs in before check-in.
@@ -166,7 +167,13 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             t.diagnostic('first MCS login rejected; trying a synthetic Mac check-in with the same credentials');
             await checkin({ deviceId: fixtureCredentials.deviceId, securityToken: fixtureCredentials.securityToken, browserVersion, platform: 'macos' });
             t.diagnostic('synthetic Mac check-in accepted unchanged credentials; retrying login');
-            await receive();
+            try { await receive(); }
+            catch (retryError) {
+                if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error401$/.test(retryError?.message || '')) throw retryError;
+                t.diagnostic('second login rejected; comparing the alternate MCS port with identical synthetic credentials');
+                await receive(5228);
+                t.diagnostic('alternate MCS port accepted the synthetic credentials');
+            }
         }
         fixtureCredentials = null;
         t.diagnostic('synthetic notification received and decrypted by MCS session; credentials omitted');

@@ -11,11 +11,12 @@ const { createFrameDecoder } = require('../../src/automation/chrome-mcs-framing'
 const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
 const { loginResponse } = require('../../src/automation/chrome-mcs-protobuf');
 
-async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion }) {
+async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443 }) {
+    if (port !== 443 && port !== 5228) throw new Error('FIXTURE_MCS_PORT_INVALID');
     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
     const marker = randomBytes(16).toString('hex'), pending = new Set();
     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
-    const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', timeout: 15000 });
+    const socket = tls.connect({ host: 'mtalk.google.com', port, servername: 'mtalk.google.com', timeout: 15000 });
     const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login', loginDetail = 'none';
     const session = createChromeMcsSession({ credentials: { deviceId, securityToken, clientVersion: browserVersion },
         route: { expectedCategory: category, expectedAppId: appId, expectedSender: encryption.authorizedEntity },
