@@ -36,6 +36,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42988258144)では、MCSログインが `401` で拒否された。同じ試験用端末情報を使うMac版チェックインは値を変えず成功したが、その直後のMCS再ログインも `401` だった。チェックインだけでは復旧しない例であり、拒否の原因と再発条件は未確定。試験コードによる追加調査であり、実運用の認証手順は変更していない。
 
+追加で、試験用のMCS拒否応答を固定カテゴリだけに分類する診断を用意した。応答文・接続先・資格情報は記録しない。[実通信の再試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43014319697)では両CPUとも `401` の前に試験通知が `410` となり、MCS拒否応答の分類は得られなかった。別の[隔離DB実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43014319407)では初回の事前通知が時間内に届かなかった一方、後続の受信・ジョブ作成は成功したため、試験全体は失敗のままとした。
+
 受信ワーカーのログイン失敗は、一般的な受信エラーと区別できる固定コード `X_PUSH_CHROME_LOGIN_FAILED` に整理した。単発の拒否だけで既存の受信設定を削除したり再登録必須にしたりせず、従来の待機時間付き再接続を維持する。隔離MariaDBと模擬サーバーで、拒否後の登録保持と再接続、待機時間、既存のACK復旧を確認した。実サービスでの `401` の原因や回復を証明するものではない。
 
 [追加比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142481)では、Apple SiliconのMCSログインは成功したが、試験通知の送信先から `410` が返り送信できなかった。同じ実行のIntelと、[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142531)は受信・復号まで成功した。いずれの試験用端末情報も符号なし64ビット値の上位ビットは立っていなかった。`401` はこの実行で再現せず、代替ポートの比較も行われていない。`401` と `410` の原因・関連は未確定である。
