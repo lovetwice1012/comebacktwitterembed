@@ -9,6 +9,7 @@ on:
       - src/automation/brave-mac-*.js
       - src/automation/edge-mac-*.js
       - scripts/native-test/chrome-mac-leveldb-lock.test.cjs
+      - scripts/native-test/chrome-mac-hosted.test.cjs
       - scripts/native-test/brave-mac-composed.test.cjs
       - scripts/test/chrome-mac-broker.test.js
       - scripts/test/chrome-mac-setup-session.test.js
@@ -45,6 +46,7 @@ jobs:
           test "$(uname -s)" = Darwin
           node --test --test-concurrency=1 \
             scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
+            scripts/native-test/chrome-mac-hosted.test.cjs \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \
             scripts/test/chrome-mac-setup-session.test.js
