@@ -43,7 +43,7 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
         operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'edge' });
         await verifyMacEdgeProfile(rootPath, profileId);
         const broker = await startChromeBroker({ chromePath: browserPath, profilePath: profile.profilePath,
-            browserMode: 'edge', includeApplicationServerKey: true, suppressReceive,
+            browserMode: 'edge', includeApplicationServerKey: true, suppressReceive, pipeTimeoutMs: 30000,
             spawnChrome: /** @type {typeof import('node:child_process').spawn} */ (/** @type {unknown} */ (spawnOwned)) });
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });

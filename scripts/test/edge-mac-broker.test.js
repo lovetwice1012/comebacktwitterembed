@@ -53,6 +53,7 @@ test('Mac Edge broker checks signer and dedicated profile and preserves explicit
         assert.equal(signing.file, '/usr/bin/codesign'); assert(signing.args.some(arg => arg.includes('UBF8T346G9') && arg.includes('com.microsoft.edgemac')));
         assert.equal(captured.chromePath, executable); assert.equal(captured.profilePath, profile.profilePath);
         assert.equal(captured.browserMode, 'edge'); assert.equal(captured.includeApplicationServerKey, true); assert.equal(captured.suppressReceive, suppressReceive);
+        assert.equal(captured.pipeTimeoutMs, 30000);
         await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });
         const child = children.at(-1); child.exitCode = 0; child.emit('exit');
         await assert.rejects(startMacEdgeBroker({ ...args, suppressReceive }), { code: 'X_EDGE_MAC_BROKER_BUSY' });

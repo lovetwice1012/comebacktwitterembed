@@ -133,6 +133,12 @@ test('private broker transports optional Edge key only when explicitly enabled',
     assert(launchArgs.includes('--edge-wns-push-server-url=https://127.0.0.1:1'));
     await assert.rejects(startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', suppressReceive: true, spawnChrome: () => fakeChrome() }), { code: 'X_CHROME_BROKER_INVALID' });
     await assert.rejects(startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', spawnChrome: () => fakeChrome() }), { code: 'X_CHROME_BROKER_INVALID' });
+    for (const pipeTimeoutMs of [0, 999, 60001, '30000']) {
+        let spawned = false;
+        await assert.rejects(startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge',
+            includeApplicationServerKey: true, pipeTimeoutMs, spawnChrome: () => { spawned = true; return fakeChrome(); } }), { code: 'X_CHROME_BROKER_INVALID' });
+        assert.equal(spawned, false);
+    }
 });
 test('browser version handshake accepts only the selected browser family', async () => {
     assert.equal(await createEdgePipe(fakeChrome({ product: 'Edg/157.0.4341.42' }), { browserMode: 'edge' }).ready(), '157.0.4341.42');
