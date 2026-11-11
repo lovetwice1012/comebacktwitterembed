@@ -62,11 +62,18 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey; const delivered = new Set(); let initialPushFailed = false, initialLoginFailed = false;
+        const vapid = webpush.generateVAPIDKeys(), publicKey = vapid.publicKey;
+        const delivered = new Set(), workerDelivered = new Set(); let initialPushFailed = false, initialLoginFailed = false;
         const server = http.createServer((req, res) => {
             if (req.url === '/sw.js') {
                 res.writeHead(200, { 'Content-Type': 'application/javascript' });
-                res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{await self.registration.showNotification('Fixture');for(const c of await clients.matchAll({includeUncontrolled:true}))c.postMessage(e.data?e.data.text():'')})()));");
+                res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{const tag=e.data?e.data.text():'';" +
+                    "try{await fetch('/worker-delivered?tag='+encodeURIComponent(tag))}catch{}" +
+                    "await self.registration.showNotification('Fixture');for(const c of await clients.matchAll({includeUncontrolled:true}))c.postMessage(tag)})()));");
+            } else if (req.url?.startsWith('/worker-delivered?tag=')) {
+                const tag = req.url.slice('/worker-delivered?tag='.length);
+                if (['preflight', 'secondary', 'original-recheck'].includes(tag)) workerDelivered.add(tag);
+                res.end('ok');
             } else if (req.url?.startsWith('/delivered?tag=')) {
                 const tag = req.url.slice('/delivered?tag='.length);
                 if (['preflight', 'secondary', 'original-recheck'].includes(tag)) delivered.add(tag);
@@ -147,6 +154,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                         t.diagnostic('original synthetic subscription accepted before secondary registration');
                         for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
                         t.diagnostic(`original synthetic early recheck delivered=${delivered.has('original-recheck')}`);
+                        t.diagnostic(`original synthetic early recheck reached service worker=${workerDelivered.has('original-recheck')}`);
                     } catch (retryError) { t.diagnostic(`original synthetic early recheck=${classifyPushError(retryError)}`); }
                     const secondaryVapid = webpush.generateVAPIDKeys();
                     const probe = `(async()=>{const r=await navigator.serviceWorker.register('/sw.js',{scope:'/secondary/'});` +
@@ -195,6 +203,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             } else throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
         }
         for (let attempt = 0; attempt < 100 && !delivered.has('preflight'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+        t.diagnostic(`synthetic preflight reached service worker=${workerDelivered.has('preflight')}`);
         if (delivered.has('preflight')) t.diagnostic('browser received synthetic preflight push before shutdown');
         else if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
             initialPushFailed = true;
