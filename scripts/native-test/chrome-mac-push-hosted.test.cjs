@@ -27,6 +27,7 @@ const { checkin } = require('../../src/automation/chrome-checkin');
 const { verifySyntheticMacTransfer } = require('./chrome-mac-synthetic-transfer.cjs');
 const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { describeSyntheticGroup } = require('./chrome-mac-group-diagnostic.cjs');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -80,6 +81,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             if (child && !closed) { try { child.kill('SIGTERM'); } catch { /* Keep profile if shutdown is uncertain. */ } }
             let timer; let stopped = !child || closed || await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
             if (child?.pid && stopped) stopped = await waitForMacProcessGroupExit(child.pid);
+            if (child?.pid && !stopped) await describeSyntheticGroup(t, child.pid, 'cleanup');
             clearTimeout(timer); if (broker) await broker.stop();
             server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
             if (stopped) { const real = await fs.realpath(base); assert.equal(path.dirname(real), temp); assert.match(path.basename(real), /^cbte-mac-push-hosted-/); await fs.rm(real, { recursive: true }); }
@@ -192,7 +194,9 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         let timer;
         const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000); })]);
         clearTimeout(timer); assert.equal(stopped, true, 'first browser did not stop');
-        assert.equal(await waitForMacProcessGroupExit(child.pid), true, 'first browser group did not stop');
+        const firstGroupStopped = await waitForMacProcessGroupExit(child.pid);
+        if (!firstGroupStopped) await describeSyntheticGroup(t, child.pid, 'first browser');
+        assert.equal(firstGroupStopped, true, 'first browser group did not stop');
         const helper = process.env.MAC_LOCK_HELPER; assert.equal(typeof helper, 'string');
         const expectedSha256 = createHash('sha256').update(await fs.readFile(helper)).digest('hex');
         let fixtureCredentials, snapshotStage = 'keychain';

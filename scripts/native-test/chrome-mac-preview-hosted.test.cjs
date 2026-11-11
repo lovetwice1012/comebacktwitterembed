@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
+const { describeSyntheticGroup } = require('./chrome-mac-group-diagnostic.cjs');
 const { promisify } = require('node:util');
 const exec = promisify(execFile);
 
@@ -51,6 +52,7 @@ test('packaged launcher reaches the initial setup dialog in an isolated home',
                 try { process.kill(-child.pid, 0); }
                 catch (error) { probe = ['ESRCH', 'EPERM', 'EINVAL'].includes(error?.code) ? error.code : 'other'; }
                 t.diagnostic(`synthetic launcher shutdown: directStopped=${directStopped} groupProbe=${probe}`);
+                await describeSyntheticGroup(t, child.pid, 'launcher');
             }
             if (groupStopped) { const real = await fs.realpath(root); assert.equal(path.dirname(real), temp);
                 assert.match(path.basename(real), /^cbte-preview-dialog-/); await fs.rm(real, { recursive: true }); }

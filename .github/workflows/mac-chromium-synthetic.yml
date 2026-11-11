@@ -10,6 +10,8 @@ on:
       - src/automation/edge-mac-*.js
       - scripts/native-test/chrome-mac-leveldb-lock.test.cjs
       - scripts/native-test/chrome-mac-hosted.test.cjs
+      - scripts/native-test/chrome-mac-group-diagnostic.cjs
+      - scripts/test/chrome-mac-group-diagnostic.test.js
       - scripts/native-test/chrome-mac-install-diagnostic.cjs
       - scripts/native-test/chrome-mac-push-hosted.test.cjs
       - scripts/native-test/chrome-mac-push-error.cjs
@@ -82,6 +84,7 @@ jobs:
             scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
             scripts/native-test/chrome-mac-hosted.test.cjs \
             scripts/native-test/chrome-mac-process-group.test.cjs \
+            scripts/test/chrome-mac-group-diagnostic.test.js \
             scripts/test/chrome-mac-push-error.test.js \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \
