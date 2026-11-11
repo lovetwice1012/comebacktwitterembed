@@ -132,12 +132,22 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         try { await webpush.sendNotification(value, 'preflight', { TTL: 60, timeout: 15000 }); }
         catch (error) {
             const original = classifyPushError(error);
+            t.diagnostic(`initial synthetic subscription send=${original}`);
             if (original.startsWith('410_')) {
                 try {
                     const current = await call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.toJSON():null})()`,
                         awaitPromise: true, returnByValue: true }, attached.sessionId);
                     const currentValue = current.result?.value;
                     t.diagnostic(`original synthetic subscription still present=${Boolean(currentValue)} unchanged=${Boolean(currentValue && currentValue.endpoint === value.endpoint)}`);
+                    // Test the original subscription without creating another
+                    // registration first; the latter could change provider state.
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    try {
+                        await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
+                        t.diagnostic('original synthetic subscription accepted before secondary registration');
+                        for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+                        t.diagnostic(`original synthetic early recheck delivered=${delivered.has('original-recheck')}`);
+                    } catch (retryError) { t.diagnostic(`original synthetic early recheck=${classifyPushError(retryError)}`); }
                     const secondaryVapid = webpush.generateVAPIDKeys();
                     const probe = `(async()=>{const r=await navigator.serviceWorker.register('/sw.js',{scope:'/secondary/'});` +
                         `if(!r.active)await new Promise((resolve,reject)=>{const w=r.installing||r.waiting;if(!w)return reject(Error('worker'));` +
@@ -153,13 +163,15 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     // remains rejected after a short registration delay.
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
-                    try {
-                        await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
-                        t.diagnostic('original synthetic subscription accepted on delayed recheck');
-                        for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
-                        t.diagnostic(`original synthetic delayed recheck delivered=${delivered.has('original-recheck')}`);
+                    if (!delivered.has('original-recheck')) {
+                        try {
+                            await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
+                            t.diagnostic('original synthetic subscription accepted on delayed recheck');
+                            for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+                            t.diagnostic(`original synthetic delayed recheck delivered=${delivered.has('original-recheck')}`);
+                        }
+                        catch (retryError) { t.diagnostic(`original synthetic subscription delayed recheck=${classifyPushError(retryError)}`); }
                     }
-                    catch (retryError) { t.diagnostic(`original synthetic subscription delayed recheck=${classifyPushError(retryError)}`); }
                 } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
             }
             // Only the disposable database investigation may continue after
