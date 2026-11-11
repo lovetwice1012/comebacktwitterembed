@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { createXPushRuntime, reconnectDelay } = require('../../src/automation/x-push-runtime');
+const { createXPushRuntime, reconnectDelay, pruneExpiredCooldowns } = require('../../src/automation/x-push-runtime');
 const U = '222222222222222222';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
@@ -85,4 +85,12 @@ test('source-compatible reconnect delays cap failures and never jitter below ser
     assert.equal(reconnectDelay(64, 'X_PUSH_SOCKET_FAILED', () => 0), 300000);
     assert.equal(reconnectDelay(1, 'X_PUSH_BACKOFF', () => 0), 1800000);
     assert(reconnectDelay(1, 'X_PUSH_BACKOFF', (_minimum, maximum) => maximum - 1) >= 1800000);
+});
+
+test('expired local cooldowns are removed while future retry deadlines remain', () => {
+    const cooldowns = new Map([['expired', 999], ['due', 1000], ['future', 1001], ['backoff', 1801000]]);
+    pruneExpiredCooldowns(cooldowns, 1000);
+    assert.deepEqual([...cooldowns], [['future', 1001], ['backoff', 1801000]]);
+    pruneExpiredCooldowns(cooldowns, 1001);
+    assert.deepEqual([...cooldowns], [['backoff', 1801000]]);
 });

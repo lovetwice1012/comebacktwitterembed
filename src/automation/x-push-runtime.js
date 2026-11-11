@@ -13,6 +13,10 @@ function reconnectDelay(attempt, reasonCode, jitter = randomInt) {
     return base + jitter(0, Math.floor(base / 5) + 1);
 }
 
+function pruneExpiredCooldowns(cooldowns, now) {
+    for (const [id, until] of cooldowns) if (until <= now) cooldowns.delete(id);
+}
+
 // This supervisor does not import a browser or any X HTTP client. Connections
 // belong to the explicitly enabled Firefox or Chrome Push gateway.
 function createXPushRuntime(db, queue, options = {}) {
@@ -248,6 +252,9 @@ function createXPushRuntime(db, queue, options = {}) {
         const work = (async () => {
             if (!gateway || typeof gateway.run !== 'function') throw new Error('X_PUSH_GATEWAY_UNAVAILABLE');
             assertAllowed();
+            // Failed or deleted subscriptions may never reconnect. Expired
+            // entries no longer affect admission and must not grow forever.
+            pruneExpiredCooldowns(cooldowns, clock());
             await reconcileSessions();
             const page = await listCandidates(cursor);
             if (!Array.isArray(page)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
@@ -382,4 +389,4 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
     }
 }
 
-module.exports = { createXPushRuntime, createXPushRuntimeFromEnvironment, reconnectDelay };
+module.exports = { createXPushRuntime, createXPushRuntimeFromEnvironment, reconnectDelay, pruneExpiredCooldowns };
