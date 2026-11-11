@@ -29,6 +29,7 @@ function verifySyntheticMacTransfer({ origin, subscription, deviceId, securityTo
         const envelope = sealer.seal(parsed, owner), opened = vault.open(envelope, owner);
         assert.ok(JSON.stringify(parsed) === JSON.stringify(opened), 'worker vault round-trip mismatch');
         assert.throws(() => vault.open(envelope, { ...owner, ownerUserId: '999999999999999999' }), { code: 'X_SETUP_DECRYPT_FAILED' });
+        return parsed;
     } finally { der.fill(0); record.fill(0); }
 }
 module.exports = { verifySyntheticMacTransfer };

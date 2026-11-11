@@ -25,6 +25,7 @@ const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
 const { checkin } = require('../../src/automation/chrome-checkin');
 const { verifySyntheticMacTransfer } = require('./chrome-mac-synthetic-transfer.cjs');
+const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -150,8 +151,12 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         }) });
         t.diagnostic('synthetic device token and subscription keys matched the isolated snapshot; credentials omitted');
         const browserVersion = version.product.slice('Chrome/'.length);
-        verifySyntheticMacTransfer({ origin, subscription: value, ...fixtureCredentials, browserVersion });
+        const transfer = verifySyntheticMacTransfer({ origin, subscription: value, ...fixtureCredentials, browserVersion });
         t.diagnostic('synthetic X-format transfer passed parser and owner-bound worker vault; local origin was substituted');
+        if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
+            await verifySyntheticMacDatabaseTransfer(transfer);
+            t.diagnostic('synthetic Mac transfer validated and imported into disposable database; credentials omitted');
+        }
         const receive = () => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion });
         try { await receive(); }
         catch (error) {
