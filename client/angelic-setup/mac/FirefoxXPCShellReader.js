@@ -4,6 +4,7 @@
  * directory, sanitize the environment, and stop the entire child process tree.
  * This script does not upload or log the subscription data.
  */
+/* global Cc, Ci, Cu, Services, ChromeUtils, quit */
 'use strict';
 const localFile = value => {
     const file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
@@ -28,12 +29,19 @@ if (!readerFile.isFile() || readerFile.isSymlink() || readerFile.fileSize < 1 ||
     throw new Error('X_FIREFOX_MAC_READER_INVALID');
 const beforeSize = readerFile.fileSize, beforeModified = readerFile.lastModifiedTime;
 const input = Cc['@mozilla.org/network/file-input-stream;1'].createInstance(Ci.nsIFileInputStream);
-let readerDigest;
+let readerDigest, readerSource;
 try {
     input.init(readerFile, 0x01, 0, 0);
+    const binary = Cc['@mozilla.org/binaryinputstream;1'].createInstance(Ci.nsIBinaryInputStream);
+    binary.setInputStream(input);
+    const bytes = binary.readByteArray(beforeSize);
+    if (bytes.length !== beforeSize) throw new Error('X_FIREFOX_MAC_READER_INVALID');
     const hash = Cc['@mozilla.org/security/hash;1'].createInstance(Ci.nsICryptoHash);
-    hash.init(hash.SHA256); hash.updateFromStream(input, beforeSize);
+    hash.init(hash.SHA256); hash.update(bytes, bytes.length);
     readerDigest = Array.from(hash.finish(false), ch => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    Cu.importGlobalProperties(['TextDecoder']);
+    readerSource = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes));
+    bytes.fill(0);
 } finally { input.close(); }
 if (readerDigest !== expectedReaderHash || readerFile.fileSize !== beforeSize || readerFile.lastModifiedTime !== beforeModified)
     throw new Error('X_FIREFOX_MAC_READER_INVALID');
@@ -59,7 +67,10 @@ if (!['Darwin', 'WINNT'].includes(osName)) throw new Error('X_FIREFOX_MAC_READER
 // XPCShell does not expose the Firefox application version. The parent must
 // derive this value from the verified, signed application before launching.
 Object.defineProperty(Services, 'appinfo', { value: { OS: osName, version: browserVersion } });
-load(readerFile.path);
+// Execute the exact bytes that were hashed; do not reopen the path after the
+// check. The caller must still verify this bootstrap and its manifest.
+const ReadPushSubscription = new Function(`${readerSource}\nreturn ReadPushSubscription;`)();
+readerSource = null;
 function writeResult(value) {
     const text = JSON.stringify(value);
     if (text.length > 32768) throw new Error('X_FIREFOX_MAC_READER_INVALID');
