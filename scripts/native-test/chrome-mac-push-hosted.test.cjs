@@ -132,12 +132,14 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                         awaitPromise: true, returnByValue: true }, attached.sessionId);
                     const currentValue = current.result?.value;
                     t.diagnostic(`original synthetic subscription still present=${Boolean(currentValue)} unchanged=${Boolean(currentValue && currentValue.endpoint === value.endpoint)}`);
+                    const secondaryVapid = webpush.generateVAPIDKeys();
                     const probe = `(async()=>{const r=await navigator.serviceWorker.register('/sw.js',{scope:'/secondary/'});` +
                         `if(!r.active)await new Promise((resolve,reject)=>{const w=r.installing||r.waiting;if(!w)return reject(Error('worker'));` +
                         `w.addEventListener('statechange',()=>{if(w.state==='activated')resolve();if(w.state==='redundant')reject(Error('worker'))})});` +
-                        `return(await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:${JSON.stringify(publicKey)}})).toJSON()})()`;
+                        `return(await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:${JSON.stringify(secondaryVapid.publicKey)}})).toJSON()})()`;
                     const second = await call('Runtime.evaluate', { expression: probe, awaitPromise: true, returnByValue: true }, attached.sessionId, 60000);
                     if (second.exceptionDetails || typeof second.result?.value?.endpoint !== 'string') throw new Error('FIXTURE_SECONDARY_INVALID');
+                    webpush.setVapidDetails('mailto:fixture@example.com', secondaryVapid.publicKey, secondaryVapid.privateKey);
                     try { await webpush.sendNotification(second.result.value, 'secondary', { TTL: 60 }); t.diagnostic('secondary synthetic subscription send accepted'); }
                     catch (secondaryError) { t.diagnostic(`secondary synthetic subscription send=${classifyPushError(secondaryError)}`); }
                 } catch { t.diagnostic('secondary synthetic subscription comparison unavailable'); }
