@@ -16,7 +16,8 @@ test('Mac broker retains its profile lease until close, including startup failur
     });
     const profile = await createMacChromeProfile(base); let chrome;
     const app = '/Applications/Google Chrome.app', executable = app + '/Contents/MacOS/Google Chrome';
-    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false;
+    let accepted = false, calls = 0, captured, signing, failAfterSpawn = false, changed = false, finishGroup;
+    let groupGone = new Promise(resolve => { finishGroup = resolve; });
     const fakeFs = { ...fs,
         async lstat(name) { if ([app, executable, app + '/Contents/Info.plist'].includes(name)) return {
             isDirectory: () => name === app, isFile: () => name !== app, isSymbolicLink: () => false,
@@ -26,7 +27,8 @@ test('Mac broker retains its profile lease until close, including startup failur
         if (name === 'node:fs/promises') return fakeFs;
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
             signing = { file, args, opts }; callback(accepted ? null : new Error('signature rejected'), '', ''); },
-        spawn() { chrome = new EventEmitter(); chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
+        spawn(file, args, options) { assert.equal(options.detached, true); chrome = new EventEmitter(); chrome.pid = 12345; chrome.exitCode = null; chrome.kill = () => {}; return chrome; } };
+        if (name === './chrome-mac-process-group') return { waitForMacProcessGroupExit: () => groupGone };
         if (name === './chrome-private-broker') return { startChromeBroker: async options => {
             calls++; captured = options; options.spawnChrome('synthetic', [], {});
             if (failAfterSpawn) throw new Error('synthetic failure');
@@ -50,6 +52,8 @@ test('Mac broker retains its profile lease until close, including startup failur
     chrome.exitCode = 0; chrome.emit('exit');
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
     chrome.emit('close');
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
+    finishGroup(true);
     assert.equal(await broker.releaseComplete, true);
     failAfterSpawn = true;
     await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_CLEANUP_PENDING' });
@@ -64,4 +68,9 @@ test('Mac broker retains its profile lease until close, including startup failur
     chrome.emit('close');
     for (let i = 0; i < 100; i++) { try { await fs.access(lock); await new Promise(resolve => setTimeout(resolve, 5)); } catch { break; } }
     await assert.rejects(fs.access(lock), { code: 'ENOENT' });
+    changed = false; groupGone = Promise.resolve(false);
+    const uncertain = await startMacChromeBroker(params);
+    chrome.emit('close');
+    assert.equal(await uncertain.releaseComplete, false);
+    await assert.rejects(startMacChromeBroker(params), { code: 'X_CHROME_MAC_BROKER_BUSY' });
 });

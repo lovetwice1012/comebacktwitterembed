@@ -15,6 +15,7 @@ const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broke
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
 const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
+const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -45,7 +46,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         let child, closed = false, resolveClosed, closePromise, broker;
         const spawnOwned = (file, args, options) => {
             closed = false; closePromise = new Promise(resolve => { resolveClosed = resolve; });
-            child = spawn(file, args, options);
+            child = spawn(file, args, { ...options, detached: true });
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
@@ -56,7 +57,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         });
         t.after(async () => {
             if (child && !closed) { try { child.kill('SIGTERM'); } catch { /* Keep profile if shutdown is uncertain. */ } }
-            let timer; const stopped = !child || closed || await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
+            let timer; let stopped = !child || closed || await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
+            if (child?.pid && stopped) stopped = await waitForMacProcessGroupExit(child.pid);
             clearTimeout(timer); if (broker) await broker.stop();
             server.closeAllConnections(); if (server.listening) await new Promise(resolve => server.close(resolve));
             if (stopped) { const real = await fs.realpath(base); assert.equal(path.dirname(real), temp); assert.match(path.basename(real), /^cbte-mac-push-hosted-/); await fs.rm(real, { recursive: true }); }
@@ -106,6 +108,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         let timer;
         const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 15000); })]);
         clearTimeout(timer); assert.equal(stopped, true, 'first browser did not stop');
+        assert.equal(await waitForMacProcessGroupExit(child.pid), true, 'first browser group did not stop');
         broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin,
             extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
         let captured;

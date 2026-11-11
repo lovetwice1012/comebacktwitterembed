@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 const { verifyMacChromeProfile } = require('./chrome-mac-profile');
 const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('./chrome-mac-profile-lease');
 const { startChromeBroker } = require('./chrome-private-broker');
+const { waitForMacProcessGroupExit } = require('./chrome-mac-process-group');
 const execFileAsync = promisify(execFile);
 const APP = '/Applications/Google Chrome.app';
 const EXECUTABLE = path.join(APP, 'Contents/MacOS/Google Chrome');
@@ -48,7 +49,7 @@ async function startMacChromeBroker({ rootPath, profileId }) {
     /** @type {import('node:child_process').ChildProcess | null} */
     let launched = null;
     const spawnOwned = (file, args, options) => {
-        launched = spawn(file, args, options);
+        launched = spawn(file, args, { ...options, detached: true });
         launched.once('close', () => { launchedClosed = true; });
         return launched;
     };
@@ -63,9 +64,12 @@ async function startMacChromeBroker({ rootPath, profileId }) {
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
-            if (released) return; released = true; operation.end();
+            if (released) return; released = true;
             let ok = false;
-            try { await releaseMacProfileLease(lease); ok = true; }
+            try {
+                if (!await waitForMacProcessGroupExit(broker.chrome.pid)) return;
+                operation.end(); await releaseMacProfileLease(lease); ok = true;
+            }
             catch { /* Preserve a stale lock when ownership cannot be proven. */ }
             finally { settleRelease(ok); }
         };
@@ -78,14 +82,16 @@ async function startMacChromeBroker({ rootPath, profileId }) {
             await broker.stop().catch(() => {});
         }
         const active = /** @type {import('node:child_process').ChildProcess | null} */ (launched);
-        if (operation && active && !launchedClosed) {
+        if (operation && active) {
             let finished = false;
             const releaseAfterClose = async () => {
-                if (finished) return; finished = true; operation.end();
+                if (finished) return; finished = true;
+                if (active.pid && !await waitForMacProcessGroupExit(active.pid)) return;
+                operation.end();
                 await releaseMacProfileLease(lease).catch(() => {});
             };
-            active.once('close', () => { void releaseAfterClose(); });
-            if (launchedClosed) void releaseAfterClose();
+            if (!launchedClosed) active.once('close', () => { void releaseAfterClose(); });
+            else await releaseAfterClose();
             throw fail('X_CHROME_MAC_BROKER_CLEANUP_PENDING');
         }
         operation?.end();

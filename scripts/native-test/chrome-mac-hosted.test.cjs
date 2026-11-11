@@ -13,6 +13,7 @@ const { createMacChromeProfile } = require('../../src/automation/chrome-mac-prof
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
+const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
 test('signed macOS Chrome opens a dedicated synthetic profile over its private pipe',
     { skip: process.platform !== 'darwin', timeout: 400000 }, async t => {
@@ -28,6 +29,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
                 const stopped = await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
                 clearTimeout(timer); cleanupSafe = stopped;
             }
+            if (child?.pid && cleanupSafe) cleanupSafe = await waitForMacProcessGroupExit(child.pid);
             if (broker) await broker.stop();
             await describeInstalledChrome(t, 'after launch');
             server.closeAllConnections();
@@ -56,7 +58,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
             throw error;
         }
         const spawnOwned = (file, args, options) => {
-            child = spawn(file, args, options);
+            child = spawn(file, args, { ...options, detached: true });
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };

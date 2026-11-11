@@ -12,6 +12,7 @@ on:
       - scripts/native-test/chrome-mac-hosted.test.cjs
       - scripts/native-test/chrome-mac-install-diagnostic.cjs
       - scripts/native-test/chrome-mac-push-hosted.test.cjs
+      - scripts/native-test/chrome-mac-process-group.test.cjs
       - scripts/native-test/brave-mac-composed.test.cjs
       - scripts/test/chrome-mac-broker.test.js
       - scripts/test/chrome-mac-setup-session.test.js
@@ -55,6 +56,7 @@ jobs:
             scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
             scripts/native-test/chrome-mac-hosted.test.cjs \
             scripts/native-test/chrome-mac-push-hosted.test.cjs \
+            scripts/native-test/chrome-mac-process-group.test.cjs \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \
             scripts/test/chrome-mac-setup-session.test.js
