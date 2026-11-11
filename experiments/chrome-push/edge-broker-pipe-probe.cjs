@@ -375,7 +375,9 @@ async function main() {
         if (!require('node:util').isDeepStrictEqual(exported, result.file)) throw new Error('PROBE_PACKAGE_EXPORT_FAILED');
         if ((await fs.readdir(exportRoot)).some(name => name.startsWith('edge-snapshot-'))) throw new Error('PROBE_SNAPSHOT_CLEANUP_FAILED');
         // The gateway below receives the same data read from the exported file.
-        result.file = exported;
+        // The current Windows package exports the legacy format. Add the
+        // observed version only in this fixture until that exporter is ready.
+        result.file = versionTwo ? { ...exported, push: { ...exported.push, connectVersion: '2' } } : exported;
         await fs.unlink(outputPath);
         const cleanupCommand = `$ErrorActionPreference='Stop'; . '${shared}' -Browser edge -LibraryOnly; . '${snapshotScript}'; `
             + `Remove-XEdgeSnapshot -Snapshot $env:CBTE_EDGE_FIXTURE_SNAPSHOT -Token $env:CBTE_EDGE_FIXTURE_TOKEN -PrivateRoot $env:CBTE_EDGE_FIXTURE_ROOT`;
@@ -404,18 +406,9 @@ async function main() {
             stage = 'database';
             testDb = await require('../../scripts/lib/automation-test-db').createTestDatabase(33621);
             const { createXSetup } = require('../../src/automation/x-setup');
-            const service = createXSetup(testDb, { sealer, rolloutMode: 'public', edgeEnabled: true, receiverEnabled: true });
+            const service = createXSetup(testDb, { sealer, rolloutMode: 'public', edgeEnabled: true, receiverEnabled: true, edgeConnectV2Enabled: versionTwo });
             const actor = { userId: context.ownerUserId }, session = await service.startSession(actor, { consent: true });
             const saved = await service.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(result.file), consent: true });
-            if (versionTwo) {
-                // Synthetic process only: exercise the real gateway with the
-                // explicit session version without changing production intake.
-                const sessionId = require.resolve('../../src/automation/edge-wns-session');
-                const session = require(sessionId), create = session.createEdgeWnsSession;
-                require.cache[sessionId].exports = { ...session, createEdgeWnsSession: options => {
-                    explicitConnectVersion = '2'; return create({ ...options, connectVersion: '2' });
-                } };
-            }
             const { createXPushGateway } = require('../../src/automation/x-push-gateway');
             const gateway = createXPushGateway(testDb, { enabled: true, privateWorkerVault: vault, rolloutMode: 'public' });
             const identity = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId };
@@ -430,8 +423,18 @@ async function main() {
                 stage = 'wns';
                 const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
                 const tokenVault = createWnsTokenWorkerVault(config);
-                const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, privateWorkerVault: vault,
-                    edgeTokenVault: tokenVault, rolloutMode: 'public' });
+                const versionObserver = versionTwo ? { createEdgeTransport: ({ signal }) => {
+                    const transport = require('../../src/automation/edge-wns-transport').createEdgeWnsTransport({ signal });
+                    return { ...transport, async send(frame) {
+                        if (!explicitConnectVersion && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
+                            if (!frame.includes(Buffer.from('<connect><ver>2</ver>'))) throw new Error('PROBE_VERSION_MISMATCH');
+                            explicitConnectVersion = '2';
+                        }
+                        return transport.send(frame);
+                    } };
+                } } : {};
+                const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, edgeConnectV2Enabled: versionTwo, privateWorkerVault: vault,
+                    edgeTokenVault: tokenVault, rolloutMode: 'public', ...versionObserver });
                 const controller = new AbortController(), timer = setTimeout(() => controller.abort(), takeover ? 90000 : 30000); let received;
                 webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
                 try {
