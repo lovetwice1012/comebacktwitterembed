@@ -34,6 +34,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [応答分類を加えた試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42993020432)でも両CPUでChrome終了前の試験送信が `410` となり、応答本文には期限切れに関する表現が含まれていた。本文・接続先・資格情報そのものは記録していない。[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42993020377)は同時期に成功した。購読作成直後に失敗する理由や、以前の `401` との関係は不明である。
 
+[別購読との比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42993679309)では、最初の試験用購読への送信が `410` となった後も、Chromeの `getSubscription()` は同じ購読を返した。削除せず別スコープに試験用購読を新規作成したところ、こちらへの送信も `410` だった。これは単一の購読ファイルやブラウザー終了後の移譲処理だけでは説明できないが、通知サービス・端末・試験環境のどこが原因かを特定したものではない。試験対象は専用プロフィールとローカルサイトのみ。
+
 [続く試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42991190681)ではApple Siliconの通知試験は成功し、IntelはChromeの厳格な署名検証が120秒でタイムアウトして通知試験へ進まなかった。実際の署名不正と検証の時間切れは区別できるよう内部エラーを分けた。`410` の応答本文は出力せず、既知のエラー種別だけを分類する試験コードも追加したが、この実行では `410` が再現せず分類結果は得られていない。
 
 [macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
