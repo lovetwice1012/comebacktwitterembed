@@ -18,6 +18,32 @@ const { assertSuppressedTakeover } = require('./edge-fixture-assertions.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function terminateReadySyntheticWorker({ schema, identity, privateKey }) {
+    const { fork } = require('node:child_process');
+    const child = fork(path.join(__dirname, 'edge-synthetic-restart-child.cjs'), [],
+        { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true, env: { ...process.env, NODE_ENV: 'test' } });
+    let ready = false, timeout;
+    try {
+        await new Promise((resolve, reject) => {
+            timeout = setTimeout(() => reject(new Error('PROBE_FORCED_EXIT_TIMEOUT')), 30000);
+            child.on('error', () => reject(new Error('PROBE_FORCED_EXIT_FAILED')));
+            child.on('message', message => {
+                if (message?.state !== 'ready' || ready) return reject(new Error('PROBE_FORCED_EXIT_FAILED'));
+                ready = true;
+                if (!child.kill()) reject(new Error('PROBE_FORCED_EXIT_FAILED'));
+            });
+            child.on('exit', (code, signal) => ready && (code !== 0 || signal) ? resolve() : reject(new Error('PROBE_FORCED_EXIT_FAILED')));
+            child.send({ schema, ...identity, privateKey }, error => { if (error) reject(new Error('PROBE_FORCED_EXIT_FAILED')); });
+        });
+    } finally {
+        clearTimeout(timeout);
+        if (child.exitCode === null && child.signalCode === null) {
+            const exited = once(child, 'exit').catch(() => {}); child.kill();
+            let timer; try { await Promise.race([exited, new Promise(resolve => { timer = setTimeout(resolve, 5000); })]); }
+            finally { clearTimeout(timer); }
+        }
+    }
+}
 async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotification }) {
     const { fork } = require('node:child_process');
     const child = fork(path.join(__dirname, 'edge-synthetic-restart-child.cjs'), [],
@@ -415,6 +441,19 @@ async function main() {
                             privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }),
                             sendNotification: () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-process-restart' }), { TTL: 60 }) });
                         takeoverResult.receivedInNewWorkerProcess = true;
+                        await terminateReadySyntheticWorker({ schema: testDb.schema, identity,
+                            privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+                        const claim = () => wnsGateway.store.claim({ ...identity, workerId: 'synthetic-edge-after-crash' });
+                        let recoveredLease = await claim();
+                        if (recoveredLease) { await wnsGateway.store.release(recoveredLease); throw new Error('PROBE_FORCED_EXIT_FAILED'); }
+                        const recoveryDeadline = Date.now() + 40000;
+                        while (!recoveredLease && Date.now() < recoveryDeadline) { await wait(500); recoveredLease = await claim(); }
+                        if (!recoveredLease) throw new Error('PROBE_FORCED_EXIT_FAILED');
+                        await wnsGateway.store.release(recoveredLease);
+                        await verifyNewWorkerProcess({ schema: testDb.schema, identity,
+                            privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+                            sendNotification: () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-process-restart' }), { TTL: 60 }) });
+                        takeoverResult.receivedAfterForcedWorkerExit = true;
                     }
                     realWnsWorkerTested = true;
                 } finally { clearTimeout(timer); controller.abort(); }
