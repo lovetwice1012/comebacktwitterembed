@@ -7,6 +7,7 @@ on:
       - .github/workflows/mac-firefox-synthetic.yml
       - src/automation/firefox-mac-*.js
       - scripts/native-test/firefox-mac-*.cjs
+      - scripts/native-test/macos-sandbox-probe.test.cjs
       - client/angelic-setup/mac/lock-notification-stores.c
 
 permissions:
@@ -33,10 +34,12 @@ jobs:
       - name: Run synthetic Firefox checks
         env:
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+          CBTE_MAC_SYNTHETIC_SANDBOX: '1'
         run: |
           test "$(uname -s)" = Darwin
           node --test --test-concurrency=1 \
             scripts/native-test/firefox-mac-hosted.test.cjs \
+            scripts/native-test/macos-sandbox-probe.test.cjs \
             scripts/native-test/firefox-mac-export-flow.test.cjs \
             scripts/native-test/firefox-mac-reader-directory.test.cjs \
             scripts/native-test/firefox-mac-reader-script.test.cjs \
