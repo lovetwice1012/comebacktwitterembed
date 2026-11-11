@@ -20,10 +20,16 @@ test('signed macOS Firefox executes a synthetic XPCShell script from stdin',
         const browser = await verifyInstalledMacFirefox();
         assert.equal(browser.executable, '/Applications/Firefox.app/Contents/MacOS/firefox');
         assert.match(browser.version, /^[0-9A-Za-z._+-]{1,64}$/);
-        const child = spawnSync(browser.executable, ['-xpcshell', '-f', '-'], {
-            cwd: root, input: 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n', encoding: 'utf8', timeout: 30000,
-            env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' },
-        });
+        const script = 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n';
+        const options = { cwd: root, input: script, encoding: 'utf8', timeout: 30000,
+            env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } };
+        const child = spawnSync(browser.executable, ['-xpcshell', '-f', '-'], options);
+        const viaDevice = spawnSync(browser.executable, ['-xpcshell', '-f', '/dev/stdin'], options);
+        const inline = spawnSync(browser.executable, ['-xpcshell', '-e', script], { ...options, input: '' });
+        for (const [name, value] of [['pipe', child], ['device', viaDevice], ['inline', inline]]) {
+            t.diagnostic(`${name}: status=${value.status} error=${value.error?.code || 'none'} stderr=${(value.stderr || '').slice(0, 1000)}`);
+        }
+        assert.equal(inline.error, undefined); assert.equal(inline.status, 0); assert.match(inline.stdout, /CBTE_SYNTHETIC_STDIN_OK/);
         assert.equal(child.error, undefined);
         // The process receives only synthetic input and a private empty HOME.
         // Capture a bounded diagnostic without credentials or profile data.
