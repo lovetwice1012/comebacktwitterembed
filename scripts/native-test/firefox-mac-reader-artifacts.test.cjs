@@ -53,6 +53,26 @@ test('experimental Firefox artifact cleanup is bounded and preserves unsafe tree
         assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-')));
         assert.equal(await fs.readFile(path.join(idb, '2918063365piupsah.sqlite'), 'utf8'), 'original-synthetic-db');
 
+        let heldPath, releaseHeld;
+        await assert.rejects(withMacFirefoxSnapshot({ ...args, experimentalReaderArtifacts: true, work: async ({ snapshotPath, holdForReader }) => {
+            heldPath = snapshotPath; releaseHeld = holdForReader();
+            assert.throws(() => holdForReader(), { code: 'X_FIREFOX_MAC_SNAPSHOT_INVALID' });
+        } }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED' });
+        assert.equal(await fs.readFile(path.join(heldPath, 'storage/permanent/chrome/idb/2918063365piupsah.sqlite'), 'utf8'), 'original-synthetic-db');
+        releaseHeld(); releaseHeld();
+        let lateHold;
+        const afterStopped = await withMacFirefoxSnapshot({ ...args, experimentalReaderArtifacts: true, work: async ({ holdForReader }) => {
+            lateHold = holdForReader; const release = holdForReader(); release(); release(); return 'reader-stopped';
+        } });
+        assert.equal(afterStopped, 'reader-stopped');
+        assert.throws(() => lateHold(), { code: 'X_FIREFOX_MAC_SNAPSHOT_INVALID' });
+        assert.equal(await fs.readFile(path.join(idb, '2918063365piupsah.sqlite'), 'utf8'), 'original-synthetic-db');
+        const cancelHeld = new AbortController(); let cancelledPath;
+        await assert.rejects(withMacFirefoxSnapshot({ ...args, experimentalReaderArtifacts: true, signal: cancelHeld.signal,
+            work: async ({ snapshotPath, holdForReader }) => { cancelledPath = snapshotPath; holdForReader(); cancelHeld.abort(); } }),
+        { code: 'X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED' });
+        assert.equal(await fs.readFile(path.join(cancelledPath, 'storage/permanent/chrome/idb/2918063365piupsah.sqlite'), 'utf8'), 'original-synthetic-db');
+
         for (const scenario of ['default', 'unknown', 'symlink', 'hardlink', 'work-failed']) {
             let snapshot;
             await assert.rejects(withMacFirefoxSnapshot({ ...args, experimentalReaderArtifacts: scenario !== 'default', work: async ({ snapshotPath }) => {

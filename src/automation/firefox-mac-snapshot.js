@@ -32,6 +32,15 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
         const signal = abortSignal ? AbortSignal.any([lockSignal, abortSignal]) : lockSignal;
         const snapshot = path.join(rootPath, `firefox-snapshot-${randomBytes(16).toString('hex')}`);
         const created = []; let total = 0, count = 0, untrackedCreation = false, readerCompleted = false;
+        let cleanupHeld = false, acceptingHold = true;
+        // A future reader supervisor must hold this until every child has
+        // stopped. On uncertain termination, leave the snapshot intact.
+        function holdForReader() {
+            if (!experimentalReaderArtifacts || !acceptingHold || cleanupHeld) throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
+            check();
+            cleanupHeld = true; let released = false;
+            return () => { if (!released) { released = true; cleanupHeld = false; } };
+        }
         function check() {
             if (lockSignal.aborted) throw fail('X_CHROME_MAC_LOCK_LOST');
             if (abortSignal?.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED');
@@ -95,7 +104,7 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             await sameDirectory(source, original);
         }
         async function cleanup() {
-            if (untrackedCreation) throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+            if (untrackedCreation || cleanupHeld) throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
             const byName = new Map(created.map(item => [item.filename, item]));
             async function verify(item) {
                 const info = await fs.lstat(item.filename);
@@ -154,7 +163,7 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             try { await fs.lstat(blobs); } catch (error) { if (error?.code === 'ENOENT') present = false; else throw error; }
             if (present) await copyBlobs(blobs, path.join(target, `${DB}.files`), 0);
             for (const item of sourceDirectories) await sameDirectory(item.filename, item.info);
-            check(); const result = await work({ snapshotPath: snapshot, uaid, signal });
+            check(); const result = await work({ snapshotPath: snapshot, uaid, signal, holdForReader });
             check(); readerCompleted = true; return result;
         } catch (error) {
             if (lockSignal.aborted) throw fail('X_CHROME_MAC_LOCK_LOST');
@@ -162,6 +171,7 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             if (/^X_FIREFOX_MAC_SNAPSHOT_[A-Z_]+$/.test(error?.code || '') || error?.code === 'X_CHROME_MAC_LOCK_LOST') throw error;
             throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
         } finally {
+            acceptingHold = false;
             try { await cleanup(); } catch { throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED'); } // eslint-disable-line no-unsafe-finally
         }
     } });
