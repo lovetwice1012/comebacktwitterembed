@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness({ closeFails = false } = {}) {
+async function harness({ closeFails = false, releaseHangs = false } = {}) {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/chrome-mac-setup-session.js'), 'utf8');
     const module = { exports: {} }, events = []; let finish, captureCount = 0;
     const released = new Promise(resolve => { finish = resolve; });
@@ -18,7 +18,7 @@ async function harness({ closeFails = false } = {}) {
         if (name === './chrome-mac-broker') return { startMacChromeBroker: async () => { events.push('open'); return broker; } };
         if (name === './chrome-broker-client') return { captureFromBroker: async () => {
             events.push('capture'); if (++captureCount === 1) throw Object.assign(new Error('not ready'), { code: 'X_CHROME_CAPTURE_NOT_FOUND' });
-            chrome.exitCode = 0; setImmediate(() => { events.push('released'); finish(true); }); return subscription;
+            chrome.exitCode = 0; if (!releaseHangs) setImmediate(() => { events.push('released'); finish(true); }); return subscription;
         } };
         if (name === './chrome-mac-export-flow') return { exportMacChromeNotifications: async options => {
             events.push('export'); assert(events.includes('released')); assert.equal(options.subscription, subscription);
@@ -26,7 +26,8 @@ async function harness({ closeFails = false } = {}) {
         } };
         return require(name);
     };
-    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, setTimeout, clearTimeout });
+    const schedule = releaseHangs ? (callback, _delay) => setTimeout(callback, 10) : setTimeout;
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, setTimeout: schedule, clearTimeout });
     const ui = { confirmOpen: async () => true, confirmNotifications: async () => true,
         retryCapture: async () => true, confirmKeychain: async () => true, confirmSave: async () => null };
     return { run: module.exports.runMacChromeSetup, ui, events };
@@ -35,6 +36,11 @@ test('setup retries capture, waits for browser cleanup and then exports locally'
     const h = await harness(); const result = await h.run({ ui: h.ui });
     assert.equal(result.state, 'saved'); assert.equal(result.uploaded, false);
     assert.deepEqual(h.events, ['open', 'capture', 'capture', 'released', 'export', 'stop']);
+});
+test('setup stops without exporting when browser cleanup never completes', async () => {
+    const h = await harness({ releaseHangs: true });
+    await assert.rejects(h.run({ ui: h.ui }), { code: 'X_CHROME_MAC_SETUP_CLEANUP_FAILED' });
+    assert.deepEqual(h.events, ['open', 'capture', 'capture', 'stop']);
 });
 test('cancelling before or after browser launch stops only the created session', async () => {
     const first = await harness(); first.ui.confirmOpen = async () => false;

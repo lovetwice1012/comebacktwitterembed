@@ -25,7 +25,12 @@ async function runMacChromeSetup({ rootPath, profileId, helperPath, expectedSha2
         }
         // Capture closes the dedicated browser. Wait for the broker to release
         // its profile lock before opening either notification store.
-        if (await broker.releaseComplete !== true) throw fail('X_CHROME_MAC_SETUP_CLEANUP_FAILED');
+        let releaseTimer;
+        try {
+            const released = await Promise.race([broker.releaseComplete,
+                new Promise(resolve => { releaseTimer = setTimeout(() => resolve(false), 10000); })]);
+            if (released !== true) throw fail('X_CHROME_MAC_SETUP_CLEANUP_FAILED');
+        } finally { clearTimeout(releaseTimer); }
         if (await ui.confirmKeychain() !== true) return { state: 'cancelled' };
         return await exportMacChromeNotifications({ rootPath, profileId, helperPath, expectedSha256, subscription,
             browserVersion: broker.engineVersion, keychainConfirmed: true, confirmSave: ui.confirmSave });
