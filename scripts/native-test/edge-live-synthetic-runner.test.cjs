@@ -23,6 +23,10 @@ test('reimport requires the takeover scenario', { skip: process.platform !== 'wi
   expectRefusal(['-TestOnly', '-Reimport']);
 });
 
+test('offline delivery requires the reimport and takeover scenario', { skip: process.platform !== 'win32' }, () => {
+  expectRefusal(['-TestOnly', '-OfflineMessage']);
+});
+
 test('refuses to run without the disposable database', { skip: process.platform !== 'win32' }, (t) => {
   const inspect = spawnSync('docker', ['inspect', 'cbte-edge-live-synthetic-20261111'], {
     stdio: 'ignore', windowsHide: true, timeout: 10000,

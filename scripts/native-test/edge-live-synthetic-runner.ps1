@@ -1,6 +1,6 @@
-param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport)
+param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($Reimport -and -not $Takeover)) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport)) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }
@@ -25,6 +25,7 @@ $items.Add('NODE_ENV=test'); $items.Add('NODE_PATH=' + $deps); $items.Add('AUTOM
 foreach ($name in @('EDGE_PROBE_DATABASE','EDGE_PROBE_REAL_WNS','EDGE_PROBE_RELAY_CALIBRATION','EDGE_PROBE_CALIBRATION_RUNNER')) { $items.Add($name + '=1') }
 if ($Takeover) { $items.Add('EDGE_PROBE_TAKEOVER=1'); $items.Add('EDGE_PROBE_BLOCK_WNS=1') }
 if ($Reimport) { $items.Add('EDGE_PROBE_REIMPORT=1') }
+if ($OfflineMessage) { $items.Add('EDGE_PROBE_OFFLINE_MESSAGE=1') }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $probe = [IO.Path]::Combine($repo, 'experiments', 'chrome-push', 'edge-broker-pipe-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $probe + '"'), $repo, $environment)
@@ -41,6 +42,7 @@ try {
         $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true -or $result.otherSiteConsentRequired -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     if ($Reimport -and ($result.takeoverResult.receivedInNewWorkerProcess -ne $true -or
         $result.takeoverResult.receivedAfterForcedWorkerExit -ne $true)) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+    if ($OfflineMessage -and $result.takeoverResult.receivedSentWhileOffline -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     Write-Output $text
 } finally {
     try { $job.Stop() } finally { $job.Dispose() }

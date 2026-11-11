@@ -44,7 +44,7 @@ async function terminateReadySyntheticWorker({ schema, identity, privateKey }) {
         }
     }
 }
-async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotification }) {
+async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotification, expectedText = 'synthetic-after-process-restart' }) {
     const { fork } = require('node:child_process');
     const child = fork(path.join(__dirname, 'edge-synthetic-restart-child.cjs'), [],
         { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true, env: { ...process.env, NODE_ENV: 'test' } });
@@ -60,7 +60,7 @@ async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotifi
                 else reject(new Error('PROBE_RESTART_FAILED'));
             });
             child.on('exit', code => code === 0 && ready && received ? resolve() : reject(new Error('PROBE_RESTART_FAILED')));
-            child.send({ schema, ...identity, privateKey }, error => { if (error) reject(new Error('PROBE_RESTART_FAILED')); });
+            child.send({ schema, ...identity, privateKey, expectedText }, error => { if (error) reject(new Error('PROBE_RESTART_FAILED')); });
         });
     } finally {
         clearTimeout(timeout);
@@ -78,10 +78,12 @@ async function main() {
     const calibrate = process.env.EDGE_PROBE_RELAY_CALIBRATION === '1';
     const takeover = process.env.EDGE_PROBE_TAKEOVER === '1';
     const reimport = process.env.EDGE_PROBE_REIMPORT === '1';
+    const offlineMessage = process.env.EDGE_PROBE_OFFLINE_MESSAGE === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
     if (reimport && (!takeover || process.env.EDGE_PROBE_BLOCK_WNS !== '1')) throw new Error('PROBE_MODE_INVALID');
+    if (offlineMessage && !reimport) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'edge-profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
@@ -443,6 +445,8 @@ async function main() {
                         takeoverResult.receivedInNewWorkerProcess = true;
                         await terminateReadySyntheticWorker({ schema: testDb.schema, identity,
                             privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+                        if (offlineMessage)
+                            await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-offline-queued' }), { TTL: 300 });
                         const claim = () => wnsGateway.store.claim({ ...identity, workerId: 'synthetic-edge-after-crash' });
                         let recoveredLease = await claim();
                         if (recoveredLease) { await wnsGateway.store.release(recoveredLease); throw new Error('PROBE_FORCED_EXIT_FAILED'); }
@@ -452,8 +456,11 @@ async function main() {
                         await wnsGateway.store.release(recoveredLease);
                         await verifyNewWorkerProcess({ schema: testDb.schema, identity,
                             privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }),
-                            sendNotification: () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-process-restart' }), { TTL: 60 }) });
+                            expectedText: offlineMessage ? 'synthetic-offline-queued' : 'synthetic-after-process-restart',
+                            sendNotification: offlineMessage ? async () => {} :
+                                () => webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-after-process-restart' }), { TTL: 60 }) });
                         takeoverResult.receivedAfterForcedWorkerExit = true;
+                        if (offlineMessage) takeoverResult.receivedSentWhileOffline = true;
                     }
                     realWnsWorkerTested = true;
                 } finally { clearTimeout(timer); controller.abort(); }

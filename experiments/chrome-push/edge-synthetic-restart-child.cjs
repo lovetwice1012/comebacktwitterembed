@@ -11,7 +11,8 @@ process.once('message', async input => {
     try {
         if (!input || !/^cbte_automation_test_[0-9a-f]{20}$/.test(input.schema)
             || !/^[0-9a-f-]{36}$/.test(input.subscriptionId) || input.ownerUserId !== '123456789'
-            || typeof input.privateKey !== 'string' || !input.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error();
+            || typeof input.privateKey !== 'string' || !input.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')
+            || input.expectedText !== undefined && !['synthetic-after-process-restart', 'synthetic-offline-queued'].includes(input.expectedText)) throw new Error();
         pool = mysql.createPool({ host: '127.0.0.1', port: 33621, user: 'root', password: '', database: input.schema,
             connectionLimit: 4, supportBigNumbers: true, bigNumberStrings: true });
         const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
@@ -33,7 +34,7 @@ process.once('message', async input => {
                 workerId: 'synthetic-edge-restarted-process', signal: controller.signal,
                 onSession: async () => { process.send({ state: 'ready' }); },
                 onReceived: async event => {
-                    if (event.payload?.text !== 'synthetic-after-process-restart') throw new Error();
+                    if (event.payload?.text !== (input.expectedText || 'synthetic-after-process-restart')) throw new Error();
                     received = true; process.send({ state: 'received' }); controller.abort();
                 } });
             if (!received) throw new Error();
