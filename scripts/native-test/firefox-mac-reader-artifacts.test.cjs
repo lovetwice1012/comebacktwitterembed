@@ -24,6 +24,19 @@ test('experimental Firefox artifact cleanup is bounded and preserves unsafe tree
         await fs.writeFile(path.join(idb, '2918063365piupsah.sqlite'), 'original-synthetic-db');
         const args = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper,
             expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex') };
+        const alreadyCancelled = new AbortController(); alreadyCancelled.abort();
+        await assert.rejects(withMacFirefoxSnapshot({ ...args, signal: alreadyCancelled.signal,
+            work: async () => assert.fail('cancelled work started') }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CANCELLED' });
+        const cancelled = new AbortController();
+        await assert.rejects(withMacFirefoxSnapshot({ ...args, signal: cancelled.signal, work: async ({ signal }) => {
+            assert.equal(signal.aborted, false); cancelled.abort(); assert.equal(signal.aborted, true);
+        } }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CANCELLED' });
+        assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-')));
+        assert.equal(await fs.readFile(path.join(idb, '2918063365piupsah.sqlite'), 'utf8'), 'original-synthetic-db');
+        const interrupted = new AbortController();
+        await assert.rejects(withMacFirefoxSnapshot({ ...args, signal: interrupted.signal, work: async () => {
+            interrupted.abort(); throw new Error('reader interrupted');
+        } }), { code: 'X_FIREFOX_MAC_SNAPSHOT_CANCELLED' });
         const generate = async snapshot => {
             await fs.mkdir(path.join(snapshot, 'cache2/entries'), { recursive: true });
             for (const dir of ['cache2/doomed', 'security_state', 'startupCache', 'storage/permanent/chrome/idb/2918063365piupsah.files'])

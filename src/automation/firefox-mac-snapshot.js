@@ -24,12 +24,18 @@ const READER_ARTIFACTS = new Map([
     [`storage/permanent/chrome/idb/${DB}.files`, 'directory'],
 ]);
 
-async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, experimentalReaderArtifacts = false }) {
-    if (typeof work !== 'function' || typeof experimentalReaderArtifacts !== 'boolean') throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
-    return withMacFirefoxLockedUaid({ rootPath, profileId, helperPath, expectedSha256, work: async ({ profilePath, uaid, signal }) => {
+async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, experimentalReaderArtifacts = false, signal: abortSignal }) {
+    if (typeof work !== 'function' || typeof experimentalReaderArtifacts !== 'boolean'
+        || abortSignal !== undefined && !(abortSignal instanceof AbortSignal)) throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
+    if (abortSignal?.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED');
+    return withMacFirefoxLockedUaid({ rootPath, profileId, helperPath, expectedSha256, work: async ({ profilePath, uaid, signal: lockSignal }) => {
+        const signal = abortSignal ? AbortSignal.any([lockSignal, abortSignal]) : lockSignal;
         const snapshot = path.join(rootPath, `firefox-snapshot-${randomBytes(16).toString('hex')}`);
         const created = []; let total = 0, count = 0, untrackedCreation = false, readerCompleted = false;
-        function check() { if (signal.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED'); }
+        function check() {
+            if (lockSignal.aborted) throw fail('X_CHROME_MAC_LOCK_LOST');
+            if (abortSignal?.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED');
+        }
         async function directory(filename) {
             check(); await fs.mkdir(filename, { mode: 0o700 }); untrackedCreation = true;
             const info = await fs.lstat(filename); created.push({ filename, info, directory: true }); untrackedCreation = false;
@@ -151,7 +157,9 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             check(); const result = await work({ snapshotPath: snapshot, uaid, signal });
             check(); readerCompleted = true; return result;
         } catch (error) {
-            if (/^X_FIREFOX_MAC_SNAPSHOT_[A-Z_]+$/.test(error?.code || '')) throw error;
+            if (lockSignal.aborted) throw fail('X_CHROME_MAC_LOCK_LOST');
+            if (abortSignal?.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED');
+            if (/^X_FIREFOX_MAC_SNAPSHOT_[A-Z_]+$/.test(error?.code || '') || error?.code === 'X_CHROME_MAC_LOCK_LOST') throw error;
             throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
         } finally {
             try { await cleanup(); } catch { throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED'); } // eslint-disable-line no-unsafe-finally
