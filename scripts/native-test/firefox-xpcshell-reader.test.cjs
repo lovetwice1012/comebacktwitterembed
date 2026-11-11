@@ -8,11 +8,12 @@ const { randomBytes } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const firefox = process.env.CBTE_XPCSHELL_FIREFOX;
 
-test('signed Firefox XPCShell reads a synthetic Push IndexedDB in a disposable profile',
+test('signed Firefox XPCShell reads a synthetic Push database copied between isolated profiles',
     { skip: process.platform !== 'win32' || !firefox, timeout: 45000 }, async t => {
         const parent = await fs.realpath(os.tmpdir());
         const base = path.join(parent, `cbte-xpcshell-isolated-${randomBytes(16).toString('hex')}`);
-        await fs.mkdir(base); await fs.mkdir(path.join(base, 'profile'));
+        await fs.mkdir(base); await fs.mkdir(path.join(base, 'seed')); await fs.mkdir(path.join(base, 'read'));
+        await fs.writeFile(path.join(base, 'seed', 'cookies.sqlite'), 'synthetic-cookie-sentinel');
         t.after(async () => {
             const real = await fs.realpath(base);
             assert.equal(path.dirname(real).toLowerCase(), parent.toLowerCase());
@@ -32,5 +33,8 @@ test('signed Firefox XPCShell reads a synthetic Push IndexedDB in a disposable p
         if (result.error) throw result.error;
         assert.equal(result.status, 0, result.stderr);
         assert.match(result.stdout, /SYNTHETIC_READ_OK/);
-        assert.equal(await fs.readFile(path.join(base, 'result.txt'), 'utf8'), 'CBTE_SYNTHETIC_READ_OK');
+        assert.equal(await fs.readFile(path.join(base, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
+        assert.equal(await fs.readFile(path.join(base, 'result-read.txt'), 'utf8'), 'CBTE_SYNTHETIC_READ_OK');
+        assert.equal(await fs.readFile(path.join(base, 'seed', 'cookies.sqlite'), 'utf8'), 'synthetic-cookie-sentinel');
+        await assert.rejects(fs.access(path.join(base, 'read', 'cookies.sqlite')), { code: 'ENOENT' });
     });

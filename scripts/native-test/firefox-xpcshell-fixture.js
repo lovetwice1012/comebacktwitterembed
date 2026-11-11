@@ -2,7 +2,8 @@
 'use strict';
 const directory = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
 directory.initWithPath(Services.env.get('CBTE_SYNTHETIC_PROFILE'));
-if (directory.leafName !== 'profile' || !directory.parent
+const mode = Services.env.get('CBTE_SYNTHETIC_MODE');
+if (!['seed', 'read'].includes(mode) || directory.leafName !== mode || !directory.parent
     || !/^cbte-xpcshell-isolated-[0-9a-f]{32}$/.test(directory.parent.leafName))
     throw new Error('SYNTHETIC_PROFILE_REQUIRED');
 const provider = {
@@ -26,7 +27,7 @@ load(Services.env.get('CBTE_SYNTHETIC_READER'));
 function report(status) {
     const target = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
     target.initWithPath(Services.env.get('CBTE_SYNTHETIC_RESULT'));
-    if (target.leafName !== 'result.txt' || !target.parent.equals(directory.parent)) throw new Error('SYNTHETIC_RESULT_REQUIRED');
+    if (target.leafName !== `result-${mode}.txt` || !target.parent.equals(directory.parent)) throw new Error('SYNTHETIC_RESULT_REQUIRED');
     const output = Cc['@mozilla.org/network/file-output-stream;1'].createInstance(Ci.nsIFileOutputStream);
     output.init(target, 0x8a, 0o600, 0);
     const writer = Cc['@mozilla.org/intl/converter-output-stream;1'].createInstance(Ci.nsIConverterOutputStream);
@@ -34,6 +35,7 @@ function report(status) {
 }
 let done = false;
 (async () => {
+  if (mode === 'seed') {
     const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
     const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
     const privateKey = await crypto.subtle.exportKey('jwk', pair.privateKey);
@@ -55,6 +57,8 @@ let done = false;
             tx.onerror = () => reject(tx.error);
         };
     });
+    report('CBTE_SYNTHETIC_SEED_OK'); done = true; return;
+  }
     const result = await ReadPushSubscription({ uaid: '22222222-2222-4222-8222-222222222222', expectedProfilePath: directory.path });
     if (!result.ok || result.otherSubscriptionCount !== 0 || result.export?.push?.scope !== 'https://x.com/')
         throw new Error(`READER_${result.errorCode || 'INVALID'}`);
