@@ -108,3 +108,5 @@ XPCShell読み取りスクリプトは、親から渡されたSHA-256と読み�
 Mac版Braveに向けて、インストール済み安定版の署名を確認する部品と、Chrome・Edge・Firefoxとは別の専用プロフィールおよび排他ロックを追加した。署名識別子とTeam IDは[Appleのブラウザー情報](https://github.com/apple/password-manager-resources/blob/main/quirks/web-browser-extension-distribution-information.json)に基づく。Linuxの合成環境で署名失敗の扱い、他ブラウザーとの取り違え、プロフィール情報の欠落、同時利用を検証した。BraveのMac版が実際に使うPush登録情報・製品カテゴリ・Keychain・受信抑制、署名確認と画面操作は未検証で、登録・配布・サーバー受信には接続していない。値を推測してMac版Braveを有効化しない。
 
 Mac版Braveの署名検証済み実行ファイルと専用プロフィールを、既存のChromium用ローカルブローカーへ渡す試験用処理を追加した。二重起動を防ぐロックは子プロセスの `close` まで保持し、起動途中の失敗でも終了前に解放しない。合成プロセスで署名拒否、他ブラウザーのプロフィール拒否、二重起動と終了待ちを確認した。子プロセスの `close` だけで全子孫の終了を証明できるわけではなく、Mac版Braveの実際の通知受信抑制、Push形式、バージョン・鍵、実機でのプロセス構成は未検証である。配布画面や受信処理には接続していない。
+
+Braveの[公開ソース](https://github.com/brave/brave-core/blob/39c680d789efc7a2d21a14b093d899fad66d0c11/chromium_src/components/os_crypt/common/keychain_password_mac.mm)で、通常起動時のKeychain項目がサービス `Brave Safe Storage`・アカウント `Brave` であることを確認した。明示同意後にその固定項目だけを読み、処理後に受け渡し用バッファーを消去する試験用部品を追加した。Chromeとは項目を分け、拒否・中断時の扱いを模擬した。Chromiumと同じ通知ストア配置を前提にロックを試みる実験経路も追加し、Linuxの合成LevelDBで競合を確認した。Mac版Braveの実際のストア配置、Keychain権限、Pushの製品カテゴリと受信抑制は未検証で、配布アプリには接続していない。

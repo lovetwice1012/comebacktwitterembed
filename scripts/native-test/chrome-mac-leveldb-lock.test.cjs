@@ -9,7 +9,7 @@ const { once } = require('node:events');
 const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
 const { createHash, createCipheriv, createECDH, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
-const { createMacChromeProfile, createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
+const { createMacChromeProfile, createMacEdgeProfile, createMacBraveProfile } = require('../../src/automation/chrome-mac-profile');
 const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('../../src/automation/chrome-mac-profile-lease');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
 const { withMacChromeSnapshot, withMacEdgeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
@@ -19,6 +19,30 @@ const { parseUniqueJson } = require('../../src/automation/strict-json');
 const helper = process.env.MAC_LOCK_HELPER;
 function vint(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
 function field(n, value) { const b = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([vint(n * 8 + 2), vint(b.length), b]); }
+
+test('experimental Brave profile locks both assumed Chromium stores and rejects Chrome profiles', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
+    const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-brave-lock-'));
+    t.after(async () => {
+        const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
+        assert.match(path.basename(real), /^cbte-mac-brave-lock-/); await fs.rm(real, { recursive: true });
+    });
+    const brave = await createMacBraveProfile(base), chrome = await createMacChromeProfile(base);
+    const store = path.join(brave.profilePath, 'Default', 'GCM Store'), encryption = path.join(store, 'Encryption');
+    await fs.mkdir(encryption, { recursive: true });
+    for (const directory of [store, encryption]) { const db = new ClassicLevel(directory); await db.put('test', 'synthetic'); await db.close(); }
+    const args = { rootPath: brave.rootPath, profileId: brave.profileId, browser: 'brave', helperPath: helper,
+        expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex') };
+    await assert.rejects(withMacStoreLocks({ ...args, rootPath: chrome.rootPath, profileId: chrome.profileId, work: async () => {} }),
+        { code: 'X_CHROME_MAC_PROFILE_INVALID' });
+    await withMacStoreLocks({ ...args, work: async ({ profilePath, signal }) => {
+        assert.equal(profilePath, brave.profilePath); assert.equal(signal.aborted, false);
+        for (const directory of [store, encryption]) {
+            const db = new ClassicLevel(directory, { createIfMissing: false });
+            try { await assert.rejects(db.open(), error => error.code === 'LEVEL_LOCKED' || /lock/i.test(String(error.cause?.message || error.message))); }
+            finally { await db.close().catch(() => {}); }
+        }
+    } });
+});
 
 function runLock(...locks) {
     const child = spawn(helper, locks, { stdio: ['pipe', 'pipe', 'pipe'] });

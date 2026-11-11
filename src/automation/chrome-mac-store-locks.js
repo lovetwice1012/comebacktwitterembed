@@ -39,7 +39,7 @@ async function lockFilePaths(profilePath, browser) {
     return [path.join(store, 'LOCK'), path.join(store, 'Encryption', 'LOCK')];
 }
 async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work, browser = 'chrome', profileLease }) {
-    if (typeof work !== 'function' || !['chrome', 'edge', 'firefox'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
+    if (typeof work !== 'function' || !['chrome', 'edge', 'brave', 'firefox'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
     const ownsLease = profileLease === undefined; let lease = profileLease, operation, child, exited, closing = false, acquired = false;
     const controller = new AbortController();
     try {
@@ -100,7 +100,11 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
             try { await exited; } finally { clearTimeout(timer); }
         }
         operation?.end();
-        if (ownsLease && lease) try { await releaseMacProfileLease(lease); } catch { throw fail('X_CHROME_MAC_LOCK_CLEANUP_FAILED'); }
+        if (ownsLease && lease) try { await releaseMacProfileLease(lease); } catch {
+            // A failed release must override success; the lock may remain held.
+            // eslint-disable-next-line no-unsafe-finally
+            throw fail('X_CHROME_MAC_LOCK_CLEANUP_FAILED');
+        }
     }
 }
 module.exports = { withMacStoreLocks };

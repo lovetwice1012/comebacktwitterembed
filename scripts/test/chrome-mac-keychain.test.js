@@ -23,8 +23,23 @@ async function harness(mode) {
     } } : require(name);
     vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, Buffer, AbortSignal, setTimeout, clearTimeout,
         process: { platform: 'darwin' } });
-    return { invoke: module.exports.withMacChromeKeychainPassword, calls: () => calls, args: () => argumentsSeen, killed: () => killed };
+    return { invoke: module.exports.withMacChromeKeychainPassword, brave: module.exports.withMacBraveKeychainPassword,
+        calls: () => calls, args: () => argumentsSeen, killed: () => killed };
 }
+test('Brave keychain access requires consent and selects only the fixed Brave item', async () => {
+    const h = await harness('good'); let borrowed;
+    await assert.rejects(h.brave({ confirmed: false, work: async () => {} }), { code: 'X_BRAVE_MAC_KEYCHAIN_INVALID' });
+    assert.equal(h.calls(), 0);
+    assert.equal(await h.brave({ confirmed: true, work: async password => { borrowed = password; assert.equal(password.toString(), 'synthetic-secret'); return 'done'; } }), 'done');
+    assert(borrowed.every(byte => byte === 0));
+    assert.equal(h.args().file, '/usr/bin/security');
+    assert.deepEqual(Array.from(h.args().args), ['find-generic-password', '-s', 'Brave Safe Storage', '-a', 'Brave', '-w']);
+    const denied = await harness('denied');
+    await assert.rejects(denied.brave({ confirmed: true, work: async () => {} }), { code: 'X_BRAVE_MAC_KEYCHAIN_UNAVAILABLE' });
+    const hung = await harness('hang'), controller = new AbortController();
+    const pending = hung.brave({ confirmed: true, signal: controller.signal, work: async () => {} });
+    controller.abort(); await assert.rejects(pending, { code: 'X_BRAVE_MAC_KEYCHAIN_CANCELLED' }); assert.equal(hung.killed(), true);
+});
 test('keychain access requires consent, reads only the fixed item and clears the supplied buffer', async () => {
     const h = await harness('good'); let borrowed;
     await assert.rejects(h.invoke({ confirmed: false, work: async () => {} }), { code: 'X_CHROME_MAC_KEYCHAIN_INVALID' });
