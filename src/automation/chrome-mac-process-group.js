@@ -8,7 +8,12 @@ async function waitForMacProcessGroupExit(pid, { timeoutMs = 8000, intervalMs = 
     const deadline = Date.now() + timeoutMs;
     for (;;) {
         try { process.kill(-pid, 0); }
-        catch (error) { if (error?.code === 'ESRCH') return true; return false; }
+        catch (error) {
+            if (error?.code === 'ESRCH') return true;
+            // EPERM proves nothing about shutdown. The group may be in a
+            // short-lived transition; keep waiting, never treat it as gone.
+            if (error?.code !== 'EPERM') return false;
+        }
         const remaining = deadline - Date.now();
         if (remaining <= 0) return false;
         await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, remaining)));
