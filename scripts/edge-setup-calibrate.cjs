@@ -30,7 +30,7 @@ async function main() {
             helperPath: path.resolve(__dirname, 'EdgePeerVerify.ps1') });
         if (!await peer.verifyExecutable(input.edgePath)) throw invalid();
         const result = await runEdgeCalibration({ rootPath: input.rootPath, token: input.token, edgePath: input.edgePath, pfx,
-            passphrase: input.passphrase, certificate, captureIdentity: peer.captureIdentity, authorizePeer: peer.authorizePeer, signal: controller.signal });
+            passphrase: input.passphrase, certificate, captureIdentity: peer.captureIdentity, authorizePeer: peer.authorizePeer, signal: controller.signal, captureAgent: true });
         process.stdout.write(JSON.stringify({ ok: true, ...result }));
     } finally {
         process.removeListener('SIGINT', abort); process.removeListener('SIGTERM', abort);

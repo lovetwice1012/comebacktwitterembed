@@ -15,7 +15,7 @@ $ErrorActionPreference='Stop'
 $request=[pscustomobject]@{ action=$Action; privateRoot=$PrivateRoot; outputPath=$OutputPath;
     prompt=[bool]$PromptForOtherNotifications; allow=[bool]$AllowOtherNotifications }
 $packageRoot=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$packageVersion='0.1.0-edge-preview.9'
+$packageVersion='0.1.0-edge-preview.10'
 function Assert-EdgeBootstrapPath([string]$Path) {
     $current=[IO.Path]::GetPathRoot($Path)
     foreach($part in $Path.Substring($current.Length).Split([char]92)) {
@@ -147,7 +147,7 @@ try {
             . ([IO.Path]::Combine($script:PackageRoot,'EdgeCalibration.ps1'))
             $calibration=Invoke-XEdgeCalibration -EdgePath $edge -BrowserVersion $launch.browserVersion
             . ([IO.Path]::Combine($script:PackageRoot,'EdgeExport.ps1'))
-            Export-XEdgeTransfer -Capture $capture.subscription -Agent $calibration.agent -Client $calibration.client -BrowserVersion $launch.browserVersion -OutputPath $target `
+            Export-XEdgeTransfer -Capture $capture.subscription -Agent $calibration.agent -Client $calibration.client -ConnectVersion $calibration.connectVersion -BrowserVersion $launch.browserVersion -OutputPath $target `
                 -PromptForOtherNotifications:$PromptForOtherNotifications -AllowOtherNotifications:$AllowOtherNotifications
         }
         $active=if($null -ne $owner){$null -ne (Get-ActiveLaunch $owner)}else{$false}

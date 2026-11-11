@@ -121,9 +121,9 @@ function Invoke-Helper([string]$name,$inputObject) {
 }
 . ${quoted(path.join(pkg, 'EdgeExport.ps1'))}
 $input=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${quoted(encoded)}))|ConvertFrom-Json
-$rejected=$false; try { Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} } catch { $rejected=$_.Exception.Message -like 'X_EDGE_OTHER_CONSENT_REQUIRED:*' }
+$rejected=$false; try { Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -ConnectVersion '2' -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} } catch { $rejected=$_.Exception.Message -like 'X_EDGE_OTHER_CONSENT_REQUIRED:*' }
 if (-not $rejected -or (Test-Path -LiteralPath ${quoted(output)})) { throw 'consent bypassed' }
-Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} -AllowOtherNotifications
+Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -ConnectVersion '2' -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} -AllowOtherNotifications
 if (-not (Test-Path -LiteralPath ${quoted(output)})) { throw 'file missing' }
 if (@(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-snapshot-*').Count -ne 0) { throw 'scratch remains' }
 'ok'`;
@@ -131,6 +131,6 @@ if (@(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-snapshot-
         { encoding: 'utf8', windowsHide: true, timeout: 25000 });
     assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /ok/);
     const saved = JSON.parse(await fs.readFile(output, 'utf8'));
-    assert.equal(saved.version, 3); assert.equal(saved.push.p256dhPublicKey, capture.keys.p256dh);
+    assert.equal(saved.version, 3); assert.equal(saved.push.p256dhPublicKey, capture.keys.p256dh); assert.equal(saved.push.connectVersion, '2');
     assert(!JSON.stringify(saved).includes('other.example'));
 });

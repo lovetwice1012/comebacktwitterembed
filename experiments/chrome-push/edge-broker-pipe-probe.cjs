@@ -182,7 +182,7 @@ async function main() {
         }
         if (!captured || captured.endpoint !== expected.endpoint || captured.keys.p256dh !== expected.keys.p256dh
             || captured.keys.auth !== expected.keys.auth || captured.applicationServerKey !== vapid.publicKey) throw new Error('PROBE_CAPTURE_MISMATCH');
-        let calibrationMetadata;
+        let calibrationMetadata, calibrationAgent, calibrationVersion;
         if (process.env.EDGE_PROBE_RELAY_CALIBRATION === '1') {
             stage = 'calibration';
             if (process.env.EDGE_PROBE_CALIBRATION_RUNNER === '1') {
@@ -197,7 +197,7 @@ async function main() {
                 const output = execute(command); if (output.status !== 0) throw new Error('PROBE_CERT_FAILED');
                 const cert = JSON.parse(output.stdout); calibrationPfx = Buffer.from(cert.pfx, 'base64');
                 const calibrated = await require('../../src/automation/edge-calibration-runner').runEdgeCalibration({ rootPath: calibrationRoot, token: calibrationToken, edgePath: edge,
-                    pfx: calibrationPfx, passphrase: cert.password, certificate: Buffer.from(cert.certificate, 'base64'),
+                    pfx: calibrationPfx, passphrase: cert.password, certificate: Buffer.from(cert.certificate, 'base64'), captureAgent: versionTwo,
                     captureIdentity: async pid => {
                         const source = `$ErrorActionPreference='Stop'; $p=Get-Process -Id ${pid}; try {if ([IO.Path]::GetFullPath($p.Path) -ine '${executable}') {exit 1}; $p.StartTime.ToUniversalTime().Ticks.ToString()} finally {$p.Dispose()}`;
                         const value = execute(source); if (value.status !== 0) throw new Error('PROBE_PEER_AUTH_FAILED'); return (value.stdout || '').trim();
@@ -208,6 +208,10 @@ async function main() {
                     } });
                 if (calibrated.browserVersion !== browserProduct.split('/')[1]) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
                 calibrationMetadata = calibrated.client;
+                if (versionTwo) {
+                    if (calibrated.connectVersion !== '2' || !calibrated.agent) throw new Error('PROBE_VERSION_MISMATCH');
+                    calibrationAgent = calibrated.agent; calibrationVersion = calibrated.connectVersion;
+                }
             } else {
             // A separate disposable profile is calibrated. The profile whose
             // notification settings will be exported never uses the relay.
@@ -311,7 +315,8 @@ async function main() {
         let result;
         try {
             result = await readEdgeSnapshot({ snapshotPath, token, expected: observed, browserVersion: browserProduct.split('/')[1],
-                agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+                agent: calibrationAgent || { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+                ...(versionTwo ? { connectVersion: calibrationVersion } : {}),
                 client: calibrationMetadata || { channel: realWns ? process.env.EDGE_PROBE_SYNTHETIC_CHANNEL : 'abc', protocolVersion: realWns ? process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL : '1.0',
                     clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
@@ -339,9 +344,9 @@ async function main() {
             + `$script:Root=$env:CBTE_EDGE_EXPORT_ROOT; $script:Profile=[IO.Path]::Combine($script:Root,'edge-profile'); `
             + `. '${packageExport}'; $inputData=[Console]::In.ReadToEnd()|ConvertFrom-Json; `
             + `Export-XEdgeTransfer -Capture $inputData.capture -Agent $inputData.agent -Client $inputData.client `
-            + `-BrowserVersion $inputData.browserVersion -OutputPath $env:CBTE_EDGE_EXPORT_FILE`;
+            + `-ConnectVersion $inputData.connectVersion -BrowserVersion $inputData.browserVersion -OutputPath $env:CBTE_EDGE_EXPORT_FILE`;
         const exportInput = JSON.stringify({ capture: { ...captured, scope: 'https://x.com/' },
-            agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+            agent: calibrationAgent || { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' }, connectVersion: calibrationVersion || '1',
             client: calibrationMetadata || { channel: process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || 'abc',
                 protocolVersion: process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
             browserVersion: browserProduct.split('/')[1] });
@@ -375,9 +380,7 @@ async function main() {
         if (!require('node:util').isDeepStrictEqual(exported, result.file)) throw new Error('PROBE_PACKAGE_EXPORT_FAILED');
         if ((await fs.readdir(exportRoot)).some(name => name.startsWith('edge-snapshot-'))) throw new Error('PROBE_SNAPSHOT_CLEANUP_FAILED');
         // The gateway below receives the same data read from the exported file.
-        // The current Windows package exports the legacy format. Add the
-        // observed version only in this fixture until that exporter is ready.
-        result.file = versionTwo ? { ...exported, push: { ...exported.push, connectVersion: '2' } } : exported;
+        result.file = exported;
         await fs.unlink(outputPath);
         const cleanupCommand = `$ErrorActionPreference='Stop'; . '${shared}' -Browser edge -LibraryOnly; . '${snapshotScript}'; `
             + `Remove-XEdgeSnapshot -Snapshot $env:CBTE_EDGE_FIXTURE_SNAPSHOT -Token $env:CBTE_EDGE_FIXTURE_TOKEN -PrivateRoot $env:CBTE_EDGE_FIXTURE_ROOT`;

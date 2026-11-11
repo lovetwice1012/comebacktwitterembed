@@ -13,9 +13,11 @@ X 以外の通知が届く可能性がある場合、保存前に確認します
 function Export-XEdgeTransfer {
     param([Parameter(Mandatory=$true)] $Capture, [Parameter(Mandatory=$true)] $Agent,
           [Parameter(Mandatory=$true)] $Client, [Parameter(Mandatory=$true)][string] $BrowserVersion,
+          [string] $ConnectVersion = '1',
           [Parameter(Mandatory=$true)][string] $OutputPath, [switch] $PromptForOtherNotifications,
           [switch] $AllowOtherNotifications)
 
+    if (@('1','2') -cnotcontains $ConnectVersion) { Fail-Safely 'X_EDGE_CALIBRATION_FAILED' '接続情報を確認できません。' }
     $target = Get-LocalPath $OutputPath
     Assert-SafePath $target
     if ((Test-InPath $target $script:Root) -or (Test-InPath $target $script:PackageRoot) -or
@@ -29,11 +31,13 @@ function Export-XEdgeTransfer {
     . ([IO.Path]::Combine($script:PackageRoot, 'EdgeSnapshot.ps1'))
     $snapshot = Copy-XEdgeSnapshot -ProfileRoot $script:Profile -PrivateRoot $script:Root
     try {
-        $reader = Invoke-Helper 'EdgeReader.cjs' ([ordered]@{
+        $request = [ordered]@{
             snapshotPath = $snapshot.path; token = $snapshot.token; browserVersion = $BrowserVersion; agent = $Agent; client = $Client
             expected = [ordered]@{ endpoint = $Capture.endpoint; publicKey = $Capture.keys.p256dh; auth = $Capture.keys.auth
                 applicationServerKey = $Capture.applicationServerKey }
-        })
+        }
+        if ($ConnectVersion -ceq '2') { $request.connectVersion = '2' }
+        $reader = Invoke-Helper 'EdgeReader.cjs' $request
         if ($reader.ok -ne $true -or $reader.file.version -ne 3 -or $reader.file.provenance.kind -cne 'edge-wns' -or
             $reader.otherSubscriptionCount -isnot [int] -or $reader.otherSubscriptionCount -lt 0 -or $reader.otherSubscriptionCount -gt 127 -or
             $reader.unclassifiedRecordCount -isnot [int] -or $reader.unclassifiedRecordCount -lt 0 -or $reader.unclassifiedRecordCount -gt 127 -or
@@ -41,6 +45,7 @@ function Export-XEdgeTransfer {
             $reader.otherNotificationsPossible -ne ($reader.otherSubscriptionCount -gt 0 -or $reader.unclassifiedRecordCount -gt 0)) {
             Fail-Safely 'X_EDGE_READER_FAILED' 'X の通知情報を確認できませんでした。通知設定を確認してください。'
         }
+        if ($ConnectVersion -ceq '2' -and $reader.file.push.connectVersion -cne '2') { Fail-Safely 'X_EDGE_READER_FAILED' '接続情報を確認できませんでした。' }
         $document = $reader.file | ConvertTo-Json -Depth 12 -Compress
     } finally { Remove-XEdgeSnapshot -Snapshot $snapshot.path -Token $snapshot.token -PrivateRoot $script:Root }
 

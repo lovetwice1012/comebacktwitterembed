@@ -32,6 +32,8 @@ function Invoke-Helper([string]$name,$inputObject) { if ($name -cne 'EdgeReader.
 . ${quoted(path.join(pkg, 'EdgeExport.ps1'))}
 $capture=[pscustomobject]@{ scope='https://x.com/'; endpoint='https://fixture';applicationServerKey='fixture';keys=[pscustomobject]@{p256dh='fixture';auth='fixture'} }
 $agent=[pscustomobject]@{}; $client=[pscustomobject]@{}
+$badVersion=$false; try { Export-XEdgeTransfer -Capture $capture -Agent $agent -Client $client -ConnectVersion '3' -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} -AllowOtherNotifications } catch { $badVersion=$_.Exception.Message -like 'X_EDGE_CALIBRATION_FAILED:*' }
+if (-not $badVersion -or (Test-Path -LiteralPath ${quoted(output)})) { throw 'unknown connect version accepted' }
 $rejected=$false; try { Export-XEdgeTransfer -Capture $capture -Agent $agent -Client $client -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} } catch { $rejected=$_.Exception.Message -like 'X_EDGE_OTHER_CONSENT_REQUIRED:*' }
 if (-not $rejected -or (Test-Path -LiteralPath ${quoted(output)})) { throw 'consent bypassed' }
 if (@(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-snapshot-*').Count -ne 0) { throw 'scratch remains' }

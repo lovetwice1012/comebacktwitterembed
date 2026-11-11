@@ -28,12 +28,12 @@ async function checkRoot(rootPath, token) {
         || (await fs.readdir(profile)).length !== 0) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     return profile;
 }
-/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function, platform?:'windows'|'macos'}} options */
-async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn, platform = 'windows' }) {
+/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function, platform?:'windows'|'macos', captureAgent?:boolean}} options */
+async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn, platform = 'windows', captureAgent = false }) {
     if (!['windows', 'macos'].includes(platform) || typeof edgePath !== 'string' || !path.isAbsolute(edgePath)
         || path.basename(edgePath).toLowerCase() !== (platform === 'macos' ? 'microsoft edge' : 'msedge.exe')
         || !Buffer.isBuffer(pfx) || !Buffer.isBuffer(certificate) || typeof captureIdentity !== 'function' || typeof authorizePeer !== 'function'
-        || typeof spawnBrowser !== 'function' || signal !== undefined && !(signal instanceof AbortSignal)
+        || typeof spawnBrowser !== 'function' || typeof captureAgent !== 'boolean' || signal !== undefined && !(signal instanceof AbortSignal)
         || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     let profile, pageServer, relay, browser, pipe, version, spki, closing; const controller = new AbortController();
     let abortCode = 'X_EDGE_CALIBRATION_STOPPED';
@@ -94,7 +94,7 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         version = await wait(initial.pipe.ready()); await wait(initial.pipe.prepareCalibration(publicKey)); await wait(closeBrowser());
         if (controller.signal.aborted) throw fail(abortCode);
         let identityPromise;
-        relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), captureAgent: platform === 'macos', authorizePeer: async ports => {
+        relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), captureAgent: platform === 'macos' || captureAgent, authorizePeer: async ports => {
             const identity = await identityPromise;
             // macOS identity uses the process start seconds and six-digit
             // microseconds reported by proc_bsdinfo, never PID alone.
@@ -109,7 +109,7 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         const secondVersion = await wait(resumed.pipe.ready());
         if (secondVersion !== version) throw fail('X_EDGE_CALIBRATION_BROWSER_CHANGED');
         const [metadata] = await wait(Promise.all([relay.metadata, identityPromise]));
-        return platform === 'macos' ? { browserVersion: version, connectVersion: metadata.connectVersion, agent: metadata.agent, client: metadata.client }
+        return platform === 'macos' || captureAgent ? { browserVersion: version, connectVersion: metadata.connectVersion, agent: metadata.agent, client: metadata.client }
             : { browserVersion: version, client: metadata };
     } catch (error) {
         if (controller.signal.aborted) throw fail(abortCode);

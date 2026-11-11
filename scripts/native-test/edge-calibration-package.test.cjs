@@ -28,6 +28,7 @@ test('bundled Edge calibration obtains metadata using only an owned synthetic pr
     const result = spawnSync(process.execPath, [path.join(pkg, 'EdgeCalibrate.cjs')], { input: JSON.stringify(input), encoding: 'utf8', windowsHide: true, env, timeout: 75000 });
     assert.equal(result.status, 0, result.stderr || 'calibration failed');
     const resultData = JSON.parse(result.stdout); assert.equal(resultData.ok, true); assert.match(resultData.browserVersion, /^\d+\.\d+\.\d+\.\d+$/);
+    assert(['1', '2'].includes(resultData.connectVersion)); assert.equal(typeof resultData.agent.os, 'string');
     assert.match(resultData.client.channel, /^[0-9a-f]{1,16}$/i); assert(!result.stdout.includes(cert.pfx)); assert(!result.stdout.includes(cert.passphrase));
     const retry = spawnSync(process.execPath, [path.join(pkg, 'EdgeCalibrate.cjs')], { input: JSON.stringify(input), encoding: 'utf8', windowsHide: true, env, timeout: 15000 });
     assert.notEqual(retry.status, 0); assert.equal(JSON.parse(retry.stdout).errorCode, 'X_EDGE_CALIBRATION_CONFIG_INVALID');
@@ -56,7 +57,7 @@ try { $read=$job.ReadLimitedAsync(16384);$write=$job.WriteAndCloseAsync($inputBy
     assert.equal(viaJob.status, 0, viaJob.stderr || 'job calibration failed');
     const jobResult = JSON.parse(viaJob.stdout); assert.equal(jobResult.ok, true); assert.equal(jobResult.browserVersion, resultData.browserVersion);
     assert(!viaJob.stdout.includes(cert.pfx)); assert(!viaJob.stdout.includes(cert.passphrase));
-    await fs.link(process.execPath, path.join(pkg, 'ChromeNode.exe'));
+    await fs.copyFile(process.execPath, path.join(pkg, 'ChromeNode.exe'));
     const owned = path.join(root, 'owned'), version = resultData.browserVersion;
     const wrapperScript = `$ErrorActionPreference='Stop';$script:Root=${quoted(owned)};$script:PackageRoot=${quoted(pkg)}
 $script:Utf8=New-Object Text.UTF8Encoding($false);$script:UserSid=[Security.Principal.WindowsIdentity]::GetCurrent().User
@@ -82,5 +83,6 @@ $value|ConvertTo-Json -Compress`;
     const wrapper = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(wrapperScript, 'utf16le').toString('base64')],
         { encoding: 'utf8', windowsHide: true, env, timeout: 75000 });
     assert.equal(wrapper.status, 0, wrapper.stderr || 'wrapper calibration failed');
-    const wrapperResult = JSON.parse(wrapper.stdout); assert(wrapperResult.client.channel); assert.equal(wrapperResult.agent.os, 'Windows');
+    const wrapperResult = JSON.parse(wrapper.stdout); assert(wrapperResult.client.channel); assert.equal(typeof wrapperResult.agent.os, 'string');
+    assert(['1', '2'].includes(wrapperResult.connectVersion));
 });

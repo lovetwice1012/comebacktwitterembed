@@ -28,13 +28,16 @@ async function main() {
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
             process.stdout.write(JSON.stringify({ ok: true, ...result })); return;
         }
-        exact(input, ['snapshotPath', 'token', 'expected', 'browserVersion', 'agent', 'client']);
+        const hasVersion = Object.hasOwn(input, 'connectVersion');
+        exact(input, ['snapshotPath', 'token', 'expected', 'browserVersion', 'agent', 'client', ...(hasVersion ? ['connectVersion'] : [])]);
+        if (hasVersion && input.connectVersion !== '2') throw invalid();
         exact(input.expected, ['endpoint', 'publicKey', 'auth', 'applicationServerKey']);
         const take = (value, length) => { const result = decode(value, length); decoded.push(result); return result; };
         const expected = { endpoint: input.expected.endpoint, publicKey: take(input.expected.publicKey, 65),
             auth: take(input.expected.auth, 16), applicationServerKey: take(input.expected.applicationServerKey, 65) };
         const result = await readEdgeSnapshot({ snapshotPath: input.snapshotPath, token: input.token, expected,
             browserVersion: input.browserVersion, agent: input.agent, client: input.client,
+            ...(hasVersion ? { connectVersion: '2' } : {}),
             dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         process.stdout.write(JSON.stringify({ ok: true, ...result }));
     } finally { for (const chunk of chunks) chunk.fill(0); combined?.fill(0); for (const item of decoded) item.fill(0); }

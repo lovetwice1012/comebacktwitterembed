@@ -157,24 +157,22 @@ async function main() {
             diagnostic = { bodyBytes: body.length, tags, version, hasWhitespace: /[\r\n\t]/.test(text) }; throw error;
         }
     } };
-    const relayId = require.resolve('../../src/automation/edge-calibration-relay'), relay = require(relayId);
-    require.cache[relayId].exports = { ...relay, createEdgeCalibrationRelay: options => relay.createEdgeCalibrationRelay({ ...options, captureAgent: true }) };
     const { runEdgeCalibration } = require('../../src/automation/edge-calibration-runner');
     try {
         const result = await withMacEdgeEphemeralCertificate(material => runEdgeCalibration({ rootPath, token, edgePath, ...material,
-            captureIdentity: peer.captureIdentity, authorizePeer: peer.authorizePeer, timeoutMs: 60000 }));
-        if (!result.client?.agent || !result.client?.client || !['1', '2'].includes(result.client.connectVersion)) throw new Error('PROBE_METADATA_INVALID');
+            captureIdentity: peer.captureIdentity, authorizePeer: peer.authorizePeer, timeoutMs: 60000, captureAgent: true }));
+        if (!result.agent || !result.client || !['1', '2'].includes(result.connectVersion)) throw new Error('PROBE_METADATA_INVALID');
         const connections = process.env.CBTE_EDGE_PROBE_CONNECT_VERSIONS === '1'
-            ? [await probeConnectVersion(result.client.agent, '1'), await probeConnectVersion(result.client.agent, '2')] : undefined;
+            ? [await probeConnectVersion(result.agent, '1'), await probeConnectVersion(result.agent, '2')] : undefined;
         const requestedAuth = process.env.CBTE_EDGE_PROBE_AUTH_VERSION;
         if (['1', '2'].includes(requestedAuth) && process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1') throw new Error('PROBE_MODE_CONFLICT');
         const authentication = ['1', '2'].includes(requestedAuth)
-            ? await probeAuthenticatedVersion(rootPath, result.client, requestedAuth, process.env.CBTE_EDGE_PROBE_RECONNECT === '1') : undefined;
+            ? await probeAuthenticatedVersion(rootPath, result, requestedAuth, process.env.CBTE_EDGE_PROBE_RECONNECT === '1') : undefined;
         const receiverVersion = process.env.CBTE_EDGE_PROBE_RECEIVER_VERSION || '1';
         if (!['1', '2'].includes(receiverVersion)) throw new Error('PROBE_VERSION_INVALID');
         const receiverSession = process.env.CBTE_EDGE_PROBE_RECEIVER_SESSION === '1'
-            ? await probeReceiverSession(rootPath, result.client, receiverVersion) : undefined;
-        return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion,
+            ? await probeReceiverSession(rootPath, result, receiverVersion) : undefined;
+        return { ok: true, agentFormatRecognized: true, connectVersion: result.connectVersion,
             ...(connections ? { connections } : {}), ...(authentication ? { authentication } : {}), ...(receiverSession ? { receiverSession } : {}) };
     } catch (error) {
         return { ok: false, code: /^X_EDGE_CALIBRATION_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_FAILED',

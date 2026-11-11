@@ -91,9 +91,11 @@ function Invoke-XEdgeCalibration {
         $null = $write.GetAwaiter().GetResult(); $outputBytes = $read.GetAwaiter().GetResult()
         if ($job.ExitCode -ne 0 -or $outputBytes.Length -eq 0) { throw 'X_EDGE_CALIBRATION_FAILED: 接続の確認に失敗しました。もう一度お試しください。' }
         $result = $script:Utf8.GetString($outputBytes) | ConvertFrom-Json
-        Assert-PropertyNames $result @('ok', 'browserVersion', 'client')
+        Assert-PropertyNames $result @('ok', 'browserVersion', 'connectVersion', 'agent', 'client')
+        Assert-PropertyNames $result.agent @('os', 'osVersion', 'architecture', 'locale')
         Assert-PropertyNames $result.client @('channel', 'protocolVersion', 'clientName', 'clientVersion')
-        if ($result.ok -ne $true -or $result.browserVersion -cne $BrowserVersion -or
+        if ($result.ok -ne $true -or $result.browserVersion -cne $BrowserVersion -or @('1','2') -cnotcontains $result.connectVersion -or
+            @($result.agent.os,$result.agent.osVersion,$result.agent.architecture,$result.agent.locale).Where({ $_ -isnot [string] -or $_ -cnotmatch '^[\x20-\x7e]{1,128}$' -or $_ -match '[<>&]' }).Count -gt 0 -or
             $result.client.channel -cnotmatch '^[0-9a-fA-F]{1,16}$' -or
             $result.client.protocolVersion -cnotmatch '^[\x20-\x7e]{1,32}$' -or
             $result.client.clientName -cnotmatch '^[\x20-\x7e]{1,128}$' -or
@@ -101,13 +103,7 @@ function Invoke-XEdgeCalibration {
             ($result.client.protocolVersion + $result.client.clientName + $result.client.clientVersion) -match '[<>&]') {
             throw 'X_EDGE_CALIBRATION_FAILED: 接続の確認に失敗しました。もう一度お試しください。'
         }
-        $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-        $locale = [Globalization.CultureInfo]::CurrentUICulture.Name
-        $osVersion = [Environment]::OSVersion.Version.ToString()
-        if ($architecture -cnotmatch '^[a-z0-9]{1,32}$' -or $locale -cnotmatch '^[A-Za-z0-9-]{1,64}$' -or $osVersion -cnotmatch '^[0-9.]{1,64}$') {
-            throw 'X_EDGE_CALIBRATION_FAILED: この PC の情報を確認できません。'
-        }
-        return [pscustomobject]@{ client = $result.client; agent = [pscustomobject]@{ os = 'Windows'; osVersion = $osVersion; architecture = $architecture; locale = $locale } }
+        return [pscustomobject]@{ client = $result.client; agent = $result.agent; connectVersion = $result.connectVersion }
     } finally {
         if ($null -ne $job) {
             try { $job.Stop() } catch { $cleanupFailed = $true }
