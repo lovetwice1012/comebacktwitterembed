@@ -62,7 +62,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
             child.once('close', () => { closed = true; resolveClosed(); });
             return child;
         };
-        broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin,
+        broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin, pipeTimeoutMs: 30000,
             extraArgs: ['--headless=new', '--disable-background-networking', '--disable-sync', '--no-proxy-server'], spawnChrome: spawnOwned });
         assert.match(broker.engineVersion, /^\d+\.\d+\.\d+\.\d+$/);
         assert.equal(broker.chrome, child);

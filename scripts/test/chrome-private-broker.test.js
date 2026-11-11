@@ -41,6 +41,14 @@ async function unauthenticated(port, body) {
         socket.on('close', () => resolve(data)); socket.on('error', reject);
     });
 }
+test('broker rejects invalid pipe timeouts before launching a browser', async () => {
+    let spawned = false;
+    for (const pipeTimeoutMs of [0, 999, 60001, NaN, '30000']) {
+        await assert.rejects(startChromeBroker({ chromePath: 'synthetic', profilePath: 'synthetic', pipeTimeoutMs,
+            spawnChrome: () => { spawned = true; return fakeChrome(); } }), { code: 'X_CHROME_BROKER_INVALID' });
+    }
+    assert.equal(spawned, false);
+});
 test('broker exposes no DevTools TCP interface and requires its private capability', async () => {
     let args;
     const broker = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: (_exe, argv) => { args = argv; return fakeChrome(); } });

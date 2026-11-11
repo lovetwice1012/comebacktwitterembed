@@ -57,7 +57,7 @@ async function startMacChromeBroker({ rootPath, profileId }) {
         lease = await acquireMacProfileLease({ rootPath, profileId, browser: 'chrome' });
         operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'chrome' });
         await verifyMacChromeProfile(rootPath, profileId);
-        broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath,
+        broker = await startChromeBroker({ chromePath, profilePath: profile.profilePath, pipeTimeoutMs: 30000,
             spawnChrome: /** @type {typeof import('node:child_process').spawn} */ (/** @type {unknown} */ (spawnOwned)) });
         const afterLaunch = await verifyChromeInstallation();
         if (afterLaunch.executable !== chromePath || afterLaunch.identity !== browser.identity) throw fail('X_CHROME_MAC_BROKER_INVALID');

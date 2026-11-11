@@ -142,7 +142,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             }
         }) });
         t.diagnostic('synthetic device token and subscription keys matched the isolated snapshot; credentials omitted');
-        broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin,
+        broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin, pipeTimeoutMs: 30000,
             extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
         let captured;
         for (let attempt = 0; attempt < 30 && !captured; attempt++) {

@@ -10,9 +10,10 @@ const fault = code => Object.assign(new Error(code), { code });
 // The listener exposes only a single capture-and-close action, never general
 // DevTools. Its random 256-bit capability is returned over the launching
 // process's private stdout pipe and must be stored under the user's ACL.
-async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.com', extraArgs = [], spawnChrome = spawn }) {
+async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.com', extraArgs = [], spawnChrome = spawn, pipeTimeoutMs = 10000 }) {
     if (typeof chromePath !== 'string' || typeof profilePath !== 'string' || typeof spawnChrome !== 'function'
         || !Array.isArray(extraArgs) || extraArgs.some(arg => typeof arg !== 'string')
+        || !Number.isInteger(pipeTimeoutMs) || pipeTimeoutMs < 1000 || pipeTimeoutMs > 60000
         || (origin !== 'https://x.com' && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin))) throw fault('X_CHROME_BROKER_INVALID');
     // Only the dedicated setup profile is affected. Keep Chrome's check-in and
     // subscription registration endpoints available, but give its MCS
@@ -22,7 +23,7 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
         '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND', `--user-data-dir=${profilePath}`,
         '--no-first-run', '--no-default-browser-check', ...extraArgs, `${origin}/`],
     { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
-    const pipe = createChromePipe(chrome, { origin });
+    const pipe = createChromePipe(chrome, { origin, timeoutMs: pipeTimeoutMs });
     let engineVersion;
     try { engineVersion = await pipe.ready(); } catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
     let busy = false, stopped = false;
