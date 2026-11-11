@@ -164,6 +164,18 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             // verifying delivery of the original retry. Its final result must
             // still fail to preserve the initial 410 as a release gate.
             if (process.env.CBTE_MAC_DB_FIXTURE === '1' && delivered.has('original-recheck')) {
+                // Remove only the additional registration created above in
+                // this throwaway local origin. Keep the original subscription.
+                const cleanup = `(async()=>{const r=await navigator.serviceWorker.getRegistration('/secondary/');` +
+                    `if(!r||r.scope!==${JSON.stringify(origin + '/secondary/')})return false;return r.unregister()})()`;
+                const removed = await call('Runtime.evaluate', { expression: cleanup, awaitPromise: true, returnByValue: true }, attached.sessionId);
+                if (removed.exceptionDetails || removed.result?.value !== true) throw new Error('FIXTURE_SECONDARY_CLEANUP_FAILED');
+                const originalCheck = await call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.toJSON():null})()`,
+                    awaitPromise: true, returnByValue: true }, attached.sessionId);
+                const originalValue = originalCheck.result?.value;
+                if (!originalValue || originalValue.endpoint !== value.endpoint || originalValue.keys?.p256dh !== value.keys.p256dh
+                    || originalValue.keys?.auth !== value.keys.auth) throw new Error('FIXTURE_ORIGINAL_CHANGED');
+                t.diagnostic('removed only the secondary synthetic registration; original remained unchanged');
                 initialPushFailed = true; delivered.add('preflight');
                 t.diagnostic('continuing disposable DB investigation after initial push failure; final result will remain failed');
             } else throw new Error(`FIXTURE_PREFLIGHT_SEND_${original}`);
