@@ -67,4 +67,5 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
+          node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
           node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs

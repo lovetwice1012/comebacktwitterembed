@@ -11,26 +11,40 @@ const { createFrameDecoder } = require('../../src/automation/chrome-mcs-framing'
 const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
 const { loginResponse } = require('../../src/automation/chrome-mcs-protobuf');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs-store-adapter');
 
-async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443 }) {
+async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443, database }) {
     if (port !== 443 && port !== 5228) throw new Error('FIXTURE_MCS_PORT_INVALID');
     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
     const marker = randomBytes(16).toString('hex'), pending = new Set();
     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
     const socket = tls.connect({ host: 'mtalk.google.com', port, servername: 'mtalk.google.com', timeout: 15000 });
-    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login', loginDetail = 'none';
+    const decoder = createFrameDecoder(); let timer, queue = Promise.resolve(), received = false, sent = false, stage = 'login', loginDetail = 'none', commitBeforeAck = false;
+    const decrypt = (data, headers) => decryptEce(data, headers, {
+        public_key: [...Buffer.from(subscription.keys.p256dh, 'base64url')],
+        private_key: [...Buffer.from(encryption.privateKey.d, 'base64url')],
+        auth_secret: [...Buffer.from(subscription.keys.auth, 'base64url')],
+    });
+    const memoryStore = { pending: async () => [...pending], commit: async message => { pending.add(message.persistentId); return message; },
+        confirm: async ids => { for (const id of ids) pending.delete(id); } };
+    const receiptStore = database ? createChromeMcsStoreAdapter({ store: database.store, lease: database.lease, authorize: async () => {},
+        decrypt: frame => decrypt(Buffer.from(frame.data, 'base64url'), frame.headers) }) : memoryStore;
     const session = createChromeMcsSession({ credentials: { deviceId, securityToken, clientVersion: browserVersion },
         route: { expectedCategory: category, expectedAppId: appId, expectedSender: encryption.authorizedEntity },
-        send: data => new Promise((resolve, reject) => socket.write(data, error => error ? reject(new Error('FIXTURE_MCS_WRITE_FAILED')) : resolve())),
-        store: { pending: async () => [...pending], commit: async message => { pending.add(message.persistentId); return message; },
-            confirm: async ids => { for (const id of ids) pending.delete(id); } },
+        send: async data => {
+            if (database && data[0] === 7) {
+                const rows = await database.db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox WHERE subscription_id=? AND status=?', [database.lease.subscriptionId, 'received']);
+                const pendingRows = await database.db.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [database.lease.subscriptionId]);
+                if (Number(rows[0].n) !== 1 || Number(pendingRows[0].n) !== 1) throw new Error('FIXTURE_MCS_ACK_BEFORE_COMMIT');
+                commitBeforeAck = true;
+            }
+            await new Promise((resolve, reject) => socket.write(data, error => error ? reject(new Error('FIXTURE_MCS_WRITE_FAILED')) : resolve()));
+        },
+        store: receiptStore,
         onReceipt: async message => {
             stage = 'decrypt';
-            const decoded = decryptEce(message.encrypted.data, message.encrypted.headers, {
-                public_key: [...Buffer.from(subscription.keys.p256dh, 'base64url')],
-                private_key: [...Buffer.from(encryption.privateKey.d, 'base64url')],
-                auth_secret: [...Buffer.from(subscription.keys.auth, 'base64url')],
-            });
+            const decoded = database ? decrypt(Buffer.from(message.data, 'base64url'), message.headers)
+                : decrypt(message.encrypted.data, message.encrypted.headers);
             received = decoded.toString('utf8') === marker;
         } });
     try {
@@ -65,6 +79,7 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                 });
             });
         });
+        if (database && !commitBeforeAck) throw new Error('FIXTURE_MCS_ACK_NOT_OBSERVED');
     } finally { clearTimeout(timer); session.close(); socket.destroy(); }
 }
 module.exports = { receiveSyntheticMacPush };

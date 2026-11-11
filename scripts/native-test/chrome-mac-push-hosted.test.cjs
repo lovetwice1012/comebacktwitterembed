@@ -198,28 +198,30 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         const browserVersion = version.product.slice('Chrome/'.length);
         const transfer = verifySyntheticMacTransfer({ origin, subscription: value, ...fixtureCredentials, browserVersion });
         t.diagnostic('synthetic X-format transfer passed parser and owner-bound worker vault; local origin was substituted');
-        if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
-            await verifySyntheticMacDatabaseTransfer(transfer);
-            t.diagnostic('synthetic Mac transfer validated and imported into disposable database; credentials omitted');
-        }
         t.diagnostic(`synthetic credential ranges: deviceHighBit=${BigInt(fixtureCredentials.deviceId) >= (1n << 63n)} tokenHighBit=${BigInt(fixtureCredentials.securityToken) >= (1n << 63n)}`);
-        const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port });
-        try { await receive(); }
-        catch (error) {
-            // Diagnostic only: the gateway currently logs in before check-in.
-            // Retry solely after a rejected login, before any push was sent.
-            if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error[0-9]+$/.test(error?.message || '')) throw error;
-            t.diagnostic('first MCS login rejected; trying a synthetic Mac check-in with the same credentials');
-            await checkin({ deviceId: fixtureCredentials.deviceId, securityToken: fixtureCredentials.securityToken, browserVersion, platform: 'macos' });
-            t.diagnostic('synthetic Mac check-in accepted unchanged credentials; retrying login');
+        async function receiveWithDiagnostics(database) {
+            const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port, database });
             try { await receive(); }
-            catch (retryError) {
-                if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error401$/.test(retryError?.message || '')) throw retryError;
-                t.diagnostic('second login rejected; comparing the alternate MCS port with identical synthetic credentials');
-                await receive(5228);
-                t.diagnostic('alternate MCS port accepted the synthetic credentials');
+            catch (error) {
+                // Diagnostic only: the gateway currently logs in before check-in.
+                // Retry solely after a rejected login, before any push was sent.
+                if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error[0-9]+$/.test(error?.message || '')) throw error;
+                t.diagnostic('first MCS login rejected; trying a synthetic Mac check-in with the same credentials');
+                await checkin({ deviceId: fixtureCredentials.deviceId, securityToken: fixtureCredentials.securityToken, browserVersion, platform: 'macos' });
+                t.diagnostic('synthetic Mac check-in accepted unchanged credentials; retrying login');
+                try { await receive(); }
+                catch (retryError) {
+                    if (!/^FIXTURE_MCS_PROCESSING_FAILED_login_X_CHROME_SESSION_LOGIN_FAILED_tag3_error401$/.test(retryError?.message || '')) throw retryError;
+                    t.diagnostic('second login rejected; comparing the alternate MCS port with identical synthetic credentials');
+                    await receive(5228);
+                    t.diagnostic('alternate MCS port accepted the synthetic credentials');
+                }
             }
         }
+        if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
+            await verifySyntheticMacDatabaseTransfer(transfer, receiveWithDiagnostics);
+            t.diagnostic('synthetic Mac transfer and encrypted MCS receipt persisted in disposable database before ACK');
+        } else await receiveWithDiagnostics();
         fixtureCredentials = null;
         t.diagnostic('synthetic notification received and decrypted by MCS session; credentials omitted');
         broker = await startChromeBroker({ chromePath: executable, profilePath: profile.profilePath, origin, pipeTimeoutMs: 30000,
