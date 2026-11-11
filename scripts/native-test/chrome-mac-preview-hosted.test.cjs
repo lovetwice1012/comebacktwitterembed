@@ -46,6 +46,12 @@ test('packaged launcher reaches the initial setup dialog in an isolated home',
             let timer; const directStopped = !child || closed || await Promise.race([closePromise.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 10000); })]);
             clearTimeout(timer);
             const groupStopped = !child?.pid || directStopped && await waitForMacProcessGroupExit(child.pid);
+            if (!groupStopped && child?.pid) {
+                let probe = 'alive';
+                try { process.kill(-child.pid, 0); }
+                catch (error) { probe = ['ESRCH', 'EPERM', 'EINVAL'].includes(error?.code) ? error.code : 'other'; }
+                t.diagnostic(`synthetic launcher shutdown: directStopped=${directStopped} groupProbe=${probe}`);
+            }
             if (groupStopped) { const real = await fs.realpath(root); assert.equal(path.dirname(real), temp);
                 assert.match(path.basename(real), /^cbte-preview-dialog-/); await fs.rm(real, { recursive: true }); }
             assert.equal(groupStopped, true, 'synthetic launcher termination was not confirmed; test directory retained');
