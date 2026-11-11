@@ -10,12 +10,25 @@ const { randomBytes } = require('node:crypto');
 const { withMacFirefoxLockedUaid } = require('./firefox-mac-uaid');
 const fail = code => Object.assign(new Error(code), { code });
 const DB = '2918063365piupsah', MAX_TOTAL = 128 * 1024 * 1024, MAX_FILES = 512;
+// Experimental allowlist observed in a disposable Windows XPCShell fixture.
+// Other Firefox versions and macOS may create different entries. Unknown
+// paths remain untouched. The reader supervisor must prove all processes have
+// stopped before returning successfully from work.
+const READER_ARTIFACTS = new Map([
+    ['cache2', 'directory'], ['cache2/doomed', 'directory'], ['cache2/entries', 'directory'],
+    ['security_state', 'directory'], ['startupCache', 'directory'],
+    ['cert9.db', 'file'], ['key4.db', 'file'], ['pkcs11.txt', 'file'], ['storage.sqlite', 'file'],
+    ['storage/ls-archive.sqlite', 'file'], ['storage/permanent/chrome/.metadata', 'file'],
+    ['storage/permanent/chrome/.metadata-v2', 'file'],
+    ...['-wal', '-shm', '-journal'].map(suffix => [`storage/permanent/chrome/idb/${DB}.sqlite${suffix}`, 'file']),
+    [`storage/permanent/chrome/idb/${DB}.files`, 'directory'],
+]);
 
-async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expectedSha256, work }) {
-    if (typeof work !== 'function') throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
+async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, experimentalReaderArtifacts = false }) {
+    if (typeof work !== 'function' || typeof experimentalReaderArtifacts !== 'boolean') throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
     return withMacFirefoxLockedUaid({ rootPath, profileId, helperPath, expectedSha256, work: async ({ profilePath, uaid, signal }) => {
         const snapshot = path.join(rootPath, `firefox-snapshot-${randomBytes(16).toString('hex')}`);
-        const created = []; let total = 0, count = 0, untrackedCreation = false;
+        const created = []; let total = 0, count = 0, untrackedCreation = false, readerCompleted = false;
         function check() { if (signal.aborted) throw fail('X_FIREFOX_MAC_SNAPSHOT_CANCELLED'); }
         async function directory(filename) {
             check(); await fs.mkdir(filename, { mode: 0o700 }); untrackedCreation = true;
@@ -66,7 +79,7 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             const entries = await fs.readdir(source, { withFileTypes: true });
             if (entries.length > MAX_FILES - count) throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
             for (const entry of entries) {
-                check(); if (++count > MAX_FILES || /[\u0000-\u001f\u007f/\\]/.test(entry.name)
+                check(); if (++count > MAX_FILES || /[\u0000-\u001f\u007f/\\]/.test(entry.name) // eslint-disable-line no-control-regex
                     || entry.name === '.' || entry.name === '..') throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
                 const from = path.join(source, entry.name), to = path.join(target, entry.name);
                 if (entry.isDirectory()) await copyBlobs(from, to, depth + 1);
@@ -92,8 +105,21 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
                     const expected = created.filter(other => path.dirname(other.filename) === item.filename)
                         .map(other => path.basename(other.filename)).sort();
                     const actual = (await fs.readdir(item.filename)).sort();
-                    if (expected.length !== actual.length || expected.some((name, index) => name !== actual[index]))
-                        throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+                    const missing = expected.some(name => !actual.includes(name));
+                    if (missing) throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+                    for (const name of actual) {
+                        if (expected.includes(name)) continue;
+                        const filename = path.join(item.filename, name);
+                        const relative = path.relative(snapshot, filename).split(path.sep).join('/');
+                        const kind = readerCompleted && experimentalReaderArtifacts && READER_ARTIFACTS.get(relative);
+                        if (!kind || created.length >= MAX_FILES) throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+                        const info = await fs.lstat(filename);
+                        if (info.uid !== process.getuid() || info.isSymbolicLink()
+                            || (kind === 'directory' ? !info.isDirectory() : !info.isFile() || info.nlink !== 1 || info.size > MAX_TOTAL))
+                            throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED');
+                        const generated = { filename, info, directory: kind === 'directory' };
+                        created.push(generated); byName.set(filename, generated);
+                    }
                 }
             }
             for (const item of [...created].reverse()) {
@@ -122,12 +148,13 @@ async function withMacFirefoxSnapshot({ rootPath, profileId, helperPath, expecte
             try { await fs.lstat(blobs); } catch (error) { if (error?.code === 'ENOENT') present = false; else throw error; }
             if (present) await copyBlobs(blobs, path.join(target, `${DB}.files`), 0);
             for (const item of sourceDirectories) await sameDirectory(item.filename, item.info);
-            check(); return await work({ snapshotPath: snapshot, uaid, signal });
+            check(); const result = await work({ snapshotPath: snapshot, uaid, signal });
+            check(); readerCompleted = true; return result;
         } catch (error) {
             if (/^X_FIREFOX_MAC_SNAPSHOT_[A-Z_]+$/.test(error?.code || '')) throw error;
             throw fail('X_FIREFOX_MAC_SNAPSHOT_INVALID');
         } finally {
-            try { await cleanup(); } catch { throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED'); }
+            try { await cleanup(); } catch { throw fail('X_FIREFOX_MAC_SNAPSHOT_CLEANUP_FAILED'); } // eslint-disable-line no-unsafe-finally
         }
     } });
 }

@@ -43,7 +43,7 @@ test('signed Firefox XPCShell reads a synthetic Push database copied between iso
             async function inventory(dir, rel = '') {
                 for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
                     const name = path.join(rel, entry.name);
-                    console.log(`SYNTHETIC_ENTRY ${name}`);
+                    console.log(`SYNTHETIC_ENTRY ${entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other'} ${name}`);
                     if (entry.isDirectory()) await inventory(path.join(dir, entry.name), name);
                 }
             }
