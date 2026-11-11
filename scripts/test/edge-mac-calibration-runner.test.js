@@ -20,6 +20,7 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
     const sourceFile = path.join(__dirname, '../../src/automation/edge-calibration-runner.js');
     const source = await fs.readFile(sourceFile, 'utf8'), module = { exports: {} }; let nextPid = 100, captured, authorizeCalls = 0;
     const expectedClient = { channel: 'abc', protocolVersion: '1.0', clientName: 'Fixture', clientVersion: '1.2.3.4' };
+    const expectedAgent = { os: 'SyntheticOS', osVersion: '1.2.3', architecture: 'synthetic64', locale: 'ja-JP' };
     const mockedRequire = name => {
         if (name === 'node:http') return { createServer: () => {
             const server = new EventEmitter(); server.listen = (_opts, done) => queueMicrotask(done);
@@ -30,11 +31,12 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
         } };
         if (name === './edge-cdp-pipe') return { createChromePipe: browser => ({ ready: async () => '157.0.0.1',
             prepareCalibration: async () => true, closeBrowser: async () => { browser.exitCode = 0; browser.emit('exit', 0); } }) };
-        if (name === './edge-calibration-relay') return { createEdgeCalibrationRelay: async ({ authorizePeer }) => ({ port: 23457,
+        if (name === './edge-calibration-relay') return { createEdgeCalibrationRelay: async ({ authorizePeer, captureAgent }) => {
+            assert.equal(captureAgent, true); return { port: 23457,
             metadata: new Promise((resolve, reject) => setImmediate(async () => {
-                if (await authorizePeer({ clientPort: 30001, serverPort: 23457 })) resolve(expectedClient);
+                if (await authorizePeer({ clientPort: 30001, serverPort: 23457 })) resolve({ agent: expectedAgent, client: expectedClient });
                 else reject(Object.assign(new Error('peer denied'), { code: 'X_EDGE_CALIBRATION_PEER_FAILED' }));
-            })), close: async () => {} }) };
+            })), close: async () => {} }; } };
         if (name.startsWith('./')) return require(path.join(path.dirname(sourceFile), name));
         return require(name);
     };
@@ -45,7 +47,7 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
         spawnBrowser: () => { const browser = new EventEmitter(); browser.pid = nextPid++; browser.exitCode = null; browser.signalCode = null; return browser; },
         captureIdentity: async () => '1700000000:123456', authorizePeer: async input => { authorizeCalls++; captured = input; return true; } };
     const result = await module.exports.runEdgeCalibration(args);
-    assert.equal(result.browserVersion, '157.0.0.1'); assert.equal(result.client, expectedClient); assert.equal(authorizeCalls, 1);
+    assert.equal(result.browserVersion, '157.0.0.1'); assert.equal(result.client, expectedClient); assert.equal(result.agent, expectedAgent); assert.equal(authorizeCalls, 1);
     assert.equal(captured.browserStartTicks, '1700000000:123456'); assert.equal(captured.browserExecutable, edgePath);
     authorizeCalls = 0;
     await assert.rejects(module.exports.runEdgeCalibration({ ...args, captureIdentity: async () => 'pid-only' }), { code: 'X_EDGE_CALIBRATION_PEER_FAILED' });

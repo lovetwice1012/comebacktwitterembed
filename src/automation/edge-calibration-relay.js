@@ -7,11 +7,12 @@ const tls = require('node:tls');
 const { Transform } = require('node:stream');
 const { createFrameDecoder } = require('./edge-wns-framing');
 const { parseEdgeClientMetadata } = require('./edge-wns-client-metadata');
+const { parseEdgeAgentMetadata } = require('./edge-wns-agent-metadata');
 const fail = code => Object.assign(new Error(code), { code });
-async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, connectUpstream = undefined, timeoutMs = 10000 }) {
+async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, connectUpstream = undefined, timeoutMs = 10000, captureAgent = false }) {
     if (!Buffer.isBuffer(pfx) || !pfx.length || pfx.length > 65536 || typeof passphrase !== 'string' || !passphrase.length || passphrase.length > 256
         || typeof authorizePeer !== 'function' || connectUpstream !== undefined && typeof connectUpstream !== 'function'
-        || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
+        || typeof captureAgent !== 'boolean' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     const clients = new Set(), upstreams = new Set(); let closed = false, pending = 0, active = false, completed = false, resolveMetadata, rejectMetadata;
     const metadata = new Promise((resolve, reject) => { resolveMetadata = resolve; rejectMetadata = reject; }); metadata.catch(() => {});
     function finishError(code) { if (!completed) { completed = true; rejectMetadata(fail(code)); } }
@@ -38,19 +39,23 @@ async function createEdgeCalibrationRelay({ pfx, passphrase, authorizePeer, conn
                     if (!upstream || typeof upstream.on !== 'function' || typeof upstream.destroy !== 'function') throw new Error();
                 } catch { active = false; incoming.destroy(); finishError('X_EDGE_CALIBRATION_CONNECT_FAILED'); return; }
                 upstreams.add(upstream); upstream.once('close', () => { upstreams.delete(upstream); active = false; });
-                const decoder = createFrameDecoder(); let parsed = false;
+                const decoder = createFrameDecoder(); let parsed = false, agent;
                 const inspect = new Transform({ transform(chunk, _encoding, done) {
                     if (parsed) { done(null, chunk); return; }
                     let frames, found;
                     try {
                         frames = decoder.push(chunk);
                         for (const frame of frames) {
+                            if (captureAgent && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
+                                if (agent || found) throw new Error();
+                                agent = parseEdgeAgentMetadata(frame);
+                            }
                             if (frame.subarray(0, 4).toString('ascii') === 'BND ') {
-                                if (completed || found) throw new Error();
+                                if (completed || found || captureAgent && !agent) throw new Error();
                                 found = parseEdgeClientMetadata(frame);
                             }
                         }
-                        if (found) { parsed = true; completed = true; try { decoder.finish(); } catch {} resolveMetadata(found); }
+                        if (found) { parsed = true; completed = true; try { decoder.finish(); } catch {} resolveMetadata(captureAgent ? { agent, client: found } : found); }
                         done(null, chunk);
                     } catch { done(fail('X_EDGE_CALIBRATION_PROTOCOL_INVALID')); }
                     finally { if (frames) for (const frame of frames) frame.fill(0); }

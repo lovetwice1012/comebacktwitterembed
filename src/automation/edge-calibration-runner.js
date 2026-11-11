@@ -94,7 +94,7 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         version = await wait(initial.pipe.ready()); await wait(initial.pipe.prepareCalibration(publicKey)); await wait(closeBrowser());
         if (controller.signal.aborted) throw fail(abortCode);
         let identityPromise;
-        relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), authorizePeer: async ports => {
+        relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), captureAgent: platform === 'macos', authorizePeer: async ports => {
             const identity = await identityPromise;
             // macOS identity uses the process start seconds and six-digit
             // microseconds reported by proc_bsdinfo, never PID alone.
@@ -108,8 +108,9 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         identityPromise.catch(() => {});
         const secondVersion = await wait(resumed.pipe.ready());
         if (secondVersion !== version) throw fail('X_EDGE_CALIBRATION_BROWSER_CHANGED');
-        const [client] = await wait(Promise.all([relay.metadata, identityPromise]));
-        return { browserVersion: version, client };
+        const [metadata] = await wait(Promise.all([relay.metadata, identityPromise]));
+        return platform === 'macos' ? { browserVersion: version, agent: metadata.agent, client: metadata.client }
+            : { browserVersion: version, client: metadata };
     } catch (error) {
         if (controller.signal.aborted) throw fail(abortCode);
         if (typeof error?.code === 'string' && /^X_EDGE_CALIBRATION_[A-Z_]+$/.test(error.code)) throw error;
