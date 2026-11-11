@@ -1,6 +1,6 @@
-param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage)
+param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport)) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch)) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }
@@ -26,6 +26,8 @@ foreach ($name in @('EDGE_PROBE_DATABASE','EDGE_PROBE_REAL_WNS','EDGE_PROBE_RELA
 if ($Takeover) { $items.Add('EDGE_PROBE_TAKEOVER=1'); $items.Add('EDGE_PROBE_BLOCK_WNS=1') }
 if ($Reimport) { $items.Add('EDGE_PROBE_REIMPORT=1') }
 if ($OfflineMessage) { $items.Add('EDGE_PROBE_OFFLINE_MESSAGE=1') }
+if ($OfflineBatch) { $items.Add('EDGE_PROBE_OFFLINE_BATCH=1') }
+if ($OnlineBatch) { $items.Add('EDGE_PROBE_BATCH_ONLINE=1') }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $probe = [IO.Path]::Combine($repo, 'experiments', 'chrome-push', 'edge-broker-pipe-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $probe + '"'), $repo, $environment)
@@ -36,13 +38,17 @@ try {
     while (-not $job.WaitForExit(100)) { if ([DateTime]::UtcNow -ge $deadline) { throw 'SYNTHETIC_PROBE_TIMEOUT' } }
     if (-not $write.Wait(5000) -or -not $read.Wait(5000)) { throw 'SYNTHETIC_PROBE_FAILED' }
     $outputBytes = $read.GetAwaiter().GetResult(); $text = [Text.Encoding]::UTF8.GetString($outputBytes)
-    if ($job.ExitCode -ne 0) { throw 'SYNTHETIC_PROBE_FAILED' }
+    if ($job.ExitCode -ne 0) {
+        if ($text -match 'PROBE_STAGE wns (PROBE_BATCH_(?:TIMEOUT_(?:ZERO|ONE|TWO|THREE)|DUPLICATE|SCAN_FAILED))') { throw $Matches[1] }
+        throw 'SYNTHETIC_PROBE_FAILED'
+    }
     $result = ConvertFrom-Json -InputObject $text
     if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true -or
         $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true -or $result.otherSiteConsentRequired -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     if ($Reimport -and ($result.takeoverResult.receivedInNewWorkerProcess -ne $true -or
         $result.takeoverResult.receivedAfterForcedWorkerExit -ne $true)) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
-    if ($OfflineMessage -and $result.takeoverResult.receivedSentWhileOffline -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+    if ($OfflineMessage -and -not $OnlineBatch -and $result.takeoverResult.receivedSentWhileOffline -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+    if ($OfflineBatch -and $result.takeoverResult.batchPersistedOnce -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     Write-Output $text
 } finally {
     try { $job.Stop() } finally { $job.Dispose() }
