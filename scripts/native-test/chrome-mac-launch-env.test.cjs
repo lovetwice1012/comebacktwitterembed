@@ -24,8 +24,10 @@ test('Mac launcher removes unsafe inherited loader and runtime settings', { skip
     for (const name of ['Launch', 'MacNode', 'MacSetup.cjs']) {
         await fs.writeFile(path.join(bin, name), files[`X通知の準備.app/Contents/MacOS/${name}`], { mode: name === 'MacSetup.cjs' ? 0o600 : 0o700 });
     }
-    const env = { HOME: root, EXPECTED_HOME: root, PATH: '/usr/bin:/bin' };
-    for (const name of names) env[name] = name === 'NODE_TLS_REJECT_UNAUTHORIZED' ? '0' : '/nonexistent/synthetic';
-    const result = spawnSync('/bin/sh', [path.join(bin, 'Launch')], { env, encoding: 'utf8', timeout: 10000 });
-    assert.equal(result.status, 0); assert.equal(result.stdout, 'clean');
+    for (const name of names) {
+        const env = { HOME: root, EXPECTED_HOME: root, PATH: '/usr/bin:/bin', [name]: name === 'NODE_TLS_REJECT_UNAUTHORIZED' ? '0' : '/nonexistent/synthetic' };
+        const result = spawnSync('/bin/sh', [path.join(bin, 'Launch')], { env, encoding: 'utf8', timeout: 10000 });
+        if (result.status !== 0) t.diagnostic(`synthetic variable=${name} status=${result.status} signal=${result.signal || 'none'} error=${result.error?.code || 'none'}`);
+        assert.equal(result.status, 0); assert.equal(result.stdout, 'clean');
+    }
 });
