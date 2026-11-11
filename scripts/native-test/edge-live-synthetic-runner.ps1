@@ -37,7 +37,8 @@ try {
     $outputBytes = $read.GetAwaiter().GetResult(); $text = [Text.Encoding]::UTF8.GetString($outputBytes)
     if ($job.ExitCode -ne 0) { throw 'SYNTHETIC_PROBE_FAILED' }
     $result = ConvertFrom-Json -InputObject $text
-    if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
+    if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true -or
+        $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true) { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
     Write-Output $text
 } finally {
     try { $job.Stop() } finally { $job.Dispose() }

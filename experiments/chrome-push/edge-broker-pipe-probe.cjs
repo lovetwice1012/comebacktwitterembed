@@ -199,6 +199,44 @@ async function main() {
                     clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
+        // The copied fixture store contains a test-only origin rewrite. Use a
+        // second dedicated profile so the packaged exporter can make its own
+        // snapshot without altering the live fixture browser's subscription.
+        const exportRoot = path.join(root, 'export-fixture'), exportStore = path.join(exportRoot, 'edge-profile', 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+        await fs.mkdir(path.dirname(exportStore), { recursive: true });
+        await fs.cp(storePath, exportStore, { recursive: true, errorOnExist: true, force: false });
+        const bundleRoot = path.join(root, 'bundle'), appRoot = path.join(bundleRoot, '_app');
+        await fs.mkdir(bundleRoot);
+        const archive = await require('../../scripts/build-edge-setup-package.cjs').buildArchive();
+        for (const [name, data] of Object.entries(require('fflate').unzipSync(archive.archive))) {
+            if (!/^(?:_app\/)?[^/\\]+$/.test(name)) throw new Error('PROBE_PACKAGE_FAILED');
+            const target = path.join(bundleRoot, name); await fs.mkdir(path.dirname(target), { recursive: true });
+            await fs.writeFile(target, data, { flag: 'wx' });
+        }
+        const packageShared = path.join(appRoot, 'EdgeShared.ps1').replace(/'/g, "''");
+        const packageExport = path.join(appRoot, 'EdgeExport.ps1').replace(/'/g, "''");
+        const outputPath = path.join(root, 'synthetic-export.json');
+        const exportCommand = `$ErrorActionPreference='Stop'; . '${packageShared}' -Browser edge -LibraryOnly; `
+            + `$script:Root=$env:CBTE_EDGE_EXPORT_ROOT; $script:Profile=[IO.Path]::Combine($script:Root,'edge-profile'); `
+            + `. '${packageExport}'; $inputData=[Console]::In.ReadToEnd()|ConvertFrom-Json; `
+            + `Export-XEdgeTransfer -Capture $inputData.capture -Agent $inputData.agent -Client $inputData.client `
+            + `-BrowserVersion $inputData.browserVersion -OutputPath $env:CBTE_EDGE_EXPORT_FILE -AllowOtherNotifications`;
+        const exportInput = JSON.stringify({ capture: { ...captured, scope: 'https://x.com/' },
+            agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+            client: calibrationMetadata || { channel: process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || 'abc',
+                protocolVersion: process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '1.0', clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
+            browserVersion: browserProduct.split('/')[1] });
+        const packaged = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+            Buffer.from(exportCommand, 'utf16le').toString('base64')], { input: exportInput, encoding: 'utf8', windowsHide: true, timeout: 45000,
+            env: { ...process.env, CBTE_EDGE_EXPORT_ROOT: exportRoot, CBTE_EDGE_EXPORT_FILE: outputPath } });
+        if (packaged.status !== 0) throw new Error('PROBE_PACKAGE_EXPORT_FAILED');
+        let exported;
+        try { exported = JSON.parse(await fs.readFile(outputPath, 'utf8')); } catch { throw new Error('PROBE_PACKAGE_EXPORT_FAILED'); }
+        if (!require('node:util').isDeepStrictEqual(exported, result.file)) throw new Error('PROBE_PACKAGE_EXPORT_FAILED');
+        if ((await fs.readdir(exportRoot)).some(name => name.startsWith('edge-snapshot-'))) throw new Error('PROBE_SNAPSHOT_CLEANUP_FAILED');
+        // The gateway below receives the same data read from the exported file.
+        result.file = exported;
+        await fs.unlink(outputPath);
         const cleanupCommand = `$ErrorActionPreference='Stop'; . '${shared}' -Browser edge -LibraryOnly; . '${snapshotScript}'; `
             + `Remove-XEdgeSnapshot -Snapshot $env:CBTE_EDGE_FIXTURE_SNAPSHOT -Token $env:CBTE_EDGE_FIXTURE_TOKEN -PrivateRoot $env:CBTE_EDGE_FIXTURE_ROOT`;
         const cleaned = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
@@ -321,7 +359,8 @@ async function main() {
         }
         for (const field of Object.values(cryptoKeys)) field.fill(0);
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
-            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult };
+            snapshotSelected: true, packagedExport: true, packagedSnapshotCleaned: true, ownerBoundVault: true, fixtureDecrypted: true,
+            databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));
     } finally {
