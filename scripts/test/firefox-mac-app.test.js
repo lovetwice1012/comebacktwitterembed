@@ -13,7 +13,7 @@ test('experimental Mac Firefox app uses only its own profile and requires verifi
         './chrome-mac-profile-registry': { async getOrCreateMacFirefoxProfile(input) { calls.push(['firefox', input]); return { rootPath: '/owned', profileId: 'fixture' }; } },
         './firefox-mac-setup-session': { async runExperimentalMacFirefoxSetup(input) { calls.push(['session', input]); return { state: 'cancelled' }; } },
     };
-    vm.runInNewContext(source, { module, exports: module.exports, require: name => dependencies[name] || require(name) });
+    vm.runInNewContext(source, { module, exports: module.exports, require: name => dependencies[name] || require(name), AbortSignal });
     const options = { applicationSupport: '/support', helperPath: '/app/helper', expectedSha256: 'a'.repeat(64),
         bootstrapPath: '/app/bootstrap', bootstrapSha256: 'b'.repeat(64), readerPath: '/app/reader', readerSha256: 'c'.repeat(64),
         ui: {}, experimental: true };
@@ -23,5 +23,8 @@ test('experimental Mac Firefox app uses only its own profile and requires verifi
     await assert.rejects(module.exports.runExperimentalMacFirefoxApp({ ...options, experimental: false }), { code: 'X_FIREFOX_MAC_APP_INVALID' });
     await assert.rejects(module.exports.runExperimentalMacFirefoxApp({ ...options, readerPath: 'relative' }), { code: 'X_FIREFOX_MAC_APP_INVALID' });
     await assert.rejects(module.exports.runExperimentalMacFirefoxApp({ ...options, bootstrapSha256: 'invalid' }), { code: 'X_FIREFOX_MAC_APP_INVALID' });
+    await assert.rejects(module.exports.runExperimentalMacFirefoxApp({ ...options, signal: {} }), { code: 'X_FIREFOX_MAC_APP_INVALID' });
+    const aborted = new AbortController(); aborted.abort();
+    assert.equal((await module.exports.runExperimentalMacFirefoxApp({ ...options, signal: aborted.signal })).state, 'cancelled');
     assert.equal(calls.length, 0);
 });

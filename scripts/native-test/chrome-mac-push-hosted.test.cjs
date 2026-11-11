@@ -204,7 +204,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         }
         for (let attempt = 0; attempt < 100 && !delivered.has('preflight'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
         t.diagnostic(`synthetic preflight reached service worker=${workerDelivered.has('preflight')}`);
-        if (delivered.has('preflight')) t.diagnostic('browser received synthetic preflight push before shutdown');
+        if (delivered.has('preflight') && !initialPushFailed) t.diagnostic('browser received synthetic preflight push before shutdown');
+        else if (initialPushFailed && delivered.has('preflight')) t.diagnostic('diagnostic retry reached the browser; initial preflight remained failed');
         else if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
             initialPushFailed = true;
             t.diagnostic('browser did not receive preflight within 20 seconds; continuing DB investigation with a failing final result');
