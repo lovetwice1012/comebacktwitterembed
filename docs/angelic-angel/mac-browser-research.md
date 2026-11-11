@@ -36,6 +36,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42988258144)では、MCSログインが `401` で拒否された。同じ試験用端末情報を使うMac版チェックインは値を変えず成功したが、その直後のMCS再ログインも `401` だった。チェックインだけでは復旧しない例であり、拒否の原因と再発条件は未確定。試験コードによる追加調査であり、実運用の認証手順は変更していない。
 
+受信ワーカーのログイン失敗は、一般的な受信エラーと区別できる固定コード `X_PUSH_CHROME_LOGIN_FAILED` に整理した。単発の拒否だけで既存の受信設定を削除したり再登録必須にしたりせず、従来の待機時間付き再接続を維持する。隔離MariaDBと模擬サーバーで、拒否後の登録保持と再接続、待機時間、既存のACK復旧を確認した。実サービスでの `401` の原因や回復を証明するものではない。
+
 [追加比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142481)では、Apple SiliconのMCSログインは成功したが、試験通知の送信先から `410` が返り送信できなかった。同じ実行のIntelと、[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142531)は受信・復号まで成功した。いずれの試験用端末情報も符号なし64ビット値の上位ビットは立っていなかった。`401` はこの実行で再現せず、代替ポートの比較も行われていない。`401` と `410` の原因・関連は未確定である。
 
 [終了前後の比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525175)では、Apple Silicon・Intelの各試験で、Chromeを閉じる前の試験通知送信がすでに `410` となった。一方、[別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42990525255)では、同じ手順でブラウザー起動中の通知と、通常終了後のMCSによる通知の両方を受信できた。このため、少なくとも観測した `410` の一部は移譲後のサーバー受信処理より前に起きている。原因と再発条件は未確定である。
