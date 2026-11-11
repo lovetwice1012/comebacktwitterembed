@@ -93,6 +93,33 @@ test('Mac Chrome worker is gated and uses Mac check-in while routing owned recei
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
     } finally { await db.close(); }
 });
+test('a Chrome login rejection remains retryable and preserves the saved subscription', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = chromeFixture(); file.push.productCategory = 'com.chrome.macosx';
+        const subscription = await insertSubscription(db, file);
+        class RejectedSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] !== 41) return super.write(wire, done);
+                this.writes.push(wire); done();
+                const error = Buffer.concat([vint(8), vint(401)]);
+                queueMicrotask(() => this.emit('data', encodeFrame(3, Buffer.concat([bytes(1, 'error'), bytes(3, error)]), { first: true })));
+            }
+        }
+        const options = { enabled: true, chromeEnabled: true, chromeMacEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 3000 };
+        const rejected = createXPushGateway(db, { ...options, createChromeSocket: () => new RejectedSocket(db) });
+        await assert.rejects(rejected.run({ ...subscription, workerId: 'rejected' }), { code: 'X_PUSH_CHROME_LOGIN_FAILED' });
+        const status = await rejected.store.status(subscription);
+        assert.equal(status.state, 'error'); assert.equal(status.reasonCode, 'X_PUSH_CHROME_LOGIN_FAILED');
+        assert.equal((await db.queryDatabase('SELECT id FROM automation_x_subscriptions WHERE id=?', [subscription.subscriptionId])).length, 1);
+        const controller = new AbortController(); let connected = false;
+        const recovered = createXPushGateway(db, { ...options, createChromeSocket: () => new FakeSocket(db) });
+        const result = await recovered.run({ ...subscription, workerId: 'retry', signal: controller.signal,
+            onSession: () => { connected = true; setImmediate(() => controller.abort()); } });
+        assert.equal(connected, true); assert.equal(result.state, 'stopped');
+    } finally { await db.close(); }
+});
 test('Chrome worker fences ACK after a committed receipt if its lease is lost', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {

@@ -466,7 +466,14 @@ function createXPushGateway(db, options = {}) {
             return { state: 'stopped', reasonCode: null };
         } catch (error) {
             if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
-            if (finalState !== 'requires_reenrollment') { finalState = 'error'; reasonCode = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_RECEIVER_FAILED'; }
+            if (finalState !== 'requires_reenrollment') {
+                finalState = 'error';
+                // A single MCS login rejection is not proof that the user's
+                // subscription is invalid. Keep the normal bounded retry path
+                // while exposing a fixed, non-sensitive reason to operators.
+                reasonCode = error?.code === 'X_CHROME_SESSION_LOGIN_FAILED' ? 'X_PUSH_CHROME_LOGIN_FAILED'
+                    : /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_RECEIVER_FAILED';
+            }
             throw fault(reasonCode);
         } finally {
             finished = true;

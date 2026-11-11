@@ -48,6 +48,14 @@ test('server close 4774 keeps a durable thirty-minute minimum delay after a reje
     f.advance(1799999); await f.runtime.tick(); await flush(); assert.equal(f.calls(), 1);
     f.advance(1); await f.runtime.tick(); await flush(); assert.equal(f.calls(), 2);
 });
+test('Chrome login rejection remains on the bounded reconnect path', async t => {
+    const f = fixture(t, { code: 'X_PUSH_CHROME_LOGIN_FAILED' });
+    await f.runtime.tick(); await flush();
+    assert.equal(f.retries.length, 1); assert.equal(f.retries[0].reasonCode, 'X_PUSH_CHROME_LOGIN_FAILED');
+    assert.equal(f.retries[0].delayMs, 5000);
+    await f.runtime.tick(); await flush(); assert.equal(f.calls(), 1);
+    f.advance(5000); await f.runtime.tick(); await flush(); assert.equal(f.calls(), 2);
+});
 
 test('retry metadata never adopts a newer subscription revision from a late status read', async t => {
     const f = fixture(t, { statusRevision: 8 });
