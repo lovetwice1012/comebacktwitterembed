@@ -47,7 +47,10 @@ jobs:
           mkdir "$RUNNER_TEMP/node-dist"
           tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP/node-dist" --strip-components=1
           MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
-          node scripts/build-mac-chrome-preview.cjs "$arch" "$RUNNER_TEMP/node-dist/bin/node" "$RUNNER_TEMP/MacStoreLock" "$RUNNER_TEMP/node-dist/LICENSE" "$RUNNER_TEMP/cbte-preview.zip"
+          printf '\0' > "$RUNNER_TEMP/restrict-section"
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/launch-native.c -Wl,-sectcreate,__RESTRICT,__restrict,"$RUNNER_TEMP/restrict-section" -o "$RUNNER_TEMP/Launch"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/Launch"
+          node scripts/build-mac-chrome-preview.cjs "$arch" "$RUNNER_TEMP/node-dist/bin/node" "$RUNNER_TEMP/Launch" "$RUNNER_TEMP/MacStoreLock" "$RUNNER_TEMP/node-dist/LICENSE" "$RUNNER_TEMP/cbte-preview.zip"
       - name: Load packaged runtime and native addon
         env:
           MAC_PREVIEW_ZIP: ${{ runner.temp }}/cbte-preview.zip
