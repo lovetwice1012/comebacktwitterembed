@@ -29,4 +29,9 @@ test('real signed Edge synthetic calibration reveals a parseable connect-agent s
             for (const item of result.connections) assert.match(item.status, /^(?:accepted|X_EDGE_WNS_[A-Z_]+|PROBE_EXCHANGE_FAILED)$/);
             t.diagnostic(`synthetic CNT results: ${JSON.stringify(result.connections)}`);
         }
+        if (['1', '2'].includes(process.env.CBTE_RUN_EDGE_AUTH_VERSION)) {
+            assert.equal(result.authentication?.version, process.env.CBTE_RUN_EDGE_AUTH_VERSION);
+            assert.equal(result.authentication?.status, 'bound', JSON.stringify(result.authentication));
+            t.diagnostic(`synthetic authenticated WNS bind succeeded for version ${result.authentication.version}`);
+        }
     });

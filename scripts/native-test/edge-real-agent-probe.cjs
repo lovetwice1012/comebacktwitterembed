@@ -10,18 +10,19 @@ const { randomBytes } = require('node:crypto');
 const { createWindowsEdgePeerVerifier } = require('../../src/automation/edge-windows-peer');
 const { withMacEdgeEphemeralCertificate } = require('../../src/automation/edge-mac-ephemeral-certificate');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
-const { connectFrame } = require('../../src/automation/edge-wns-protocol');
+const { connectFrameForVersion } = require('../../src/automation/edge-wns-connect-version');
 const { reply } = require('../../src/automation/edge-wns-session');
+const { deviceFrame, bindFrame, createNonce } = require('../../src/automation/edge-wns-protocol');
+const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
+const { selectDeviceRecord } = require('../../src/automation/edge-wns-record');
+const { ClassicLevel } = require('classic-level');
 
 // Test only the unauthenticated CNT exchange on separate connections. No
 // subscription or device credentials are sent; response contents are wiped.
 async function probeConnectVersion(agent, version) {
     let transport, outgoing, incoming;
     try {
-        outgoing = connectFrame(agent, 1);
-        const needle = Buffer.from('<connect><ver>1</ver>'), index = outgoing.indexOf(needle);
-        if (index < 0 || outgoing.indexOf(needle, index + 1) !== -1) throw new Error('PROBE_FRAME_INVALID');
-        if (version === '2') outgoing[index + Buffer.byteLength('<connect><ver>')] = '2'.charCodeAt(0);
+        outgoing = connectFrameForVersion(agent, 1, version);
         transport = createEdgeWnsTransport({ timeoutMs: 10000 });
         await transport.connect(); await transport.send(outgoing); incoming = await transport.next(10000);
         reply(incoming, 'CNT', 1, 'CON');
@@ -31,6 +32,60 @@ async function probeConnectVersion(agent, version) {
             'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_RECEIVE_TIMEOUT', 'X_EDGE_WNS_REPLY_INVALID', 'X_EDGE_WNS_FRAME_INVALID']);
         return { version, status: allowed.has(error?.code) ? error.code : 'PROBE_EXCHANGE_FAILED' };
     } finally { outgoing?.fill(0); incoming?.fill(0); transport?.close(); }
+}
+
+async function readSyntheticDevice(rootPath) {
+    let current = rootPath;
+    for (const part of ['profile', 'Default', 'EdgePushStorageWithConnectTokenAndKey']) {
+        current = path.join(current, part); const stat = await fs.lstat(current);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || (await fs.realpath(current)).toLowerCase() !== current.toLowerCase())
+            throw new Error('PROBE_STORE_INVALID');
+    }
+    const store = new ClassicLevel(current, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+    let selected, count = 0;
+    try {
+        await store.open();
+        for await (const [key, value] of store.iterator({ limit: 129 })) {
+            try {
+                if (++count > 128 || !Buffer.isBuffer(value) || value.length > 65536) throw new Error('PROBE_STORE_INVALID');
+                let candidate;
+                try { candidate = selectDeviceRecord(value); } catch { /* A synthetic non-device record. */ }
+                if (candidate) {
+                    if (selected) { candidate.deviceKey.fill(0); candidate.reconnectToken.fill(0); throw new Error('PROBE_STORE_AMBIGUOUS'); }
+                    selected = candidate;
+                }
+            } finally { key?.fill(0); value?.fill(0); }
+        }
+        if (!selected) throw new Error('PROBE_DEVICE_MISSING');
+        return selected;
+    } catch (error) { selected?.deviceKey.fill(0); selected?.reconnectToken.fill(0); throw error; }
+    finally { await store.close().catch(() => {}); }
+}
+
+// Uses credentials from the probe's own temporary synthetic browser profile.
+// It performs CNT, ATH and BND only; no notifications are requested or read.
+async function probeAuthenticatedVersion(rootPath, metadata, version) {
+    let device, transport, frame, incoming, binding, stage = 'device';
+    try {
+        device = await readSyntheticDevice(rootPath);
+        transport = createEdgeWnsTransport({ timeoutMs: 10000 }); await transport.connect();
+        stage = 'connect'; frame = connectFrameForVersion(metadata.agent, 1, version);
+        await transport.send(frame); frame.fill(0); frame = null;
+        incoming = await transport.next(10000); reply(incoming, 'CNT', 1, 'CON'); incoming.fill(0); incoming = null;
+        stage = 'device-auth'; frame = deviceFrame(2); await transport.send(frame); frame.fill(0); frame = null;
+        incoming = await transport.next(10000); reply(incoming, 'ATH', 2, 'CON', { emptyBody: true }); incoming.fill(0); incoming = null;
+        stage = 'bind'; frame = bindFrame({ ...metadata.client, nonce: createNonce(), reconnectToken: device.reconnectToken, deviceKey: device.deviceKey }, 3);
+        await transport.send(frame); frame.fill(0); frame = null; incoming = await transport.next(10000);
+        reply(incoming, 'BND', 3, 'CON'); binding = parseBindResponse(incoming, 3); incoming.fill(0); incoming = null;
+        return { version, status: 'bound' };
+    } catch (error) {
+        const allowed = new Set(['X_EDGE_WNS_CONNECT_TIMEOUT', 'X_EDGE_WNS_CONNECT_FAILED', 'X_EDGE_WNS_SOCKET_FAILED',
+            'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_RECEIVE_TIMEOUT', 'X_EDGE_WNS_REPLY_INVALID', 'X_EDGE_WNS_FRAME_INVALID', 'X_EDGE_WNS_BIND_INVALID']);
+        return { version, status: allowed.has(error?.code) ? error.code : 'PROBE_AUTH_FAILED', stage };
+    } finally {
+        frame?.fill(0); incoming?.fill(0); binding?.reconnectToken.fill(0);
+        device?.deviceKey.fill(0); device?.reconnectToken.fill(0); transport?.close();
+    }
 }
 
 async function main() {
@@ -72,8 +127,11 @@ async function main() {
         if (!result.client?.agent || !result.client?.client || !['1', '2'].includes(result.client.connectVersion)) throw new Error('PROBE_METADATA_INVALID');
         const connections = process.env.CBTE_EDGE_PROBE_CONNECT_VERSIONS === '1'
             ? [await probeConnectVersion(result.client.agent, '1'), await probeConnectVersion(result.client.agent, '2')] : undefined;
+        const requestedAuth = process.env.CBTE_EDGE_PROBE_AUTH_VERSION;
+        const authentication = ['1', '2'].includes(requestedAuth)
+            ? await probeAuthenticatedVersion(rootPath, result.client, requestedAuth) : undefined;
         return { ok: true, agentFormatRecognized: true, connectVersion: result.client.connectVersion,
-            ...(connections ? { connections } : {}) };
+            ...(connections ? { connections } : {}), ...(authentication ? { authentication } : {}) };
     } catch (error) {
         return { ok: false, code: /^X_EDGE_CALIBRATION_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_FAILED',
             ...(diagnostic ? { diagnostic } : {}) };
