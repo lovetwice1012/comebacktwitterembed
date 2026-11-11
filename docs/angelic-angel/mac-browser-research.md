@@ -28,6 +28,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42988258144)では、MCSログインが `401` で拒否された。同じ試験用端末情報を使うMac版チェックインは値を変えず成功したが、その直後のMCS再ログインも `401` だった。チェックインだけでは復旧しない例であり、拒否の原因と再発条件は未確定。試験コードによる追加調査であり、実運用の認証手順は変更していない。
 
+[追加比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142481)では、Apple SiliconのMCSログインは成功したが、試験通知の送信先から `410` が返り送信できなかった。同じ実行のIntelと、[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142531)は受信・復号まで成功した。いずれの試験用端末情報も符号なし64ビット値の上位ビットは立っていなかった。`401` はこの実行で再現せず、代替ポートの比較も行われていない。`401` と `410` の原因・関連は未確定である。
+
 [macOSの配布形式試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42986831191)では、Apple SiliconとIntelの各環境で、固定ハッシュを検査したNodeと現地でビルドしたロック補助プログラムから未署名プレビューZIPを作成した。展開した `.app` の同梱NodeでアプリのコードとネイティブLevelDB部品を読み込み、一時データベースへの書き込みを確認した。画面を開く操作、ダブルクリック、署名・公証、ブラウザー連携はこの試験に含まれない。ZIPは試験用で公開していない。
 
 ## 調査で確認した範囲
