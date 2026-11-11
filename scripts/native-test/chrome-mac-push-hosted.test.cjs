@@ -236,7 +236,8 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         t.diagnostic('synthetic X-format transfer passed parser and owner-bound worker vault; local origin was substituted');
         t.diagnostic(`synthetic credential ranges: deviceHighBit=${BigInt(fixtureCredentials.deviceId) >= (1n << 63n)} tokenHighBit=${BigInt(fixtureCredentials.securityToken) >= (1n << 63n)}`);
         async function receiveWithDiagnostics(database) {
-            const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port, database });
+            const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port, database,
+                onLoginError: info => t.diagnostic(`synthetic MCS login code=${info.code} category=${info.category}`) });
             try { await receive(); }
             catch (error) {
                 // Diagnostic only: the gateway currently logs in before check-in.

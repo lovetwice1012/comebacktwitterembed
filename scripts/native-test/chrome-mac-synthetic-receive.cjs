@@ -12,8 +12,9 @@ const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-sess
 const { loginResponse } = require('../../src/automation/chrome-mcs-protobuf');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs-store-adapter');
+const { classifySyntheticLoginError } = require('./chrome-mac-login-error.cjs');
 
-async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443, database }) {
+async function receiveSyntheticMacPush({ subscription, vapid, deviceId, securityToken, appId, category, encryption, browserVersion, port = 443, database, onLoginError }) {
     if (port !== 443 && port !== 5228) throw new Error('FIXTURE_MCS_PORT_INVALID');
     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
     const marker = JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
@@ -67,7 +68,8 @@ async function receiveSyntheticMacPush({ subscription, vapid, deviceId, security
                         if (stage === 'login') {
                             loginDetail = `tag${frame.tag}`;
                             if (frame.tag === 3) {
-                                try { const reply = loginResponse(frame.payload); loginDetail += reply.accepted ? '_accepted' : `_error${reply.code}`; }
+                                try { const reply = loginResponse(frame.payload); loginDetail += reply.accepted ? '_accepted' : `_error${reply.code}`;
+                                    if (!reply.accepted && typeof onLoginError === 'function') onLoginError({ code: reply.code, category: classifySyntheticLoginError(frame.payload) }); }
                                 catch { loginDetail += '_invalid'; }
                             }
                         }
