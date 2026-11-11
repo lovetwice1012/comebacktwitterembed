@@ -64,6 +64,10 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [LaunchServicesの追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43001798545)では、Apple SiliconとIntelで `open` から試験用 `.app` を起動し、独立した試験用ホームに設定領域を作成して初期ダイアログを要求するプロセスまで確認した。試験用アプリとその子プロセスを指定して終了する。Finderでの実際のマウス操作、画面の描画・ボタン操作、署名・公証、実際のChrome設定と保存は確認していない。
 
+従来のシェル起動部は `DYLD_INSERT_LIBRARIES` が設定されると、変数を解除する前に影響を受けることをmacOS試験で確認した。アドホック署名とHardened Runtime指定だけのネイティブ試作品でも、試験用ライブラリーの挿入を防げなかった。制限セクション付きのネイティブ起動部を試験用 `.app` に組み込み、[両CPUの試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43011399092)で、不正なライブラリーパスと試験用ライブラリーの挿入、指定した環境変数の引き継ぎを防ぎつつ初期起動できることを確認した。これは試験用アドホック署名であり、正式な開発者署名・公証やすべての環境での安全性を証明しない。ビルダーは起動部のCPUと制限セクションを検査するが、入力バイナリーの出所を証明しないため、信頼できる環境でソースから作成する。
+
+プレビューのビルダーには、CPU種別、Node実行ファイル、制限セクション付き起動部、ロック補助プログラム、Nodeライセンス、出力ZIPの順に指定する。起動部とロック補助プログラムは同じCPU向けにビルドする。具体的なローカル試験手順は `.github/workflows/mac-preview-package.yml` にあり、そこでのアドホック署名済みZIPは利用者向けリリースには使わない。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
