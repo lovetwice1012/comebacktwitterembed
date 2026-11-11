@@ -37,6 +37,9 @@ jobs:
           if [ ! -x '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge' ]; then
             brew install --cask --no-quarantine microsoft-edge
           fi
+      # Disposable runner only: do not alter a person's installed application.
+      - name: Prepare hosted Edge metadata
+        run: sudo xattr -cr '/Applications/Microsoft Edge.app'
       - name: Test dedicated Edge launch
         env:
           CBTE_MAC_EDGE_HOSTED: '1'
