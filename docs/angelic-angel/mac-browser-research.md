@@ -30,6 +30,8 @@ Chromeを専用プロセスグループで起動し、親の終了後もグル�
 
 [後続の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42998765432)では、Apple Siliconの実Chromeが作った試験用購読に届いた暗号文と再送確認IDを既存のMCS保存アダプターでMariaDBへ記録し、ACK送信直前に同じIDの記録が両方存在することを確認した。元の購読はローカル試験サイト、DB登録データは試験内でX形式に置き換えたものを使う。ブラウザーの事前通知が再送される場合にも対応できるよう、複数IDの記録を試験している。以前の保存後エラーの原因がこの変更だったと断定する根拠はない。実X、Discord、管理画面のHTTP操作、実ワーカーの通知ジョブ作成は含まない。
 
+[通知ジョブまでの追加試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42999652167)では、Apple Siliconの実Chrome由来の試験用購読で受信した合成投稿通知を、隔離MariaDBへの暗号文・再送ID保存後、既存の復号・ルーティング処理に渡し、通知ジョブ1件の作成まで確認した。5分間隔は試験DBの時刻だけを調整して再現し、実際の購読先はローカル試験サイト、DB上のX識別子は試験用の置き換え値である。実X・Discord、管理画面からのアップロード、常駐プロセスの長期運用は含まれない。断続的な `401`・`410` の原因も未確定。
+
 [別のApple Silicon実行](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42988258144)では、MCSログインが `401` で拒否された。同じ試験用端末情報を使うMac版チェックインは値を変えず成功したが、その直後のMCS再ログインも `401` だった。チェックインだけでは復旧しない例であり、拒否の原因と再発条件は未確定。試験コードによる追加調査であり、実運用の認証手順は変更していない。
 
 [追加比較](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142481)では、Apple SiliconのMCSログインは成功したが、試験通知の送信先から `410` が返り送信できなかった。同じ実行のIntelと、[別の隔離DB試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42989142531)は受信・復号まで成功した。いずれの試験用端末情報も符号なし64ビット値の上位ビットは立っていなかった。`401` はこの実行で再現せず、代替ポートの比較も行われていない。`401` と `410` の原因・関連は未確定である。
