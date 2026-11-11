@@ -226,6 +226,11 @@ test('Mac snapshot copies only notification data under both locks and is removed
     const saved = JSON.parse(await fs.readFile(path.join(base, 'notifications.json'), 'utf8'));
     assert.equal(saved.push.securityToken, '456'); assert(!JSON.stringify(saved).includes('synthetic-password'));
     await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('synthetic read failure'); } }), { code: 'X_CHROME_MAC_LOCK_FAILED' });
+    for (const code of ['X_CHROME_SNAPSHOT_INVALID', 'X_CHROME_SNAPSHOT_UNSUPPORTED', 'X_CHROME_SNAPSHOT_NOT_FOUND',
+        'X_CHROME_SNAPSHOT_AMBIGUOUS', 'X_CHROME_MAC_FLOW_CANCELLED']) {
+        await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw Object.assign(new Error('private synthetic detail'), { code }); } }),
+            error => error.code === code && error.message === code && !error.stack.includes('private synthetic detail'));
+    }
     assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
     await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('must not run'); } }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });

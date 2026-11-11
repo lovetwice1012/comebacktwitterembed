@@ -89,6 +89,10 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
     } catch (error) {
         if (controller.signal.aborted && !closing) throw fail('X_CHROME_MAC_LOCK_LOST');
         if (error?.code === 'X_CHROME_MAC_LEASE_BUSY') throw fail('X_CHROME_MAC_LOCK_BUSY');
+        // Reader and cancellation failures are not lock failures. Preserve only
+        // known fixed codes and discard the original message and stack.
+        if (browser === 'chrome' && ['X_CHROME_SNAPSHOT_INVALID', 'X_CHROME_SNAPSHOT_UNSUPPORTED',
+            'X_CHROME_SNAPSHOT_NOT_FOUND', 'X_CHROME_SNAPSHOT_AMBIGUOUS', 'X_CHROME_MAC_FLOW_CANCELLED'].includes(error?.code)) throw fail(error.code);
         if (browser === 'firefox' && /^X_FIREFOX_MAC_(?:PREFS|UAID|LOCK|SNAPSHOT)_[A-Z_]+$/.test(error?.code || '')) throw error;
         if (/^X_CHROME_MAC_(?:LOCK|PROFILE|SNAPSHOT)_[A-Z_]+$/.test(error?.code || '')) throw error;
         throw fail('X_CHROME_MAC_LOCK_FAILED');
