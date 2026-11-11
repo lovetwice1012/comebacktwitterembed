@@ -10,14 +10,15 @@ const { isUniversalMacAddon } = require('./lib/mac-macho.cjs');
 const root = path.resolve(__dirname, '..');
 const LEVELDB_SHA256 = 'e311fd4aadf58e151dcb19b0144fbbb468ef08fb73d77bca806e7320725ef26c';
 
-async function buildMacChromeBundle() {
+async function buildMacBundle(entry) {
+    if (!['chrome-mac-app.cjs', 'brave-mac-app.cjs'].includes(entry)) throw new Error('Unsupported Mac bundle');
     const binding = { name: 'flat-mac-leveldb', setup(build) {
         build.onResolve({ filter: /^\.\/binding$/ }, args => /[\\/]classic-level[\\/][^\\/]+\.js$/.test(args.importer)
             ? { path: 'binding', namespace: 'mac-level-binding' } : undefined);
         build.onLoad({ filter: /.*/, namespace: 'mac-level-binding' }, () => ({ contents:
             "module.exports = require(require('node:path').join(__dirname, 'MacLevelDB.node'));", loader: 'js' }));
     } };
-    const result = await esbuild.build({ entryPoints: [path.join(__dirname, 'chrome-mac-app.cjs')], absWorkingDir: root,
+    const result = await esbuild.build({ entryPoints: [path.join(__dirname, entry)], absWorkingDir: root,
         bundle: true, write: false, platform: 'node', format: 'cjs', target: 'node24', logLevel: 'silent',
         legalComments: 'inline', plugins: [binding], metafile: true });
     if (result.outputFiles.length !== 1 || result.outputFiles[0].contents.length > 4 * 1024 * 1024)
@@ -49,4 +50,6 @@ async function buildMacChromeBundle() {
     return { 'MacSetup.cjs': Buffer.from(result.outputFiles[0].contents), 'MacLevelDB.node': addon,
         'MacDependencies-LICENSE.txt': Buffer.from(notices.join('\n'), 'utf8') };
 }
-module.exports = { buildMacChromeBundle, LEVELDB_SHA256 };
+const buildMacChromeBundle = () => buildMacBundle('chrome-mac-app.cjs');
+const buildMacBraveBundle = () => buildMacBundle('brave-mac-app.cjs');
+module.exports = { buildMacChromeBundle, buildMacBraveBundle, LEVELDB_SHA256 };

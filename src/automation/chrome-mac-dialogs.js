@@ -20,41 +20,48 @@ const SCRIPTS = Object.freeze({
     busy: `display dialog "専用Chromeまたは準備ツールが使用中です。終了してから、もう一度お試しください。" with title "使用中です" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
     recovery: `display dialog "保存済みの設定を確認できませんでした。既存の設定を削除せずに、サポートにご相談ください。" with title "保存済みの設定を確認" buttons {"閉じる"} default button "閉じる"\nreturn "yes"`,
 });
+// Both variants are derived only from fixed application-owned literals.
+// No user-controlled text is ever interpolated into AppleScript.
+const BRAVE_SCRIPTS = Object.freeze(Object.fromEntries(Object.entries(SCRIPTS).map(([key, script]) => [key, script.replaceAll('Chrome', 'Brave')])));
 
-function createMacChromeDialogs() {
-    if (process.platform !== 'darwin') throw fail('X_CHROME_MAC_DIALOG_UNSUPPORTED');
+function createMacChromiumDialogs(browser) {
+    const scripts = browser === 'chrome' ? SCRIPTS : browser === 'brave' ? BRAVE_SCRIPTS : null;
+    const prefix = browser === 'brave' ? 'X_BRAVE_MAC_DIALOG' : 'X_CHROME_MAC_DIALOG';
+    if (!scripts || process.platform !== 'darwin') throw fail(`${prefix}_UNSUPPORTED`);
     async function show(script) {
         try {
             const result = await run('/usr/bin/osascript', ['-e', script], { timeout: 300000, maxBuffer: 16384, windowsHide: true });
             return result.stdout.replace(/\r?\n$/, '');
         } catch (error) {
             if (error?.code === 1 && /-128\b/.test(String(error.stderr || ''))) return null;
-            throw fail('X_CHROME_MAC_DIALOG_FAILED');
+            throw fail(`${prefix}_FAILED`);
         }
     }
     const yes = async script => await show(script) === 'yes';
     return Object.freeze({
-        confirmOpen: () => yes(SCRIPTS.open),
-        confirmNotifications: () => yes(SCRIPTS.notifications),
-        retryCapture: () => yes(SCRIPTS.retry),
-        confirmKeychain: () => yes(SCRIPTS.keychain),
-        async showSaved() { await show(SCRIPTS.saved); },
+        confirmOpen: () => yes(scripts.open),
+        confirmNotifications: () => yes(scripts.notifications),
+        retryCapture: () => yes(scripts.retry),
+        confirmKeychain: () => yes(scripts.keychain),
+        async showSaved() { await show(scripts.saved); },
         async showError(code) {
-            const script = code === 'X_CHROME_MAC_BROWSER_INVALID' ? SCRIPTS.browserMissing
-                : ['X_CHROME_MAC_BROKER_BUSY', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_REGISTRY_BUSY'].includes(code) ? SCRIPTS.busy
-                    : ['X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED', 'X_CHROME_MAC_PROFILE_INVALID'].includes(code) ? SCRIPTS.recovery : SCRIPTS.failed;
+            const script = code === (browser === 'brave' ? 'X_BRAVE_MAC_BROWSER_INVALID' : 'X_CHROME_MAC_BROWSER_INVALID') ? scripts.browserMissing
+                : ['X_CHROME_MAC_BROKER_BUSY', 'X_BRAVE_MAC_BROKER_BUSY', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_REGISTRY_BUSY'].includes(code) ? scripts.busy
+                    : ['X_CHROME_MAC_REGISTRY_RECOVERY_REQUIRED', 'X_CHROME_MAC_PROFILE_INVALID'].includes(code) ? scripts.recovery : scripts.failed;
             await show(script);
         },
         async confirmSave({ otherSubscriptionCount }) {
             if (!Number.isInteger(otherSubscriptionCount) || otherSubscriptionCount < 0 || otherSubscriptionCount > 63)
-                throw fail('X_CHROME_MAC_DIALOG_FAILED');
-            if (otherSubscriptionCount > 0 && !await yes(SCRIPTS.other)) return null;
-            const selected = await show(SCRIPTS.destination);
+                throw fail(`${prefix}_FAILED`);
+            if (otherSubscriptionCount > 0 && !await yes(scripts.other)) return null;
+            const selected = await show(scripts.destination);
             if (selected === null) return null;
-            if (!path.isAbsolute(selected) || selected.includes('\0')) throw fail('X_CHROME_MAC_DIALOG_FAILED');
+            if (!path.isAbsolute(selected) || selected.includes('\0')) throw fail(`${prefix}_FAILED`);
             return { confirmed: true, otherSitesConsent: otherSubscriptionCount > 0,
                 directory: path.dirname(selected), filename: path.basename(selected) };
         },
     });
 }
-module.exports = { createMacChromeDialogs };
+const createMacChromeDialogs = () => createMacChromiumDialogs('chrome');
+const createMacBraveDialogs = () => createMacChromiumDialogs('brave');
+module.exports = { createMacChromeDialogs, createMacBraveDialogs };

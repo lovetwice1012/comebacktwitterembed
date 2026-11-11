@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness(responses) {
+async function harness(responses, browser = 'chrome') {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/chrome-mac-dialogs.js'), 'utf8');
     const module = { exports: {} }, calls = [];
     const mockedRequire = name => name === 'node:child_process' ? { execFile(file, args, options, callback) {
@@ -14,8 +14,21 @@ async function harness(responses) {
         else callback(null, { stdout: next + '\n', stderr: '' });
     } } : require(name);
     vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, process: { platform: 'darwin' }, Number });
-    return { ui: module.exports.createMacChromeDialogs(), calls };
+    return { ui: browser === 'brave' ? module.exports.createMacBraveDialogs() : module.exports.createMacChromeDialogs(), calls };
 }
+test('Brave dialogs name the chosen browser and preserve mixed-notification consent', async () => {
+    const h = await harness(['yes', 'yes', 'yes', 'yes', '/Users/test/通知.json', 'yes'], 'brave');
+    assert.equal(await h.ui.confirmOpen(), true); assert.equal(await h.ui.confirmNotifications(), true); assert.equal(await h.ui.confirmKeychain(), true);
+    const selected = await h.ui.confirmSave({ otherSubscriptionCount: 1 });
+    assert.equal(selected.directory, '/Users/test'); assert.equal(selected.filename, '通知.json'); assert.equal(selected.otherSitesConsent, true);
+    await h.ui.showError('X_BRAVE_MAC_BROWSER_INVALID');
+    assert(h.calls[0].args[1].includes('Braveを開く')); assert(h.calls[1].args[1].includes('投稿通知'));
+    assert(h.calls[2].args[1].includes('普段のBrave')); assert(h.calls[3].args[1].includes('サーバーに届く'));
+    assert(h.calls[3].args[1].includes('破棄')); assert(h.calls.at(-1).args[1].includes('Braveを確認'));
+    assert(h.calls.every(call => !call.args[1].includes('Chrome')));
+    const cancelled = await harness(['cancel'], 'brave'); assert.equal(await cancelled.ui.confirmSave({ otherSubscriptionCount: 1 }), null);
+    assert.equal(cancelled.calls.length, 1);
+});
 test('dialogs guide setup, disclose other-site data and return only the chosen local path', async () => {
     const h = await harness(['yes', 'yes', 'yes', 'yes', '/Users/test/通知.json']);
     assert.equal(await h.ui.confirmOpen(), true); assert.equal(await h.ui.confirmNotifications(), true); assert.equal(await h.ui.confirmKeychain(), true);

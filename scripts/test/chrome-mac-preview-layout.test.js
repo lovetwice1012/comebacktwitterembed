@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { unzipSync } = require('fflate');
-const { assembleMacApp, buildMacChromePreview, isMachOExecutable } = require('../build-mac-chrome-preview.cjs');
+const { assembleMacApp, buildMacChromePreview, buildMacBravePreview, isMachOExecutable } = require('../build-mac-chrome-preview.cjs');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -39,6 +39,17 @@ test('unsigned Mac preview layout preserves executable permissions and local man
     assert(!isMachOExecutable(macho(0x0100000c, 0x000e0000), 'arm64'));
     assert(!isMachOExecutable(runtime.subarray(0, 40), 'arm64'));
     await assert.rejects(buildMacChromePreview({ arch: 'arm64', runtime, helper, license: Buffer.from('test license') }), /input verification failed/);
+});
+test('experimental Brave preview uses its own identity and rejects unverified inputs', async () => {
+    const runtime = macho(0x0100000c), helper = macho(0x0100000c), bundle = { 'MacSetup.cjs': Buffer.from('fixture') };
+    const args = { bundle, runtime, helper, license: Buffer.from('test'), projectLicense: Buffer.from('project'), guide: Buffer.from('internal preview') };
+    const files = unzipSync(assembleMacApp({ ...args, browser: 'brave' })), root = 'X通知の準備.app/Contents/';
+    const manifest = JSON.parse(Buffer.from(files[`${root}MacOS/MacSetup-manifest.json`]).toString());
+    assert.equal(manifest.packageId, 'x-notification-mac-brave-setup'); assert.equal(manifest.version, '0.1.0-mac-brave-preview.1');
+    assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
+    assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('jp.cbte.xnotification.brave-setup'));
+    assert.throws(() => assembleMacApp({ ...args, browser: 'other' }), /Unsupported Mac preview/);
+    await assert.rejects(buildMacBravePreview({ arch: 'arm64', runtime, helper, license: Buffer.from('test') }), /input verification failed/);
 });
 test('preview CLI refuses unverified binaries without creating output', async t => {
     const parent = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(parent, 'cbte-mac-preview-test-'));

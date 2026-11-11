@@ -6,9 +6,10 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { zipSync } = require('fflate');
-const { buildMacChromeBundle } = require('./build-mac-chrome-setup-bundle.cjs');
+const { buildMacChromeBundle, buildMacBraveBundle } = require('./build-mac-chrome-setup-bundle.cjs');
 const { isMacExecutable: isMachOExecutable } = require('./lib/mac-macho.cjs');
 const VERSION = '0.1.0-mac-preview.1';
+const BRAVE_VERSION = '0.1.0-mac-brave-preview.1';
 const RUNTIME_HASH = Object.freeze({ arm64: 'e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b',
     x64: '7abcf39bd37ab251015337ff75304d7555f0d8e88c6e0fbf04bce8ce34636f49' });
 const LICENSE_HASH = '5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace';
@@ -19,11 +20,14 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-
 
 // Pure layout helper; the public preview builder verifies all executable inputs
 // before calling it. It is not a signing or release operation.
-function assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide }) {
+function assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide, browser = 'chrome' }) {
+    if (!['chrome', 'brave'].includes(browser)) throw new Error('Unsupported Mac preview');
     if (!Buffer.isBuffer(projectLicense) || !projectLicense.length || !Buffer.isBuffer(guide) || !guide.length)
         throw new Error('Missing preview documentation');
-    const manifest = Buffer.from(JSON.stringify({ packageId: 'x-notification-mac-chrome-setup', version: VERSION, lockSha256: hash(helper) }) + '\n');
-    const contents = { [`${APP}Info.plist`]: [Buffer.from(PLIST), false], [`${APP}MacOS/Launch`]: [Buffer.from(LAUNCH), true],
+    const manifest = Buffer.from(JSON.stringify({ packageId: browser === 'brave' ? 'x-notification-mac-brave-setup' : 'x-notification-mac-chrome-setup',
+        version: browser === 'brave' ? BRAVE_VERSION : VERSION, lockSha256: hash(helper) }) + '\n');
+    const plist = browser === 'brave' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.brave-setup') : PLIST;
+    const contents = { [`${APP}Info.plist`]: [Buffer.from(plist), false], [`${APP}MacOS/Launch`]: [Buffer.from(LAUNCH), true],
         [`${APP}MacOS/MacNode`]: [runtime, true], [`${APP}MacOS/MacStoreLock`]: [helper, true],
         [`${APP}MacOS/MacSetup-manifest.json`]: [manifest, false], [`${APP}MacOS/Node-LICENSE.txt`]: [license, false],
         [`${APP}MacOS/LICENSE.txt`]: [projectLicense, false], 'はじめに.txt': [guide, false] };
@@ -32,17 +36,20 @@ function assembleMacApp({ bundle, runtime, helper, license, projectLicense, guid
         [data, { mtime: new Date('2020-01-01T00:00:00Z'), os: 3, attrs: ((executable ? 0o100755 : 0o100644) << 16) >>> 0 }]]));
     return Buffer.from(zipSync(entries, { level: 6 }));
 }
-async function buildMacChromePreview({ arch, runtime, helper, license }) {
+async function buildMacPreview({ arch, runtime, helper, license, browser }) {
     if (!['arm64', 'x64'].includes(arch) || !Buffer.isBuffer(runtime) || !Buffer.isBuffer(helper) || !Buffer.isBuffer(license)
         || runtime.length > 150 * 1024 * 1024 || helper.length > 4 * 1024 * 1024 || license.length > 1024 * 1024
         || hash(runtime) !== RUNTIME_HASH[arch] || hash(license) !== LICENSE_HASH
         || !isMachOExecutable(runtime, arch) || !isMachOExecutable(helper, arch)) throw new Error('Mac preview input verification failed');
-    const [bundle, projectLicense, guide] = await Promise.all([buildMacChromeBundle(),
+    if (!['chrome', 'brave'].includes(browser)) throw new Error('Unsupported Mac preview');
+    const [bundle, projectLicense, guide] = await Promise.all([browser === 'brave' ? buildMacBraveBundle() : buildMacChromeBundle(),
         readInput(path.resolve(__dirname, '../client/angelic-setup/LICENSE'), 1024 * 1024),
-        readInput(path.resolve(__dirname, '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024)]);
-    const archive = assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide });
-    return { archive, sha256: hash(archive), version: VERSION, arch, signed: false };
+        readInput(path.resolve(__dirname, browser === 'brave' ? '../client/angelic-setup/mac/Brave-試験用.txt' : '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024)]);
+    const archive = assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide, browser });
+    return { archive, sha256: hash(archive), version: browser === 'brave' ? BRAVE_VERSION : VERSION, arch, signed: false };
 }
+const buildMacChromePreview = options => buildMacPreview({ ...options, browser: 'chrome' });
+const buildMacBravePreview = options => buildMacPreview({ ...options, browser: 'brave' });
 async function readInput(filename, max) {
     if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error('Input must be absolute');
     const stat = await fs.lstat(filename);
@@ -68,4 +75,4 @@ async function main(args) {
     process.stdout.write(JSON.stringify({ path: outputPath, sha256: result.sha256, arch, version: VERSION, signed: false }) + '\n');
 }
 if (require.main === module) main(process.argv.slice(2)).catch(() => { process.stderr.write('Mac preview build failed. No release was published.\n'); process.exitCode = 1; });
-module.exports = { assembleMacApp, buildMacChromePreview, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };
+module.exports = { assembleMacApp, buildMacChromePreview, buildMacBravePreview, readInput, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };

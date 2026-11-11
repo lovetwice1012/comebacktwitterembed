@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { buildMacChromeBundle, LEVELDB_SHA256 } = require('../build-mac-chrome-setup-bundle.cjs');
+const { buildMacChromeBundle, buildMacBraveBundle, LEVELDB_SHA256 } = require('../build-mac-chrome-setup-bundle.cjs');
 const { isUniversalMacAddon } = require('../lib/mac-macho.cjs');
 
 test('Mac application bundle is self-contained and pins the universal LevelDB addon', async t => {
@@ -39,4 +39,25 @@ test('Mac application bundle is self-contained and pins the universal LevelDB ad
     const child = spawnSync(process.execPath, ['-e', 'const app = require(process.argv[1]); process.stdout.write(typeof app.main)', path.join(temp, 'MacSetup.cjs')],
         { encoding: 'utf8', env, timeout: 15000 });
     assert.equal(child.status, 0, child.stderr); assert.equal(child.stdout, 'function');
+});
+test('experimental Brave bundle uses verified Mac addon and stays disabled by default', async t => {
+    const bundle = await buildMacBraveBundle();
+    assert.deepEqual(Object.keys(bundle).sort(), ['MacDependencies-LICENSE.txt', 'MacLevelDB.node', 'MacSetup.cjs']);
+    assert.equal(createHash('sha256').update(bundle['MacLevelDB.node']).digest('hex'), LEVELDB_SHA256);
+    assert(isUniversalMacAddon(bundle['MacLevelDB.node']));
+    const parent = await fs.realpath(os.tmpdir()), temp = await fs.mkdtemp(path.join(parent, 'cbte-brave-mac-bundle-'));
+    t.after(async () => {
+        const real = await fs.realpath(temp); assert.equal(path.dirname(real).toLowerCase(), parent.toLowerCase());
+        assert.match(path.basename(real), /^cbte-brave-mac-bundle-/); await fs.rm(real, { recursive: true });
+    });
+    await fs.writeFile(path.join(temp, 'MacSetup.cjs'), bundle['MacSetup.cjs']);
+    const platform = process.platform === 'win32' && process.arch === 'x64' ? 'win32-x64'
+        : process.platform === 'linux' && process.arch === 'x64' ? 'linux-x64' : null;
+    if (!platform) return;
+    const pkg = require.resolve('classic-level/package.json');
+    await fs.copyFile(path.join(path.dirname(pkg), 'prebuilds', platform, 'classic-level.node'), path.join(temp, 'MacLevelDB.node'));
+    const env = { ...process.env }; delete env.NODE_OPTIONS; delete env.NODE_PATH; delete env.CBTE_EXPERIMENTAL_BRAVE_MAC_LOCAL;
+    const code = 'const app=require(process.argv[1]);app.main().then(()=>process.exitCode=2,error=>process.stdout.write(error.message))';
+    const child = spawnSync(process.execPath, ['-e', code, path.join(temp, 'MacSetup.cjs')], { encoding: 'utf8', env, timeout: 15000 });
+    assert.equal(child.status, 0, child.stderr); assert.equal(child.stdout, 'X_BRAVE_MAC_APP_UNAVAILABLE');
 });
