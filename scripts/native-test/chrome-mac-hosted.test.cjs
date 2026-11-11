@@ -12,6 +12,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
+const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
 
 test('signed macOS Chrome opens a dedicated synthetic profile over its private pipe',
     { skip: process.platform !== 'darwin', timeout: 400000 }, async t => {
@@ -28,6 +29,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
                 clearTimeout(timer); cleanupSafe = stopped;
             }
             if (broker) await broker.stop();
+            await describeInstalledChrome(t, 'after launch');
             server.closeAllConnections();
             if (server.listening) await new Promise(resolve => server.close(resolve));
             if (cleanupSafe) {
@@ -39,6 +41,7 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
         const origin = `http://127.0.0.1:${server.address().port}`;
         const profile = await createMacChromeProfile(base);
+        await describeInstalledChrome(t, 'before launch');
         let executable;
         try { executable = await verifyInstalledChrome(); }
         catch (error) {

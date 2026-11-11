@@ -14,6 +14,7 @@ const { createMacChromeProfile } = require('../../src/automation/chrome-mac-prof
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
+const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
 
 function fixturePipe(child) {
     let id = 0, pending = new Map(), buffer = Buffer.alloc(0);
@@ -66,6 +67,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         const profile = await createMacChromeProfile(base); let executable;
         try { executable = await verifyInstalledChrome(); }
         catch (error) {
+            await describeInstalledChrome(t, 'push test signature failure');
             const app = '/Applications/Google Chrome.app';
             for (const filename of [app, path.join(app, 'Contents/Info.plist'), path.join(app, 'Contents/MacOS/Google Chrome')]) {
                 try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} size=${stat.size}`); }
