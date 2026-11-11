@@ -10,6 +10,8 @@ Chromeの試験用起動処理は、プロセスの `exit` から入出力が閉
 
 追加の[macOS試験](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42977024183)では、両CPUで実際のGoogle署名済みChromeを専用の使い捨てプロフィールで起動し、限定した匿名パイプでバージョンを取得して終了した。各13件が成功した。試験環境に最初から入っていたChromeの一部に付いたFinder情報が厳格な署名検証を妨げたため、使い捨てのGitHubランナー上だけで拡張属性を除去し、その後も署名と識別子を検証した。利用者の環境では属性の除去を行わない。ローカル試験ページへの起動であり、購読の作成、Keychain、通知受信、実X、配布アプリは検証していない。
 
+さらに[試験用購読の作成と取得](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/42978559629)を実行した。Apple Siliconではローカル試験サイトでGoogleのPush購読を作り、ブラウザー再起動後に専用パイプ経由で同じ購読を取得できた。Intelでは直前のブラウザー起動試験は成功したが、その後の厳格な署名検証でChrome内部フレームワークの資源の整合性エラーが発生し、購読試験を開始できなかった。Chrome本体の署名者情報はGoogleだったが、エラー原因は未確定。検証を省略せず調査する。通知情報の抽出、Keychain、サーバーでの受信、実XとDiscordへの配送はこの試験に含まれない。
+
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
