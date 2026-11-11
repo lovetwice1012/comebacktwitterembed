@@ -30,9 +30,9 @@ process.once('message', async input => {
         const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, rolloutMode: 'public',
             privateWorkerVault: createTransferPrivateWorkerVault(keyConfig), edgeTokenVault: createWnsTokenWorkerVault(keyConfig) });
         const controller = new AbortController();
-        let received = false, timer, checking = false, allSeenAt = 0, scanFailed = false, observedCount = 0;
+        let received = false, timer, checking = false, allSeenAt = 0, scanFailed = false, observedMask = 0;
         const deadline = setTimeout(() => {
-            if (input.batch) process.send({ state: ['batch-timeout-zero', 'batch-timeout-one', 'batch-timeout-two', 'batch-timeout-three'][observedCount] });
+            if (input.batch) process.send({ state: `batch-timeout-${observedMask}` });
             controller.abort();
         }, 30000);
         const batchTexts = ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'];
@@ -46,7 +46,7 @@ process.once('message', async input => {
                     const payload = await gateway.decryptInbox(lease, row);
                     if (counts.has(payload?.text)) counts.set(payload.text, counts.get(payload.text) + 1);
                 }
-                observedCount = [...counts.values()].filter(count => count > 0).length;
+                observedMask = batchTexts.reduce((mask, text, index) => mask | (counts.get(text) > 0 ? 1 << index : 0), 0);
                 if ([...counts.values()].some(count => count > 1)) {
                     process.send({ state: 'batch-duplicate' }); throw new Error();
                 }

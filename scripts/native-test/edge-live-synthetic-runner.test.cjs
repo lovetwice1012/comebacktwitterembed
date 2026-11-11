@@ -35,6 +35,10 @@ test('online batch comparison requires the batch fixture', { skip: process.platf
   expectRefusal(['-TestOnly', '-OnlineBatch']);
 });
 
+test('offline settling requires an offline batch', { skip: process.platform !== 'win32' }, () => {
+  expectRefusal(['-TestOnly', '-OfflineSettle']);
+});
+
 test('refuses to run without the disposable database', { skip: process.platform !== 'win32' }, (t) => {
   const inspect = spawnSync('docker', ['inspect', 'cbte-edge-live-synthetic-20261111'], {
     stdio: 'ignore', windowsHide: true, timeout: 10000,

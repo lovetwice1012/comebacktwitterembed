@@ -54,9 +54,8 @@ async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotifi
             timeout = setTimeout(() => reject(new Error('PROBE_RESTART_TIMEOUT')), 45000);
             child.on('error', () => reject(new Error('PROBE_RESTART_FAILED')));
             child.on('message', message => {
-                const batchErrors = { 'batch-timeout-zero': 'PROBE_BATCH_TIMEOUT_ZERO', 'batch-timeout-one': 'PROBE_BATCH_TIMEOUT_ONE',
-                    'batch-timeout-two': 'PROBE_BATCH_TIMEOUT_TWO', 'batch-timeout-three': 'PROBE_BATCH_TIMEOUT_THREE',
-                    'batch-duplicate': 'PROBE_BATCH_DUPLICATE', 'batch-scan-failed': 'PROBE_BATCH_SCAN_FAILED' };
+                const batchErrors = Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`batch-timeout-${index}`, `PROBE_BATCH_TIMEOUT_${index}`]));
+                batchErrors['batch-duplicate'] = 'PROBE_BATCH_DUPLICATE'; batchErrors['batch-scan-failed'] = 'PROBE_BATCH_SCAN_FAILED';
                 if (message?.state === 'ready' && !ready) {
                     ready = true; Promise.resolve().then(sendNotification).catch(() => reject(new Error('PROBE_RESTART_FAILED')));
                 } else if (message?.state === 'received' && ready && !received) received = true;
@@ -85,6 +84,7 @@ async function main() {
     const offlineMessage = process.env.EDGE_PROBE_OFFLINE_MESSAGE === '1';
     const offlineBatch = process.env.EDGE_PROBE_OFFLINE_BATCH === '1';
     const onlineBatch = process.env.EDGE_PROBE_BATCH_ONLINE === '1';
+    const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
     if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
         || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     if (takeover && (!realWns || !calibrate)) throw new Error('PROBE_MODE_INVALID');
@@ -92,6 +92,7 @@ async function main() {
     if (offlineMessage && !reimport) throw new Error('PROBE_MODE_INVALID');
     if (offlineBatch && !offlineMessage) throw new Error('PROBE_MODE_INVALID');
     if (onlineBatch && !offlineBatch) throw new Error('PROBE_MODE_INVALID');
+    if (offlineSettle && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'edge-profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx, browserEvents = 0;
@@ -453,6 +454,7 @@ async function main() {
                         takeoverResult.receivedInNewWorkerProcess = true;
                         await terminateReadySyntheticWorker({ schema: testDb.schema, identity,
                             privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }) });
+                        if (offlineSettle) await wait(5000);
                         if (offlineMessage && !onlineBatch) {
                             const messages = offlineBatch ? ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'] : ['synthetic-offline-queued'];
                             for (const text of messages) await webpush.sendNotification(expected, JSON.stringify({ text }), { TTL: 300 });
@@ -500,5 +502,5 @@ async function main() {
         await fs.rm(actual, { recursive: true });
     }
 }
-main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
+main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7])$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
     console.error('PROBE_STAGE', stage, code); process.exitCode = 1; });

@@ -1,6 +1,6 @@
-param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch)
+param([Parameter(Mandatory=$true)][string] $Node, [switch] $TestOnly, [switch] $Takeover, [switch] $Reimport, [switch] $OfflineMessage, [switch] $OfflineBatch, [switch] $OnlineBatch, [switch] $OfflineSettle)
 $ErrorActionPreference = 'Stop'
-if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch)) { throw 'SYNTHETIC_TEST_ONLY' }
+if (-not $TestOnly -or ($Reimport -and -not $Takeover) -or ($OfflineMessage -and -not $Reimport) -or ($OfflineBatch -and -not $OfflineMessage) -or ($OnlineBatch -and -not $OfflineBatch) -or ($OfflineSettle -and (-not $OfflineBatch -or $OnlineBatch))) { throw 'SYNTHETIC_TEST_ONLY' }
 $container = 'cbte-edge-live-synthetic-20261111'
 try { $identity = (& docker inspect $container --format '{{.Config.Image}}|{{.State.Running}}' 2>$null) }
 catch { throw 'SYNTHETIC_DATABASE_REQUIRED' }
@@ -28,6 +28,7 @@ if ($Reimport) { $items.Add('EDGE_PROBE_REIMPORT=1') }
 if ($OfflineMessage) { $items.Add('EDGE_PROBE_OFFLINE_MESSAGE=1') }
 if ($OfflineBatch) { $items.Add('EDGE_PROBE_OFFLINE_BATCH=1') }
 if ($OnlineBatch) { $items.Add('EDGE_PROBE_BATCH_ONLINE=1') }
+if ($OfflineSettle) { $items.Add('EDGE_PROBE_OFFLINE_SETTLE=1') }
 $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
 $probe = [IO.Path]::Combine($repo, 'experiments', 'chrome-push', 'edge-broker-pipe-probe.cjs')
 $job = [XEdgeNative.CalibrationJob]::Start($Node, ('"' + $probe + '"'), $repo, $environment)
@@ -39,7 +40,7 @@ try {
     if (-not $write.Wait(5000) -or -not $read.Wait(5000)) { throw 'SYNTHETIC_PROBE_FAILED' }
     $outputBytes = $read.GetAwaiter().GetResult(); $text = [Text.Encoding]::UTF8.GetString($outputBytes)
     if ($job.ExitCode -ne 0) {
-        if ($text -match 'PROBE_STAGE wns (PROBE_BATCH_(?:TIMEOUT_(?:ZERO|ONE|TWO|THREE)|DUPLICATE|SCAN_FAILED))') { throw $Matches[1] }
+        if ($text -match 'PROBE_STAGE wns (PROBE_BATCH_(?:TIMEOUT_[0-7]|DUPLICATE|SCAN_FAILED))') { throw $Matches[1] }
         throw 'SYNTHETIC_PROBE_FAILED'
     }
     $result = ConvertFrom-Json -InputObject $text
