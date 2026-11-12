@@ -65,6 +65,51 @@ function processPresence(name) {
   return 'unknown';
 }
 
+function parseLaunchctlState(output) {
+  // launchctl print is diagnostic output, not a stable machine API. Only a
+  // single known state line is accepted; anything else stays unknown.
+  const matches = [...output.matchAll(/^[\t ]*state[\t ]*=[\t ]*(running|waiting|not running|exited)[\t ]*$/gm)];
+  if (matches.length !== 1) return 'unknown';
+  return matches[0][1] === 'running' ? 'running' : 'not_running';
+}
+
+function launchdApsdState() {
+  const options = { timeout: 4000, encoding: 'utf8', maxBuffer: 262144, stdio: ['ignore', 'pipe', 'ignore'] };
+  let result = spawnSync('/bin/launchctl', ['print', 'system/com.apple.apsd'], options);
+  if (result.status !== 0) {
+    // GitHub-hosted VMs may require privilege for this read-only system query.
+    result = spawnSync('/usr/bin/sudo', ['-n', '/bin/launchctl', 'print', 'system/com.apple.apsd'], options);
+  }
+  if (result.status !== 0 || typeof result.stdout !== 'string') return 'unknown';
+  return parseLaunchctlState(result.stdout);
+}
+
+function parsePsApsdPresence(output) {
+  const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const names = lines.map(line => path.posix.basename(line));
+  // Require the ps process itself as a sanity check for a usable snapshot.
+  if (!names.includes('ps')) return 'unknown';
+  return names.includes('apsd');
+}
+
+function psApsdPresence() {
+  const result = spawnSync('/bin/ps', ['-A', '-o', 'comm='], {
+    timeout: 4000, encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (result.status !== 0 || typeof result.stdout !== 'string') return 'unknown';
+  return parsePsApsdPresence(result.stdout);
+}
+
+function recordApsdState(stage) {
+  try {
+    // Raw launchctl/ps output, identifiers, environment and paths stay in memory.
+    console.log(`Safari hosted apsd ${stage}: ${JSON.stringify({ launchd: launchdApsdState(),
+      psBasename: psApsdPresence(), pgrepExact: processPresence('apsd') })}`);
+  } catch {
+    console.log(`Safari hosted apsd ${stage}: unknown`);
+  }
+}
+
 async function recordApnsDiagnostics(stage) {
   try {
     const [provider, courier] = await Promise.all([
@@ -74,6 +119,7 @@ async function recordApnsDiagnostics(stage) {
     // No address, DNS response, process ID, socket data or credentials are logged.
     console.log(`Safari hosted APNs ${stage}: ${JSON.stringify({ providerIPv4: provider, courierIPv4: courier,
       apsd: processPresence('apsd'), webpushd: processPresence('webpushd') })}`);
+    recordApsdState(stage);
   } catch {
     console.log(`Safari hosted APNs ${stage}: diagnostic_error`);
   }
@@ -154,6 +200,18 @@ test('APNs diagnostics restrict addresses and classify socket errors', () => {
   assert.equal(socketErrorCategory('ETIMEDOUT'), 'timeout');
   assert.equal(socketErrorCategory('EHOSTUNREACH'), 'unreachable');
   assert.equal(socketErrorCategory('anything else'), 'error');
+});
+
+test('apsd diagnostics reject ambiguous service output and match exact process basename', () => {
+  assert.equal(parseLaunchctlState('service = {\n\tstate = running\n}\n'), 'running');
+  assert.equal(parseLaunchctlState('service = {\n\tstate = waiting\n}\n'), 'not_running');
+  assert.equal(parseLaunchctlState('state = running\nstate = waiting\n'), 'unknown');
+  assert.equal(parseLaunchctlState('job state = running\n'), 'unknown');
+  assert.equal(parseLaunchctlState('state = changed-format\n'), 'unknown');
+  assert.equal(parsePsApsdPresence('/bin/ps\n/usr/libexec/apsd\n'), true);
+  assert.equal(parsePsApsdPresence('/bin/ps\n/usr/libexec/notapsd\n'), false);
+  assert.equal(parsePsApsdPresence('unrecognized format'), 'unknown');
+  assert.equal(parsePsApsdPresence(''), 'unknown');
 });
 
 test('hosted macOS checks UI inspection permissions without requesting them', { skip: !enabled, timeout: 90000 }, () => {
@@ -286,6 +344,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         console.log(`Safari synthetic notification UI: ${result}`);
         axDiagnosticsReported = true;
         assert.equal(result, 'allow_pressed', 'Synthetic notification permission control was not uniquely verified');
+        recordApsdState('after_allow');
       }
       if (status?.state !== 'pending') break;
       await delay(500);
