@@ -65,8 +65,16 @@ try {
         'EDGE_PROBE_DATABASE=1', 'EDGE_PROBE_REAL_WNS=1', 'EDGE_PROBE_RELAY_CALIBRATION=1',
         'EDGE_PROBE_CALIBRATION_RUNNER=1', 'EDGE_PROBE_CONNECT_VERSION=2', 'EDGE_PROBE_PINNED_HOSTED_PACKAGE=1')) { $items.Add($item) }
     $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
-    $node = (Get-Command node.exe -CommandType Application).Source
+    . ([IO.Path]::Combine($repo, 'scripts', 'native-test', 'edge-hosted-node-selection.ps1'))
+    $nodeCommands = @(Get-Command node.exe -CommandType Application)
+    $node = Select-XEdgeHostedNodePath -Commands $nodeCommands
     $probe = [IO.Path]::Combine($repo, 'experiments', 'chrome-push', 'edge-broker-pipe-probe.cjs')
+    if (-not [IO.File]::Exists($node) -or (Get-FileHash -LiteralPath $node -Algorithm SHA256).Hash -ine 'ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32') { throw 'SYNTHETIC_NODE_INVALID' }
+    if (-not [IO.Path]::IsPathRooted($probe) -or -not [IO.File]::Exists($probe) -or $probe -match '[\x00-\x1f<>"|?*]' -or
+        -not [IO.Path]::IsPathRooted($repo) -or -not [IO.Directory]::Exists($repo) -or $repo -match '[\x00-\x1f<>"|?*]') { throw 'SYNTHETIC_LAUNCH_PATH_INVALID' }
+    # Report only fixed booleans and a candidate count; never print PATH,
+    # environment values, the executable path, or arguments.
+    Write-Output ('Synthetic launch checks: nodeCandidates=' + $nodeCommands.Count + ' nodeScalar=true nodePinned=true probeValid=true workingDirectoryValid=true argumentsValid=true')
     $job = [XEdgeNative.CalibrationJob]::Start($node, ('"' + $probe + '"'), $repo, $environment)
     $inputBytes = New-Object byte[] 0; $outputBytes = $null
     try {

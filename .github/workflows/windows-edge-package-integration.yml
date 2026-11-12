@@ -7,6 +7,8 @@ on:
       - .github/workflows/windows-edge-package-integration.yml
       - scripts/native-test/edge-hosted-package-integration.ps1
       - scripts/native-test/edge-hosted-package-integration.test.cjs
+      - scripts/native-test/edge-hosted-node-selection.ps1
+      - scripts/native-test/edge-hosted-node-selection.test.cjs
       - scripts/native-test/edge-fixture-archive.test.cjs
       - experiments/chrome-push/edge-fixture-archive.cjs
       - experiments/chrome-push/edge-broker-pipe-probe.cjs
@@ -45,7 +47,7 @@ jobs:
       - name: Verify immutable package reader
         shell: pwsh
         run: |
-          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs
+          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Pinned package test failed' }
       - name: Build exact preview candidate in runner temp
         shell: pwsh
