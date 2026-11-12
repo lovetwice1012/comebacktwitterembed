@@ -102,3 +102,40 @@ test('the reservation refuses an incorrect pool limit or access outside a worklo
     await assert.rejects(db.queryDatabase('SELECT 1'), { code: 'RESERVED_DB_CONTEXT_REQUIRED' });
     db.stop();
 });
+
+test('a pool has one shared reservation, and a cleanly stopped reservation can be replaced', async () => {
+    const f = fakePool();
+    assert.throws(() => createReservedDbExperiment({ pool: f.pool, connectionLimit: 4 }), { code: 'RESERVED_DB_CONFIG_INVALID' });
+    const db = createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 });
+    assert.throws(() => createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 }), { code: 'RESERVED_DB_POOL_IN_USE' });
+    await Promise.all([db.runBackground(() => db.queryDatabase('FIRST')), db.runBackground(() => db.queryDatabase('SECOND'))]);
+    assert.equal(db.status().active, 0);
+    db.stop();
+    const replacement = createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 });
+    await replacement.runBackground(() => replacement.queryDatabase('AFTER'));
+    replacement.stop();
+});
+
+test('stopping an active reservation prevents replacement until its connection is returned', async () => {
+    let finish; const f = fakePool((sql, done) => sql === 'WAIT' ? (finish = done) : setImmediate(() => done(null, [])));
+    const db = createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 });
+    const pending = db.runBackground(() => db.queryDatabase('WAIT'));
+    const rejected = assert.rejects(pending, { code: 'RESERVED_DB_STOPPED' });
+    while (!finish) await immediate();
+    db.stop();
+    assert.throws(() => createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 }), { code: 'RESERVED_DB_POOL_IN_USE' });
+    finish(null, []); await rejected;
+    assert.equal(f.stats().releases, 1);
+    const replacement = createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 });
+    replacement.stop();
+});
+
+test('an uncertain reservation cannot be bypassed by stopping and recreating it on the same pool', async () => {
+    const f = fakePool((_sql, done) => setImmediate(() => done(Object.assign(new Error('fixture'), { code: 'PROTOCOL_SEQUENCE_TIMEOUT', fatal: true }))));
+    const db = createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 });
+    await assert.rejects(db.runBackground(() => db.queryDatabase('WAIT')), { code: 'PROTOCOL_SEQUENCE_TIMEOUT' });
+    assert.equal(db.status().poisoned, 1); db.stop();
+    assert.throws(() => createReservedDbExperiment({ pool: f.pool, connectionLimit: 3 }), { code: 'RESERVED_DB_POOL_IN_USE' });
+    const fresh = fakePool(), replacement = createReservedDbExperiment({ pool: fresh.pool, connectionLimit: 3 });
+    await replacement.runBackground(() => replacement.queryDatabase('OK')); replacement.stop();
+});

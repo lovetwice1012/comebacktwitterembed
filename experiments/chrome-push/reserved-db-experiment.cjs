@@ -6,6 +6,9 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const failure = code => Object.assign(new Error(code), { code });
 const uncertain = error => error?.fatal === true || /^PROTOCOL_|^ECONN|^ETIMEDOUT$/.test(String(error?.code || ''));
+// A quota is meaningful only when all background work on a pool shares it.
+// Weak references avoid retaining a discarded pool just for this guard.
+const registeredPools = new WeakSet();
 
 function createReservedDbExperiment({ pool, connectionLimit, reservedConnections = 1, maxWaiting = 100, queryTimeoutMs = 30000 }) {
     if (!pool || typeof pool.getConnection !== 'function' || !Number.isInteger(connectionLimit) || connectionLimit < 2 || connectionLimit > 64
@@ -14,14 +17,21 @@ function createReservedDbExperiment({ pool, connectionLimit, reservedConnections
         || !Number.isInteger(maxWaiting) || maxWaiting < 1 || maxWaiting > 20000
         || !Number.isInteger(queryTimeoutMs) || queryTimeoutMs < 100 || queryTimeoutMs > 300000)
         throw failure('RESERVED_DB_CONFIG_INVALID');
+    if (registeredPools.has(pool)) throw failure('RESERVED_DB_POOL_IN_USE');
+    registeredPools.add(pool);
     const context = new AsyncLocalStorage(), capacity = connectionLimit - reservedConnections, waiting = [];
     let active = 0, poisoned = 0, closed = false;
+    function releaseRegistrationIfDrained() {
+        // Never permit a fresh quota to bypass an uncertain server-side query.
+        // The discarded pool can still be garbage collected via the WeakSet.
+        if (closed && active === 0 && poisoned === 0) registeredPools.delete(pool);
+    }
     function pump() {
         while (!closed && active + poisoned < capacity && waiting.length) {
             const item = waiting.shift(); item.signal?.removeEventListener('abort', item.onAbort);
             if (item.signal?.aborted) { item.reject(failure('RESERVED_DB_STOPPED')); continue; }
             active++; let returned = false;
-            item.resolve(isUncertain => { if (returned) return; returned = true; active--; if (isUncertain) poisoned++; pump(); });
+            item.resolve(isUncertain => { if (returned) return; returned = true; active--; if (isUncertain) poisoned++; pump(); releaseRegistrationIfDrained(); });
         }
     }
     function permit(signal) {
@@ -117,6 +127,7 @@ function createReservedDbExperiment({ pool, connectionLimit, reservedConnections
     function stop() {
         closed = true;
         for (const item of waiting.splice(0)) { item.signal?.removeEventListener('abort', item.onAbort); item.reject(failure('RESERVED_DB_STOPPED')); }
+        releaseRegistrationIfDrained();
     }
     return Object.freeze({ queryDatabase, withDatabaseTransaction, runBackground, stop,
         status: () => Object.freeze({ capacity, active, poisoned, waiting: waiting.length, stopped: closed }) });
