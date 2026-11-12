@@ -9,7 +9,7 @@ const { zipSync } = require('fflate');
 const { buildMacChromeBundle, buildMacBraveBundle, buildMacFirefoxBundle } = require('./build-mac-chrome-setup-bundle.cjs');
 const { isMacExecutable: isMachOExecutable, isRestrictedMacExecutable } = require('./lib/mac-macho.cjs');
 const VERSION = '0.1.0-mac-preview.1';
-const BRAVE_VERSION = '0.1.0-mac-brave-preview.1';
+const BRAVE_VERSION = '0.1.0-mac-brave-preview.2';
 const FIREFOX_VERSION = '0.1.0-mac-firefox-preview.1';
 const RUNTIME_HASH = Object.freeze({ arm64: 'e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b',
     x64: '7abcf39bd37ab251015337ff75304d7555f0d8e88c6e0fbf04bce8ce34636f49' });

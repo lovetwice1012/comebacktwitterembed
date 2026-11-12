@@ -9,7 +9,7 @@ async function harness({ enabled = true, manifest, result = { state: 'saved' }, 
     const source = await fs.readFile(path.join(__dirname, '../brave-mac-app.cjs'), 'utf8');
     const module = { exports: {} }, calls = [];
     const ui = { showSaved: async () => calls.push('saved'), showError: async code => calls.push(`error:${code}`) };
-    const valid = JSON.stringify({ packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.1', lockSha256: 'a'.repeat(64) });
+    const valid = JSON.stringify({ packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.2', lockSha256: 'a'.repeat(64) });
     const content = manifest === undefined ? valid : manifest;
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return { open: async filename => {
@@ -41,7 +41,8 @@ test('Brave entry checks fixed package metadata and provides local helper paths'
     assert.equal(h.calls[2].experimental, true); assert.equal(h.calls[3], 'saved');
 });
 test('invalid manifests, cancellation and failures never claim a saved file', async () => {
-    for (const manifest of ['{}', '{"packageId":"x","packageId":"y"}', JSON.stringify({ packageId: 'x-notification-mac-chrome-setup', version: '0.1.0-mac-brave-preview.1', lockSha256: 'a'.repeat(64) })]) {
+    for (const manifest of ['{}', '{"packageId":"x","packageId":"y"}', JSON.stringify({ packageId: 'x-notification-mac-chrome-setup', version: '0.1.0-mac-brave-preview.2', lockSha256: 'a'.repeat(64) }),
+        JSON.stringify({ packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.1', lockSha256: 'a'.repeat(64) })]) {
         const h = await harness({ manifest }); await h.main();
         assert.equal(h.calls.at(-1), 'error:X_BRAVE_MAC_APP_INVALID'); assert.equal(h.calls.some(value => typeof value === 'object'), false);
     }

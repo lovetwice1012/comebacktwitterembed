@@ -23,7 +23,7 @@ async function main() {
             manifest = parseUniqueJson(await handle.readFile('utf8'), 8);
         } finally { await handle.close(); }
         if (!manifest || Object.keys(manifest).sort().join(',') !== 'lockSha256,packageId,version'
-            || manifest.packageId !== 'x-notification-mac-brave-setup' || manifest.version !== '0.1.0-mac-brave-preview.1'
+            || manifest.packageId !== 'x-notification-mac-brave-setup' || manifest.version !== '0.1.0-mac-brave-preview.2'
             || typeof manifest.lockSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(manifest.lockSha256)) throw new Error('invalid manifest');
         const home = await fs.realpath(os.homedir());
         const result = await runExperimentalMacBraveApp({ applicationSupport: path.join(home, 'Library', 'Application Support'),

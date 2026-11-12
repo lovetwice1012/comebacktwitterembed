@@ -57,7 +57,7 @@ test('experimental Brave preview uses its own identity and rejects unverified in
     const args = { bundle, runtime, launcher: restrictedMacho(0x0100000c), helper, license: Buffer.from('test'), projectLicense: Buffer.from('project'), guide: Buffer.from('internal preview') };
     const files = unzipSync(assembleMacApp({ ...args, browser: 'brave' })), root = 'X通知の準備.app/Contents/';
     const manifest = JSON.parse(Buffer.from(files[`${root}Resources/MacSetup-manifest.json`]).toString());
-    assert.equal(manifest.packageId, 'x-notification-mac-brave-setup'); assert.equal(manifest.version, '0.1.0-mac-brave-preview.1');
+    assert.equal(manifest.packageId, 'x-notification-mac-brave-setup'); assert.equal(manifest.version, '0.1.0-mac-brave-preview.2');
     assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
     assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('jp.cbte.xnotification.brave-setup'));
     assert.throws(() => assembleMacApp({ ...args, browser: 'other' }), /Unsupported Mac preview/);
@@ -75,4 +75,12 @@ test('preview CLI refuses unverified binaries without creating output', async t 
         { encoding: 'utf8', timeout: 15000 });
     assert.notEqual(child.status, 0); assert(!child.stderr.includes(root));
     await assert.rejects(fs.access(output), { code: 'ENOENT' }); await assert.rejects(fs.access(`${output}.sha256`), { code: 'ENOENT' });
+    const brave = spawnSync(process.execPath, [path.join(__dirname, '../build-mac-brave-preview.cjs'), 'arm64', runtime, launcher, helper, license, output],
+        { encoding: 'utf8', timeout: 15000 });
+    assert.notEqual(brave.status, 0); assert(!brave.stderr.includes(root));
+    await assert.rejects(fs.access(output), { code: 'ENOENT' }); await assert.rejects(fs.access(`${output}.sha256`), { code: 'ENOENT' });
+    await fs.writeFile(output, 'existing-preview', { flag: 'wx' });
+    const repeat = spawnSync(process.execPath, [path.join(__dirname, '../build-mac-brave-preview.cjs'), 'arm64', runtime, launcher, helper, license, output],
+        { encoding: 'utf8', timeout: 15000 });
+    assert.notEqual(repeat.status, 0); assert.equal(await fs.readFile(output, 'utf8'), 'existing-preview');
 });

@@ -1,0 +1,58 @@
+name: macOS Brave preview package validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-brave-preview-package.yml
+      - scripts/build-mac-brave-preview.cjs
+      - scripts/build-mac-chrome-preview.cjs
+      - scripts/build-mac-chrome-setup-bundle.cjs
+      - scripts/brave-mac-app.cjs
+      - scripts/native-test/brave-mac-preview-hosted.test.cjs
+      - scripts/test/brave-mac-app-entry.test.js
+      - scripts/test/chrome-mac-preview-layout.test.js
+      - src/automation/brave-mac-*.js
+      - src/automation/chrome-mac-*.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - client/angelic-setup/mac/launch-native.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build isolated unsigned Brave preview
+        run: |
+          case "$(uname -m)" in arm64) arch=arm64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
+          curl -fsSL --retry 2 --max-time 180 "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-$arch.tar.gz" -o "$RUNNER_TEMP/node.tar.gz"
+          mkdir "$RUNNER_TEMP/node-dist"
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP/node-dist" --strip-components=1
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/MacStoreLock"
+          printf '\0' > "$RUNNER_TEMP/restrict-section"
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/launch-native.c -Wl,-sectcreate,__RESTRICT,__restrict,"$RUNNER_TEMP/restrict-section" -o "$RUNNER_TEMP/Launch"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/Launch"
+          node scripts/build-mac-brave-preview.cjs "$arch" "$RUNNER_TEMP/node-dist/bin/node" "$RUNNER_TEMP/Launch" "$RUNNER_TEMP/MacStoreLock" "$RUNNER_TEMP/node-dist/LICENSE" "$RUNNER_TEMP/cbte-brave-preview-2.zip"
+      - name: Verify preview and isolated startup
+        env:
+          CBTE_MAC_BRAVE_PREVIEW_HOSTED: '1'
+          MAC_BRAVE_PREVIEW_ZIP: ${{ runner.temp }}/cbte-brave-preview-2.zip
+        run: node --test --test-concurrency=1 scripts/native-test/brave-mac-preview-hosted.test.cjs scripts/test/brave-mac-app-entry.test.js scripts/test/chrome-mac-preview-layout.test.js
