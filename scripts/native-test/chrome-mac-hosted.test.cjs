@@ -44,11 +44,13 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
         const origin = `http://127.0.0.1:${server.address().port}`;
         const profile = await createMacChromeProfile(base);
-        await describeInstalledChrome(t, 'before launch');
+        const beforeVerification = await describeInstalledChrome(t, 'before launch');
         let executable;
         try { executable = await verifyInstalledChrome(); }
         catch (error) {
             const app = '/Applications/Google Chrome.app', binary = path.join(app, 'Contents/MacOS/Google Chrome');
+            const afterFailure = await describeInstalledChrome(t, 'after initial signature failure');
+            t.diagnostic(`framework Current changed across failed verification=${beforeVerification && afterFailure ? beforeVerification.current !== afterFailure.current : 'unknown'}`);
             for (const filename of [app, binary]) {
                 try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} canonical=${await fs.realpath(filename) === filename}`); }
                 catch (reason) { t.diagnostic(`installed ${path.basename(filename)}: ${reason.code}`); }
@@ -56,6 +58,15 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
             const check = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"', app],
                 { encoding: 'utf8', timeout: 120000 });
             t.diagnostic(`codesign status=${check.status} signal=${check.signal} error=${check.error?.code || 'none'} stderr=${(check.stderr || '').slice(0, 2048)}`);
+            // Diagnosis only: retain the original failure even if a later
+            // strict verification succeeds. This checks whether the bundle
+            // was changing, without mutating it or relaxing signature rules.
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            const beforeRecheck = await describeInstalledChrome(t, 'before settled signature recheck');
+            const recheck = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', '-R', '=anchor apple generic and identifier "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"', app],
+                { encoding: 'utf8', timeout: 120000 });
+            const afterRecheck = await describeInstalledChrome(t, 'after settled signature recheck');
+            t.diagnostic(`settled strict signature status=${recheck.status === 0 ? 'valid' : recheck.status === null ? 'unknown' : 'invalid'} frameworkUnchanged=${beforeRecheck && afterRecheck ? beforeRecheck.current === afterRecheck.current && beforeRecheck.hash === afterRecheck.hash : 'unknown'}`);
             throw error;
         }
         const spawnOwned = (file, args, options) => {

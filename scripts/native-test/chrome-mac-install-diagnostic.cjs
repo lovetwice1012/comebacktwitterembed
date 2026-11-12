@@ -16,6 +16,7 @@ async function describeInstalledChrome(t, label) {
         try { const seal = await fs.readFile(path.join(framework, 'Current/_CodeSignature/CodeResources')); hash = createHash('sha256').update(seal).digest('hex'); }
         catch { /* Some releases put the signature elsewhere. */ }
         t.diagnostic(`${label} framework versions=${JSON.stringify(versions)} current=${current} resourceSealSha256=${hash}`);
-    } catch (error) { t.diagnostic(`${label} framework metadata unavailable: ${error?.code || 'unknown'}`); }
+        return { current, hash };
+    } catch (error) { t.diagnostic(`${label} framework metadata unavailable: ${error?.code || 'unknown'}`); return null; }
 }
 module.exports = { describeInstalledChrome };
