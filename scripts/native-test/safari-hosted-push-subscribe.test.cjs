@@ -7,7 +7,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
-const { createECDH } = require('node:crypto');
+const { createECDH, randomBytes } = require('node:crypto');
 const { Resolver, lookup } = require('node:dns/promises');
 const fs = require('node:fs/promises');
 const http = require('node:http');
@@ -399,6 +399,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   }
   const key = createECDH('prime256v1');
   const publicKey = [...key.generateKeys()];
+  const pushMarker = `fixture-${randomBytes(16).toString('hex')}`; let pushDelivered = false;
   // Do not inspect a Safari process that predates this synthetic session.
   const baseline = axProbe('baseline');
   console.log(`Safari synthetic AX baseline: ${baseline}`);
@@ -409,7 +410,10 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   const handler = (req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
       res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
-      res.end("self.addEventListener('install', () => {});");
+      // WebKit requires every push to show a user-visible notification.
+      res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{const value=e.data?e.data.text():'';await self.registration.showNotification('Synthetic fixture');await fetch('/fixture-received?tag='+encodeURIComponent(value));})()));");
+    } else if (req.method === 'GET' && req.url === `/fixture-received?tag=${pushMarker}`) {
+      pushDelivered = true; res.writeHead(200, { 'cache-control': 'no-store' }).end('ok');
     } else if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       res.end(`<!doctype html><title>Push subscription fixture</title>
@@ -564,10 +568,12 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     // a dialog appeared. Failure and timeout must never count as a subscription.
     assert.equal(result, 'subscribed', `Synthetic push subscription did not succeed: ${result}`);
     console.log('Safari subscription fixture: subscription confirmed');
+    let captured;
+    if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1' || process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1')
+      captured = await exec('return window.fixtureSubscription();', 'synthetic subscription inspection');
     if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1') {
       // Use only the newly-created synthetic subscription. WebDriver carries
       // the endpoint and public/auth keys in memory; they are never logged.
-      const captured = await exec('return window.fixtureSubscription();', 'synthetic subscription inspection');
       const { capturedFixture, inspectHostedSafariDatabase } = require('./safari-synthetic-db-probe.cjs');
       const expected = capturedFixture(captured, Buffer.from(publicKey));
       try {
@@ -577,6 +583,19 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
             || !comparison.authMatches || !comparison.vapidMatches)
           throw new Error('FIXTURE_SAFARI_DB_COMPARISON_FAILED');
       } finally { expected.publicKey.fill(0); expected.auth.fill(0); expected.vapid.fill(0); }
+    }
+    if (process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1') {
+      const { sendHostedSafariFixturePush } = require('./safari-synthetic-push-probe.cjs');
+      const vapidPublic = Buffer.from(publicKey), vapidPrivate = key.getPrivateKey();
+      try { await sendHostedSafariFixturePush({ subscription: captured, publicKey: vapidPublic, privateKey: vapidPrivate, marker: pushMarker }); }
+      finally { vapidPublic.fill(0); vapidPrivate.fill(0); }
+      console.log('Safari synthetic push: provider accepted');
+      const pushDeadline = Date.now() + 45000;
+      while (!pushDelivered && Date.now() < pushDeadline) await delay(250);
+      assert.equal(pushDelivered, true, 'Synthetic Safari push was not observed by the fixture service worker');
+      // The service worker's showNotification promise resolved; the test does
+      // not assert that a human actually saw an OS notification banner.
+      console.log('Safari synthetic push: showNotification resolved and fixture acknowledged');
     }
     await cleanup(true); clean = true;
     console.log('Safari subscription fixture: subscription and worker removed');

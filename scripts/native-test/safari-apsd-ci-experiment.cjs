@@ -84,7 +84,7 @@ function runExperiment() {
             path.join(__dirname, 'safari-hosted-push-subscribe.test.cjs')], { timeout: 420000, inherit: true,
             env: { ...env, CBTE_SAFARI_PUSH_HOSTED: '1', CBTE_SAFARI_SYNTHETIC_ALLOW: '1',
                 CBTE_SAFARI_FIXTURE_HOST: '127.0.0.1', CBTE_SAFARI_FIXTURE_SCHEME: 'https',
-                CBTE_SAFARI_SYNTHETIC_DB_PROBE: '1' } }), 'FIXTURE_SAFARI_TEST_FAILED');
+                CBTE_SAFARI_SYNTHETIC_DB_PROBE: '1', CBTE_SAFARI_SYNTHETIC_PUSH_PROBE: '1' } }), 'FIXTURE_SAFARI_TEST_FAILED');
         resultCode = test.status === 0 ? 'FIXTURE_SAFARI_TEST_PASSED' : 'FIXTURE_SAFARI_TEST_FAILED';
     } catch (cause) {
         resultCode = typeof cause?.code === 'string' && /^FIXTURE_[A-Z_]+$/.test(cause.code) ? cause.code : 'FIXTURE_APSD_EXPERIMENT_FAILED';
