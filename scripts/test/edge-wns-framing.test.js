@@ -48,3 +48,25 @@ test('rejects malformed, oversized or incomplete streams and remains failed afte
     for (const value of [-1, MAX_PAYLOAD + 1, 1.5, '1']) invalid(() => createFrameDecoder({ maxPayload: value }));
     const finished = createFrameDecoder(); finished.finish(); invalid(() => finished.push(Buffer.alloc(0))); invalid(() => finished.finish());
 });
+
+test('opt-in recovery retains only completed frames before a malformed suffix', () => {
+    const first = wire('NFY 1 WNS\\NOTIF', Buffer.from('first'));
+    const second = wire('NFY 2 WNS\\NOTIF', Buffer.from('second'));
+    const input = Buffer.concat([first, second, Buffer.from('broken\n')]);
+    const decoder = createFrameDecoder({ captureCompleteOnError: true });
+    invalid(() => decoder.push(input));
+    const recovered = decoder.takeCompletedOnError();
+    assert.deepEqual(recovered, [first, second]);
+    assert.deepEqual(decoder.takeCompletedOnError(), []);
+    recovered.forEach(frame => frame.fill(0));
+    assert.deepEqual(input.subarray(0, first.length), first);
+    invalid(() => decoder.push(Buffer.alloc(0))); invalid(() => decoder.finish());
+
+    const defaultDecoder = createFrameDecoder(); invalid(() => defaultDecoder.push(input));
+    assert.deepEqual(defaultDecoder.takeCompletedOnError(), []);
+    const limit = createFrameDecoder({ captureCompleteOnError: true });
+    invalid(() => limit.push(Buffer.from('X 0\r\n'.repeat(1025))));
+    const bounded = limit.takeCompletedOnError(); assert.equal(bounded.length, 1024);
+    bounded.forEach(frame => frame.fill(0));
+    invalid(() => createFrameDecoder({ captureCompleteOnError: 'yes' }));
+});

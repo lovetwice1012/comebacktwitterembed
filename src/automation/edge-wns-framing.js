@@ -8,10 +8,10 @@ const MAX_CHUNK = MAX_HEADER + 2 + MAX_PAYLOAD;
 const MAX_FRAMES_PER_CHUNK = 1024;
 const fail = () => Object.assign(new Error('X_EDGE_WNS_FRAME_INVALID'), { code: 'X_EDGE_WNS_FRAME_INVALID' });
 
-function createFrameDecoder({ maxPayload = MAX_PAYLOAD } = {}) {
-    if (!Number.isSafeInteger(maxPayload) || maxPayload < 0 || maxPayload > MAX_PAYLOAD) throw fail();
+function createFrameDecoder({ maxPayload = MAX_PAYLOAD, captureCompleteOnError = false } = {}) {
+    if (!Number.isSafeInteger(maxPayload) || maxPayload < 0 || maxPayload > MAX_PAYLOAD || typeof captureCompleteOnError !== 'boolean') throw fail();
     const header = Buffer.alloc(MAX_HEADER); let headerLength = 0, sawCr = false;
-    let payload = null, payloadLength = 0, payloadPosition = 0, failed = false, finished = false;
+    let payload = null, payloadLength = 0, payloadPosition = 0, failed = false, finished = false, completedOnError = [];
     function clear() { header.fill(0); payload?.fill(0); payload = null; headerLength = 0; payloadLength = 0; payloadPosition = 0; sawCr = false; }
     function emit(frames) {
         const frame = Buffer.allocUnsafe(headerLength + 2 + payloadLength);
@@ -51,14 +51,23 @@ function createFrameDecoder({ maxPayload = MAX_PAYLOAD } = {}) {
             }
             return frames;
         } catch (error) {
+            if (captureCompleteOnError) {
+                // The decoder failed on later bytes; frames completed before
+                // that boundary remain independent. The over-limit frame is
+                // never retained and the caller must fence their recovery.
+                completedOnError = frames.splice(0, MAX_FRAMES_PER_CHUNK);
+            }
             for (const frame of frames) frame.fill(0);
             clear(); failed = true; throw error;
         }
     }
     function finish() {
+        for (const frame of completedOnError) frame.fill(0);
+        completedOnError = [];
         if (failed || finished || headerLength || sawCr || payload !== null) { clear(); failed = true; throw fail(); }
         clear(); finished = true;
     }
-    return Object.freeze({ push, finish });
+    function takeCompletedOnError() { const frames = completedOnError; completedOnError = []; return frames; }
+    return Object.freeze({ push, finish, takeCompletedOnError });
 }
 module.exports = { createFrameDecoder, MAX_HEADER, MAX_PAYLOAD, MAX_CHUNK };

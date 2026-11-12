@@ -24,7 +24,7 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
         try { socket?.destroy?.(); } catch { /* Reject invalid transports without leaving a socket open. */ }
         throw fail('X_EDGE_WNS_TRANSPORT_CONFIG_INVALID');
     }
-    const decoder = createFrameDecoder(), queue = []; let queuedBytes = 0, waiting, writePending, connected = false, closed = false, failure, paused = false;
+    const decoder = createFrameDecoder({ captureCompleteOnError: true }), queue = []; let queuedBytes = 0, waiting, writePending, connected = false, closed = false, failure, paused = false;
     let resolveConnect, rejectConnect;
     const connection = new Promise((resolve, reject) => { resolveConnect = resolve; rejectConnect = reject; });
     connection.catch(() => {});
@@ -67,7 +67,17 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
             }
         } catch (error) {
             if (frames) for (const frame of frames) frame.fill(0);
-            abort(error?.code === 'X_EDGE_WNS_BACKPRESSURE' ? error.code : 'X_EDGE_WNS_FRAME_INVALID', true);
+            // A malformed suffix can share one TLS read with earlier complete
+            // frames. Keep only the bounded prefix for lease-fenced recovery;
+            // reject any pending reader rather than returning data on a failed
+            // connection. A partial frame is never exposed.
+            let recoveryOverflow = false;
+            for (const frame of decoder.takeCompletedOnError()) {
+                if (queue.length < MAX_FRAMES && queuedBytes + frame.length <= MAX_BYTES) {
+                    queue.push(frame); queuedBytes += frame.length;
+                } else { recoveryOverflow = true; frame.fill(0); }
+            }
+            abort(error?.code === 'X_EDGE_WNS_BACKPRESSURE' || recoveryOverflow ? 'X_EDGE_WNS_BACKPRESSURE' : 'X_EDGE_WNS_FRAME_INVALID', true);
         }
     });
     if (signal) {

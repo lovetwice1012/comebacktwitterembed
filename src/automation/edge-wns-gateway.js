@@ -6,7 +6,30 @@ const { createEdgeWnsTransport } = require('./edge-wns-transport');
 const { createEdgeWnsSession, reply } = require('./edge-wns-session');
 const { parseBindResponse } = require('./edge-wns-bind');
 const { createEdgeWnsReceiver } = require('./edge-wns-receiver');
+const { MAX_HEADER } = require('./edge-wns-framing');
 const fail = code => Object.assign(new Error(code), { code });
+function isIdentifiableNotification(frame) {
+    if (!Buffer.isBuffer(frame)) return false;
+    const end = frame.indexOf('\r\n');
+    if (end < 0 || end > MAX_HEADER) return false;
+    const header = frame.subarray(0, end);
+    if (header.some(byte => byte < 0x20 || byte > 0x7e)) return false;
+    const match = /^NFY [0-9]{1,10} WNS\\NOTIF(?: [0-9a-fA-F]{1,16})? ([0-9]{1,6})$/.exec(header.toString('ascii'));
+    if (!match || Number(match[1]) !== frame.length - end - 2) return false;
+    const separator = frame.indexOf('\r\n\r\n', end + 2);
+    if (separator < end + 2 || separator - end - 2 > 8192) return false;
+    const bytes = frame.subarray(end + 2, separator);
+    if (bytes.some(byte => byte !== 9 && byte !== 10 && byte !== 13 && (byte < 0x20 || byte > 0x7e))) return false;
+    const names = new Set();
+    for (const line of bytes.toString('ascii').split('\r\n')) {
+        const colon = line.indexOf(':'), name = line.slice(0, colon).toLowerCase();
+        // Unknown, duplicate, status or error headers might carry control
+        // semantics. Do not cross that boundary during recovery.
+        if (colon < 1 || !['channel', 'msg-id', 'content-encoding', 'ms-cv'].includes(name) || names.has(name)) return false;
+        names.add(name);
+    }
+    return names.has('channel') && names.has('msg-id') && names.has('content-encoding');
+}
 function validateCredentials(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
     const descriptors = Object.getOwnPropertyDescriptors(value);
@@ -103,13 +126,25 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
                     await authorize(query);
                     if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
                 };
-                drain = createEdgeWnsReceiver({ store, lease, channel: credentials.siteChannel, authorize: drainAuthorize, sendAck: async () => {} });
+                const createDrain = () => createEdgeWnsReceiver({ store, lease, channel: credentials.siteChannel, authorize: drainAuthorize, sendAck: async () => {} });
+                drain = createDrain(); let invalidFrame = false;
                 for (const frame of recoverBound ? frames.slice(1) : frames) {
                     if (stopped()) break;
                     await store.assertLease(lease, { authorize: drainAuthorize });
                     if (stopped()) break;
-                    await drain.receive(frame, 1, { acknowledge: false });
+                    try { await drain.receive(frame, 1, { acknowledge: false }); }
+                    catch (frameError) {
+                        // Each buffered frame was independently decoded. A
+                        // malformed or unsupported envelope must not discard
+                        // later complete notifications from this same socket.
+                        // Stop for store, lease and authorization errors.
+                        if (frameError?.code !== 'X_EDGE_WNS_NOTIFICATION_INVALID' || !['ENCODING', 'EMPTY'].includes(frameError.stage)
+                            || !isIdentifiableNotification(frame)) throw frameError;
+                        invalidFrame = true; drain.close(); drain = createDrain();
+                    }
                 }
+                // Still report the unprocessable frame; it was not persisted.
+                if (invalidFrame) throw fail('X_PUSH_BUFFERED_RECOVERY_FAILED');
             } catch (drainError) {
                 // Do not report an ordinary disconnect when recovery itself
                 // failed: some buffered receipts may not have been stored.

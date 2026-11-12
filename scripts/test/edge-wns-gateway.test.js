@@ -165,6 +165,52 @@ test('network disconnect drains already-buffered owned receipts without acknowle
     await assert.rejects(runEdgeWnsGateway(h.options), { code: 'X_EDGE_WNS_SOCKET_CLOSED' });
     assert.equal(saved.length, 2); assert(!sent.includes('ACK')); assert.equal(h.received.length, 0);
 });
+test('a malformed notification does not discard later buffered notifications; unknown controls stop recovery', async () => {
+    for (const mode of ['established', 'provider-channel', 'empty', 'bound-handshake', 'bound-invalid-suffix', 'invalid-bound-reply', 'revoke', 'store-failure', 'control', 'error', 'invalid-route', 'invalid-sequence', 'lowercase', 'error-header', 'unknown-header', 'ambiguous-identity', 'duplicate-header']) {
+        const saved = [], sent = [], socket = new EventEmitter(); let disconnected = false, revoked = false;
+        const invalidCommand = { 'provider-channel': 'NFY 5 WNS\\NOTIF A0', control: 'PUT 8 WNS', error: 'ERR 8 WNS',
+            'invalid-route': 'NFY 5 WNS\\NOTIFx', 'invalid-sequence': 'NFY 12345678901 WNS\\NOTIF', lowercase: 'nfy 5 wns\\notif' }[mode] || 'NFY 5 WNS\\NOTIF';
+        const invalidFrame = () => {
+            const headers = `${mode === 'ambiguous-identity' ? '' : 'Channel: target\r\n'}Msg-Id: bad\r\nContent-Encoding: ${mode === 'empty' ? 'aes128gcm' : 'aesgcm'}\r\n${mode === 'error-header' ? 'Status: 401\r\n' : mode === 'unknown-header' ? 'Unknown-Control: x\r\n' : mode === 'duplicate-header' ? 'Msg-Id: duplicate\r\n' : ''}\r\n`;
+            const body = Buffer.from(headers + (mode === 'empty' ? '' : 'cipher'));
+            return Buffer.concat([Buffer.from(`${invalidCommand} ${body.length}\r\n`), body]);
+        };
+        const buffered = () => Buffer.concat([notification('target', 'first'), invalidFrame(),
+            notification('other'), notification('target', 'second')]);
+        socket.write = (data, done) => {
+            const name = data.subarray(0, data.indexOf(' ')).toString('ascii'); sent.push(name);
+            const response = name === 'CNT' ? envelope('CNT 1 CON', '<connect/>') : name === 'ATH' ? envelope('ATH 2 CON') : mode === 'invalid-bound-reply' ? envelope('BND 3 CON', '<wns><ver>1.0</ver></wns>')
+                : envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>fixture</nonce><reconnect-token>rotated-token</reconnect-token></wns>');
+            queueMicrotask(() => {
+                if (name === 'BND' && ['bound-handshake', 'bound-invalid-suffix', 'invalid-bound-reply'].includes(mode)) {
+                    socket.emit('data', Buffer.concat([response, buffered(), ...(['bound-invalid-suffix', 'invalid-bound-reply'].includes(mode) ? [Buffer.from('bad\n')] : [])]));
+                    if (mode === 'bound-handshake') socket.emit('close');
+                }
+                else { done(); socket.emit('data', response); }
+            });
+            return true;
+        };
+        socket.destroy = () => { if (!disconnected) { disconnected = true; socket.emit('close'); } };
+        const h = harness({ store: { async recordFrame(_lease, entry, { authorize }) {
+            await authorize();
+            if (mode === 'store-failure' && saved.length === 1) throw new Error('private database details');
+            saved.push(entry);
+            if (mode === 'revoke') revoked = true;
+            return { ...lease, ...entry, id: String(saved.length), duplicate: false };
+        } }, options: { credentials: { agent: { os: 'Test', osVersion: '1', architecture: 'x64', locale: 'en' },
+            client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' }, deviceKey: Buffer.alloc(32, 7),
+            reconnectToken: Buffer.from('initial'), siteChannel: Buffer.from('target'), authenticationMode: 'bound' },
+            authorize: async () => { if (revoked) throw Object.assign(new Error('revoked'), { code: 'X_PUSH_ROLLOUT_WITHDRAWN' }); },
+            transportFactory: ({ signal }) => { const transport = createEdgeWnsTransport({ socketFactory: () => socket, signal, timeoutMs: 1000 }); queueMicrotask(() => socket.emit('secureConnect')); return transport; },
+            onReady: async () => { assert(!['bound-handshake', 'bound-invalid-suffix', 'invalid-bound-reply'].includes(mode)); socket.emit('data', buffered()); socket.emit('close'); },
+            onReceived: async () => assert.fail('buffer recovery is not immediate delivery') } });
+        const expected = mode === 'revoke' ? 'X_PUSH_ROLLOUT_WITHDRAWN' : 'X_PUSH_BUFFERED_RECOVERY_FAILED';
+        await assert.rejects(runEdgeWnsGateway(h.options), error => error.code === expected && error.message === expected, mode);
+        assert.equal(saved.length, mode === 'invalid-bound-reply' ? 0 : ['revoke', 'store-failure', 'control', 'error', 'invalid-route', 'invalid-sequence', 'lowercase', 'error-header', 'unknown-header', 'ambiguous-identity', 'duplicate-header'].includes(mode) ? 1 : 2, mode);
+        assert.equal(new Set(saved.map(entry => entry.version)).size, saved.length, mode);
+        assert(!sent.includes('ACK'), mode);
+    }
+});
 test('failure to persist disconnected buffered receipts is reported safely after partial recovery', async () => {
     for (const mode of ['database', 'timeout', 'conflict']) {
         const saved = [], sent = [], socket = new EventEmitter(); let disconnected = false;
@@ -257,9 +303,12 @@ test('malformed input and bounded queue overflow preserve earlier owned receipts
                 onReady: async () => {
                     const count = mode === 'malformed' ? 2 : 1040;
                     const frames = Array.from({ length: count }, (_, i) => notification('target', `msg-${i}`));
-                    socket.emit('data', Buffer.concat(frames.slice(0, 1024)));
-                    if (frames.length > 1024) socket.emit('data', Buffer.concat(frames.slice(1024)));
-                    socket.emit('data', mode === 'malformed' ? Buffer.from('bad\n') : notification('target', 'over-limit'));
+                    if (mode === 'malformed') socket.emit('data', Buffer.concat([...frames, Buffer.from('bad\n')]));
+                    else {
+                        socket.emit('data', Buffer.concat(frames.slice(0, 1024)));
+                        socket.emit('data', Buffer.concat(frames.slice(1024)));
+                        socket.emit('data', notification('target', 'over-limit'));
+                    }
                 }, onReceived: async () => { throw new Error('drained receipts must use recovery'); } } });
         await assert.rejects(runEdgeWnsGateway(h.options), { code: mode === 'malformed' ? 'X_EDGE_WNS_FRAME_INVALID' : 'X_EDGE_WNS_BACKPRESSURE' });
         assert.equal(saved.length, mode === 'malformed' ? 2 : 1040);
