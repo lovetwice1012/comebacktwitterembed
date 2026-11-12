@@ -1,0 +1,53 @@
+name: macOS Brave isolated broker validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-brave-launch-synthetic.yml
+      - scripts/native-test/brave-mac-broker-hosted.test.cjs
+      - scripts/native-test/brave-mac-install-diagnostic.cjs
+      - src/automation/brave-mac-*.js
+      - src/automation/chrome-mac-*.js
+      - src/automation/chrome-private-broker.js
+      - src/automation/chrome-cdp-pipe.js
+
+permissions:
+  contents: read
+
+jobs:
+  brave-broker:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install Brave in disposable runner
+        run: |
+          if [ ! -x '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser' ]; then
+            brew install --cask brave-browser
+          fi
+          sudo xattr -cr '/Applications/Brave Browser.app'
+      - name: Prepare disposable test keychain
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          keychain="$RUNNER_TEMP/cbte-brave-broker-only.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Brave -s 'Brave Safe Storage' -w 'cbte-synthetic-only-key' -T '/Applications/Brave Browser.app' "$keychain"
+      - name: Test signed Brave broker without Push service
+        env:
+          CBTE_MAC_BRAVE_LAUNCH_HOSTED: '1'
+        run: node --test scripts/native-test/brave-mac-broker-hosted.test.cjs
