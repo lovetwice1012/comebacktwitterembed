@@ -82,6 +82,28 @@ test('a real driver timeout permanently consumes a background slot but leaves no
     await pause(1600);
 });
 
+test('an autocommit write can finish after its background owner has returned', { skip: !port, timeout: 30000 }, async t => {
+    const f = await fixture(t);
+    await f.db.queryDatabase('CREATE TABLE reserved_late_write_fixture (id INT PRIMARY KEY)');
+    let observed, outcome;
+    await f.background.runBackground(async () => {
+        const pending = f.background.queryDatabase('INSERT INTO reserved_late_write_fixture (id) SELECT 1 WHERE SLEEP(1.5)=0');
+        // Capture the eventual result so a rejected delayed query never becomes
+        // an unhandled rejection. Only a fixed code is retained for the test.
+        outcome = pending.then(() => 'success', error => error?.code || 'failed');
+        for (let i = 0; i < 100 && !observed; i++) {
+            observed = Number((await query(f.control, "SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST WHERE DB=? AND INFO LIKE 'INSERT INTO reserved_late_write_fixture%'", [f.db.schema]))[0].n);
+            if (!observed) await pause(10);
+        }
+        assert.equal(observed, 1, 'synthetic insert was not observed before its owner returned');
+        // Models a higher-level deadline ending the callback while SQL is still
+        // executing; this intentionally does not roll the statement back.
+    });
+    assert.equal(await outcome, 'RESERVED_DB_STOPPED');
+    assert.equal(Number((await query(f.pool, 'SELECT COUNT(*) AS n FROM reserved_late_write_fixture'))[0].n), 1);
+    assert.equal(f.background.status().active, 0);
+});
+
 test('an aborted background transaction waits for its SQL and rolls back before returning its reservation', { skip: !port, timeout: 30000 }, async t => {
     const f = await fixture(t), name = `reserved-tx-${f.db.schema}`, controller = new AbortController();
     await f.db.queryDatabase('CREATE TABLE reserved_fixture (id INT PRIMARY KEY)');
