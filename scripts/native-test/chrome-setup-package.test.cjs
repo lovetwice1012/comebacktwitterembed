@@ -17,7 +17,7 @@ for (const channel of ['published', 'candidate']) test(`Windows Chrome ${channel
         });
         const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
         await fsp.mkdir(bundle);
-        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.7.zip'))
+        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip'))
             : (await require('../build-chrome-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath })).archive;
         for (const [name, content] of Object.entries(unzipSync(archive))) {
             assert.match(name, /^(?:_app\/)?[^/\\]+$/); await fsp.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
@@ -58,7 +58,7 @@ for (const channel of ['published', 'candidate']) test(`Chrome and Brave ${chann
         t.after(async () => { const actual = await fsp.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), parent.toLowerCase());
             assert.match(path.basename(actual), /^cbte-chrome-launch-test-/); await fsp.rm(actual, { recursive: true }); });
         const bundle = path.join(root, '日本語 [folder] & ! $value %literal%'); await fsp.mkdir(bundle);
-        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.7.zip'))
+        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip'))
             : (await require('../build-chrome-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath })).archive;
         const entries = unzipSync(archive);
         for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) await fsp.writeFile(path.join(bundle, name), entries[name]);
