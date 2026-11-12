@@ -23,6 +23,7 @@ const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transp
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved } = require('./edge-mac-suppression-errors.cjs');
 const { withFixtureCdp } = require('./edge-mac-suppression-cdp.cjs');
+const { trackFixtureChild, runFixtureCleanup } = require('./edge-mac-suppression-cleanup.cjs');
 
 test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -31,8 +32,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         const children = [], brokers = [], records = []; let server, session, transport, selected, rewritten, rotated;
         let calibrationStarted = false, calibrationClean = false, dbClosed = true, diagnosticCleanupUncertain = false, stage = 'SETUP';
         function track(child) {
-            const item = { child, closed: false }; item.done = new Promise(resolve => { child.once('close', () => { item.closed = true; resolve(); }); child.once('error', resolve); });
-            children.push(item); return child;
+            children.push(trackFixtureChild(child)); return child;
         }
         async function waitClosed(item) {
             let timer; const ok = item.closed || await Promise.race([item.done.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 20000); })]);
@@ -40,29 +40,29 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         }
         t.after(async () => {
             try {
-            let safe = (!calibrationStarted || calibrationClean) && dbClosed && !diagnosticCleanupUncertain;
-            try { session?.close(); } catch { safe = false; }
-            try { transport?.close(); } catch { safe = false; }
-            for (const broker of brokers) {
+            const steps = [async () => { session?.close(); return true; }, async () => { transport?.close(); return true; }];
+            for (const broker of brokers) steps.push(async () => {
                 let timer; const closed = await Promise.race([Promise.resolve().then(() => broker.stop()).then(() => true, () => false),
                     new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
-                clearTimeout(timer); if (!closed) safe = false;
-            }
-            for (const item of children) if (!item.closed) try { item.child.kill('SIGTERM'); } catch {}
-            for (const item of children) { try { if (!await waitClosed(item)) safe = false; } catch { safe = false; } }
-            if (server) {
-                try {
+                clearTimeout(timer); return closed;
+            });
+            for (const item of children) steps.push(async () => { if (!item.closed) item.child.kill('SIGTERM'); return true; });
+            for (const item of children) steps.push(async () => Boolean(await waitClosed(item)));
+            steps.push(async () => {
+                if (server) {
                     server.closeAllConnections();
                     if (server.listening) {
                         let timer; const closed = await Promise.race([new Promise(resolve => server.close(() => resolve(true))),
                             new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
-                        clearTimeout(timer); if (!closed) safe = false;
+                        clearTimeout(timer); if (!closed) return false;
                     }
-                } catch { safe = false; }
-            }
-            try { for (const value of records) value.fill(0); rewritten?.fill(0); rotated?.fill(0);
-                if (selected) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0);
-            } catch { safe = false; }
+                } return true;
+            });
+            for (const value of [...records, rewritten, rotated]) if (value) steps.push(async () => { value.fill(0); return true; });
+            if (selected) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey'])
+                steps.push(async () => { selected[name].fill(0); return true; });
+            const completed = await runFixtureCleanup(steps);
+            const safe = (!calibrationStarted || calibrationClean) && dbClosed && !diagnosticCleanupUncertain && completed;
             assert.equal(safe, true, 'fixture retained because owned processes did not stop');
             const real = await fs.realpath(base); assert.ok(path.dirname(real) === temp && /^cbte-edge-suppress-/.test(path.basename(real)), 'fixture path changed');
             await fs.rm(real, { recursive: true });
@@ -128,10 +128,16 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
                 spawnChrome: (file, args, options) => track(spawn(file, args, { ...options, detached: true })) });
             brokers.push(broker); return broker;
         }
-        async function stop(broker) {
+        async function stop(broker, report = () => {}) {
+            report('STOP_BROWSER_CLOSE_FAILED');
             const item = children.find(entry => entry.child === broker.chrome);
             if (broker.chrome.exitCode === null && broker.chrome.signalCode === null) broker.chrome.kill('SIGTERM');
-            assert.ok(item && await waitClosed(item), 'fixture browser did not stop'); await broker.stop();
+            if (!item) throw new Error('fixture child unavailable');
+            let timer; const closed = item.closed || await Promise.race([item.done.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 20000); })]);
+            clearTimeout(timer); assert.ok(closed, 'fixture browser did not close');
+            report('STOP_BROWSER_GROUP_FAILED');
+            assert.ok(item.child.pid && await waitForMacProcessGroupExit(item.child.pid), 'fixture browser group did not stop');
+            report('STOP_LISTENER_FAILED'); await broker.stop();
         }
         webpush.setVapidDetails('mailto:fixture@example.com', calibration.vapid.publicKey, calibration.vapid.privateKey);
         stage = 'BASELINE_OPEN'; const baseline = await launch(false), control = `control-${randomBytes(16).toString('hex')}`; markers.add(control);
@@ -190,7 +196,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         if (!baselineObserved) {
             let recovery = 'STOP_FAILED', recoveryStarted = 0;
             try {
-                await stop(baseline); recoveryStarted = Date.now(); recovery = 'CONNECT_FAILED';
+                await stop(baseline, value => { recovery = value; }); recoveryStarted = Date.now(); recovery = 'CONNECT_FAILED';
                 let saved; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
                 const store = { async assertLease(_lease, { authorize }) { await authorize(); }, async recordFrame(_lease, frame, { authorize }) {
                     await authorize(); saved = frame; return { ...lease, ...frame, id: '1', duplicate: false }; } };
