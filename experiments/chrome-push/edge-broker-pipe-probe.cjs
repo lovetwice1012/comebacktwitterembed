@@ -334,7 +334,7 @@ async function main() {
         const bundleRoot = path.join(root, 'bundle'), appRoot = path.join(bundleRoot, '_app');
         await fs.mkdir(bundleRoot);
         // The hosted integration validates and consumes the same immutable
-        // preview.14 bytes built on disk, rather than another in-memory build.
+        // preview.15 bytes built on disk, rather than another in-memory build.
         // Existing local-only probes keep their established behaviour.
         const archive = process.env.EDGE_PROBE_PINNED_HOSTED_PACKAGE === '1'
             ? await require('./edge-fixture-archive.cjs').readPinnedHostedArchive()

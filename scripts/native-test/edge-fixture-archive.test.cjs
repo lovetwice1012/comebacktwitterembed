@@ -21,7 +21,7 @@ test('hosted Edge fixture accepts only the exact built preview and rejects repla
             await fs.rm(actual, { recursive: true });
         });
         const built = await buildArchive({ nodeExecutable: process.execPath });
-        assert.equal(built.version, '0.1.0-edge-preview.14'); assert.equal(built.sha256, SHA256); assert.equal(built.archive.length, SIZE);
+        assert.equal(built.version, '0.1.0-edge-preview.15'); assert.equal(built.sha256, SHA256); assert.equal(built.archive.length, SIZE);
         process.env.GITHUB_ACTIONS = 'true'; process.env.RUNNER_ENVIRONMENT = 'github-hosted'; process.env.NODE_ENV = 'test'; process.env.RUNNER_TEMP = root;
         const target = path.join(root, NAME); await fs.writeFile(target, built.archive, { flag: 'wx' });
         const accepted = await readPinnedHostedArchive(); assert(accepted.equals(built.archive));

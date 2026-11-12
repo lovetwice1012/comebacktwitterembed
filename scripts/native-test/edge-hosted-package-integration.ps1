@@ -11,8 +11,8 @@ if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hos
 if (-not $env:RUNNER_TEMP -or -not [IO.Path]::IsPathRooted($env:RUNNER_TEMP)) { throw 'SYNTHETIC_HOST_REQUIRED' }
 $temp = [IO.Path]::GetFullPath($env:RUNNER_TEMP)
 $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-$candidate = [IO.Path]::Combine($temp, 'cbte-edge-preview-14.zip')
-if (-not [IO.File]::Exists($candidate) -or (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ine '8c609458ed4d0590d1f710aea61e7dbe2322e7db5c7e0f2458b49fcef7038266') { throw 'SYNTHETIC_PACKAGE_REQUIRED' }
+$candidate = [IO.Path]::Combine($temp, 'cbte-edge-preview-15.zip')
+if (-not [IO.File]::Exists($candidate) -or (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ine '9a0577be4216b1f3970c00c51b1258275f72df052c21090322e63e1dde0c5397') { throw 'SYNTHETIC_PACKAGE_REQUIRED' }
 $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 $signature = Get-AuthenticodeSignature -LiteralPath $edge
 if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
@@ -92,7 +92,7 @@ try {
         }
         $result = ConvertFrom-Json -InputObject $text
         Assert-XEdgeHostedProbeResult -Mode $Mode -Result $result
-        Write-Output ('Synthetic signed Edge, pinned preview.14, version 2, database and WNS validation passed: ' + $Mode)
+        Write-Output ('Synthetic signed Edge, pinned preview.15, version 2, database and WNS validation passed: ' + $Mode)
     } finally {
         try { $job.Stop() } finally { $job.Dispose() }
         [Array]::Clear($inputBytes, 0, $inputBytes.Length)

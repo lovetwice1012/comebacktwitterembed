@@ -5,9 +5,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const NAME = 'cbte-edge-preview-14.zip';
-const SHA256 = '8c609458ed4d0590d1f710aea61e7dbe2322e7db5c7e0f2458b49fcef7038266';
-const SIZE = 35994225;
+const NAME = 'cbte-edge-preview-15.zip';
+const SHA256 = '9a0577be4216b1f3970c00c51b1258275f72df052c21090322e63e1dde0c5397';
+const SIZE = 35994229;
 
 async function readPinnedHostedArchive() {
     if (process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true'
