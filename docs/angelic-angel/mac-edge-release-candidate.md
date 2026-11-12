@@ -46,3 +46,7 @@ node scripts/build-mac-edge-release-candidate.cjs \
 未接続の `mac-flock-research` は、専用の合成ファイルを開く最小試験です。ファイル名が指す inode を差し替えると、元の inode をロックしたまま新しい inode で別のロックを取得できる問題があるため、安全に固定・検証できない環境では採用できません。研究版には Node 環境の終了時 cleanup がなく、worker 終了後にロックが残り得ます。`close` が失敗したときはプロセス内で以降の取得を拒否しますが、実際の異常終了と復旧は未検証です。CLOEXEC フラグの確認と Node 子プロセスでの FD 非継承は別の観測であり、後者は Node の spawn による FD 制限も影響し得ます。
 
 `close` の失敗は、研究専用の別ビルドで descriptor を閉じずに失敗を模擬し、再取得拒否とプロセス終了後の解放を試します。これは実 OS の `close` 障害を再現した結果ではありません。`O_NOFOLLOW` はパスの最終要素を検証するためのもので、親ディレクトリの同一 UID による置換は別に対策が必要です。候補への導入は行っていません。
+
+[Actions run 43215001240](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43215001240) では、Apple Silicon と Intel の両方で、固定 Node 24.21.0 から未署名の研究 addon を使い、合成ファイルの通常取得・競合・別 FD の close・所有プロセスの SIGKILL 後の再取得を確認しました。CLOEXEC フラグと Node spawn での非継承は別々に観測しています。負の試験では、inode の差替えによる排他回避と worker 終了後の lock 残留を両 CPU で再現しました。close 失敗は注入です。正式署名・公証や製品への接続は検証していません。
+
+[Actions run 43212534451](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43212534451) の Apple Silicon では、初回中止後に reader が確認できない合成 profile から、明示切替による旧 profile と index の保持、別の設定用 Edge の起動・停止を確認しました。[Actions run 43213032553](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43213032553) の Apple Silicon でも同じ復旧に加え、独立した helper の lock 競合・owner 強制終了後の解放を合成ファイルで確認しました。両 run の Intel は実行中です。いずれも UI 全体や実 X の試験ではありません。
