@@ -22,6 +22,7 @@ const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-creden
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 const { fixtureFailure, safeFixtureSend, sendCategory } = require('./edge-mac-suppression-errors.cjs');
+const { withFixtureCdp } = require('./edge-mac-suppression-cdp.cjs');
 
 test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -133,6 +134,28 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         }
         webpush.setVapidDetails('mailto:fixture@example.com', calibration.vapid.publicKey, calibration.vapid.privateKey);
         stage = 'BASELINE_OPEN'; const baseline = await launch(false), control = `control-${randomBytes(16).toString('hex')}`; markers.add(control);
+        stage = 'BASELINE_SW'; const ping = `ping-${randomBytes(16).toString('hex')}`; markers.add(ping);
+        await withFixtureCdp(baseline.chrome, async call => {
+            let target;
+            for (let i = 0; i < 100 && !target; i++) {
+                const values = await call('Target.getTargets');
+                target = values.targetInfos?.find(item => { try { return item.type === 'page' && new URL(item.url).origin === origin.origin; } catch { return false; } });
+                if (!target) await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            if (!target?.targetId) throw new Error('fixture target missing');
+            const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+            if (typeof attached.sessionId !== 'string') throw new Error('fixture target invalid');
+            try {
+                const expression = `(async()=>{const a=await navigator.serviceWorker.getRegistrations();const r=a.find(x=>x.scope===location.origin+'/');const s=await r?.pushManager.getSubscription();if(!r?.active||!s)return null;r.active.postMessage(${JSON.stringify(ping)});return s.toJSON()})()`;
+                const value = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
+                const subscription = value.result?.value;
+                assert.ok(subscription && subscription.endpoint === captured.endpoint && subscription.keys?.p256dh === captured.keys.p256dh
+                    && subscription.keys?.auth === captured.keys.auth, 'fixture subscription not active');
+            } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
+        });
+        stage = 'BASELINE_SW_PING'; let pingDeadline = Date.now() + 10000;
+        while (!observed.has(ping) && Date.now() < pingDeadline) await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(observed.has(ping), true, 'fixture worker observation unavailable');
         stage = 'BASELINE_SEND';
         await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
         stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
