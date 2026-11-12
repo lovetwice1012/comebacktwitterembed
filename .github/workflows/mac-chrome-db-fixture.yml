@@ -7,7 +7,12 @@ on:
       - .github/workflows/mac-chrome-db-fixture.yml
       - scripts/native-test/chrome-mac-*.cjs
       - scripts/test/chrome-mac-synthetic-db.test.js
+      - scripts/test/automation-chrome-mcs-sql.test.js
+      - scripts/test/automation-chrome-mcs-gateway-sql.test.js
       - src/automation/chrome-mac-*.js
+      - src/automation/chrome-mcs-*.js
+      - src/automation/x-push-store.js
+      - src/automation/x-push-gateway.js
       - src/automation/x-setup*.js
       - scripts/lib/automation-test-db.js
       - package-lock.json
@@ -69,5 +74,6 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
+          node --test --test-concurrency=1 scripts/test/automation-chrome-mcs-sql.test.js scripts/test/automation-chrome-mcs-gateway-sql.test.js
           CBTE_MAC_REAL_ROUTE_FIXTURE=0 node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
           node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs

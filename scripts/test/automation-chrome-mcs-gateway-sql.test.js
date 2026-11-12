@@ -43,6 +43,29 @@ class FakeSocket extends EventEmitter {
     }
     pause() {} resume() {} destroy() { this.destroyed = true; }
 }
+for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFixture]]) test(`${browser} saves over 100 queued owned receipts after a disconnected socket without ACK`, async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = makeFile(), subscription = await insertSubscription(db, file);
+        const cipher = await encrypted(file, { notificationType: 'tweet', text: 'buffered-fixture' }); let socket;
+        const frame = (id, subtype = file.push.appId) => encodeFrame(8, Buffer.concat([
+            bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory), pair('subtype', subtype),
+            pair('content-encoding', 'aes128gcm'), bytes(9, id), bytes(21, Buffer.from(cipher.data, 'base64url'))]));
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
+            requestTimeoutMs: 3000, leaseMs: 300000, createChromeSocket: () => socket = new FakeSocket(db) });
+        const ids = Array.from({ length: 130 }, (_, i) => `buffered-${String(i).padStart(3, '0')}`);
+        await assert.rejects(gateway.run({ ...subscription, workerId: 'buffered-worker', onSession: () => {
+            socket.emit('data', Buffer.concat([frame('other-site', 'other'), ...ids.map(id => frame(id))]));
+            socket.emit('close');
+        } }), { code: 'X_PUSH_SOCKET_CLOSED' });
+        assert.equal(socket.writes.filter(wire => wire[0] === 7).length, 0);
+        const inbox = await db.queryDatabase('SELECT version FROM automation_x_push_inbox ORDER BY version');
+        assert.deepEqual(inbox.map(row => row.version), ids);
+        const pending = await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending ORDER BY persistent_id');
+        assert.deepEqual(pending.map(row => row.persistent_id), ids.slice(0, 100));
+    } finally { await db.close(); }
+});
 test('Chrome worker receives, commits and routes encrypted MCS data with the existing lease', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {

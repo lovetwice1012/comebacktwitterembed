@@ -32,6 +32,63 @@ test('100 unconfirmed receipts bound reconnect state and a rejected 101st leaves
     assert.equal((await successor.recordMcsFrame(lease, frame('overflow'))).duplicate, false);
     assert.deepEqual(await successor.pendingMcs(lease), ['overflow']);
 }));
+test('disconnected recovery preserves over 100 receipts and control notices without changing the ACK limit', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db, { leaseMs: 300000 });
+    let lease = await store.claim({ ...sub, workerId: 'recovery-one' });
+    for (let i = 0; i < 100; i++) await store.recordMcsFrame(lease, frame(`pending-${i}`));
+    for (let i = 0; i < 30; i++) {
+        const item = frame(`deferred-${i}`);
+        if (i === 1) item.headers = { encoding: 'aesgcm', encryption: 'salt=fixture', crypto_key: 'dh=fixture' };
+        assert.equal((await store.recordMcsRecoveryFrame(lease, item)).duplicate, false);
+    }
+    assert.equal((await store.recordMcsRecoveryFrame(lease, frame('deferred-0'))).duplicate, true);
+    const reordered = { ...frame('deferred-1'), headers: { crypto_key: 'dh=fixture', encryption: 'salt=fixture', encoding: 'aesgcm' } };
+    assert.equal((await store.recordMcsRecoveryFrame(lease, reordered)).duplicate, true);
+    await assert.rejects(store.recordMcsRecoveryFrame(lease, { ...frame('deferred-0'), data: 'AQ' }), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await assert.rejects(store.recordMcsRecoveryFrame(lease, { ...frame('deferred-0'), headers: { encoding: 'aesgcm' } }), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await assert.rejects(store.recordMcsFrame(lease, { ...frame('pending-0'), data: 'AQ' }), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await db.queryDatabase("UPDATE automation_x_push_inbox SET status='routed',routed_at_ms=1234 WHERE subscription_id=? AND version='deferred-0'", [sub.subscriptionId]);
+    const routedReplay = await store.recordMcsRecoveryFrame(lease, frame('deferred-0'));
+    assert.equal(routedReplay.duplicate, true); assert.equal(routedReplay.status, 'routed');
+    const notice = { kind: 'deleted_messages', persistentId: 'deferred-control' };
+    assert.deepEqual(await store.recordMcsRecoveryControl(lease, notice), { duplicate: false });
+    assert.deepEqual(await store.recordMcsRecoveryControl(lease, notice), { duplicate: true });
+    await assert.rejects(store.recordMcsRecoveryFrame(lease, frame('deferred-control')), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await assert.rejects(store.recordMcsRecoveryControl(lease, { ...notice, persistentId: 'deferred-0' }), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await assert.rejects(store.recordMcsFrame(lease, frame('deferred-0')), { code: 'X_PUSH_MCS_PENDING_LIMIT' });
+    await assert.rejects(store.recordMcsRecoveryFrame({ ...lease, ownerUserId: '333333333333333333' }, frame('other-owner')), { code: 'X_PUSH_SUBSCRIPTION_NOT_FOUND' });
+    await assert.rejects(store.recordMcsRecoveryFrame({ ...lease, revision: lease.revision + 1 }, frame('wrong-revision')), { code: 'X_PUSH_LEASE_LOST' });
+    assert.equal((await db.queryDatabase('SELECT id FROM automation_x_push_inbox WHERE subscription_id=?', [sub.subscriptionId])).length, 130);
+    assert.equal((await store.pendingMcs(lease)).length, 100);
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_audit WHERE entity_id=? AND action='x.push.provider.deleted_messages'", [sub.subscriptionId])).length, 1);
+    await store.release(lease);
+    const successor = createXPushStore(db, { leaseMs: 300000 }); lease = await successor.claim({ ...sub, workerId: 'recovery-two' });
+    const pending = await successor.pendingMcs(lease); assert.equal(pending.length, 100);
+    await successor.confirmMcs(lease, pending);
+    // A provider replay does not create a second receipt; it becomes pending
+    // only when normal connected processing can acknowledge it again.
+    assert.equal((await successor.recordMcsFrame(lease, frame('deferred-0'))).duplicate, true);
+    assert.deepEqual(await successor.recordMcsControl(lease, notice), { duplicate: true });
+    assert.deepEqual((await successor.pendingMcs(lease)).sort(), ['deferred-0', 'deferred-control']);
+    assert.equal((await db.queryDatabase('SELECT id FROM automation_x_push_inbox WHERE subscription_id=?', [sub.subscriptionId])).length, 130);
+}));
+test('unacknowledged recovery rolls back on DB, authorization and lease failures', async () => setup(async db => {
+    let clock = 1000;
+    const sub = await insertSubscription(db), store = createXPushStore(db, { now: () => clock, leaseMs: 1000 });
+    const lease = await store.claim({ ...sub, workerId: 'recovery-rollback' });
+    const failing = { queryDatabase: db.queryDatabase, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (sql.startsWith('INSERT INTO automation_x_mcs_pending')) throw new Error('synthetic failure');
+        return query(sql, params);
+    })) };
+    await assert.rejects(createXPushStore(failing, { now: () => clock, leaseMs: 1000 }).recordMcsRecoveryFrame(lease, frame('db-failed')), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+    await assert.rejects(store.recordMcsRecoveryFrame(lease, frame('denied'), { authorize: async () => { throw Object.assign(new Error('denied'), { code: 'X_PUSH_ROLLOUT_WITHDRAWN' }); } }), { code: 'X_PUSH_ROLLOUT_WITHDRAWN' });
+    const delayed = { queryDatabase: db.queryDatabase, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+        const result = await query(sql, params); if (sql.startsWith('INSERT INTO automation_x_push_inbox')) clock = 2000; return result;
+    })) };
+    await assert.rejects(createXPushStore(delayed, { now: () => clock, leaseMs: 1000 }).recordMcsRecoveryFrame(lease, frame('lease-expired')), { code: 'X_PUSH_LEASE_LOST' });
+    assert.equal((await db.queryDatabase('SELECT id FROM automation_x_push_inbox WHERE subscription_id=?', [sub.subscriptionId])).length, 0);
+    assert.equal((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending WHERE subscription_id=?', [sub.subscriptionId])).length, 0);
+}));
 test('saturated session closes without ACK and recovers after replay confirmation from a simulated server', async () => setup(async db => {
     const sub = await insertSubscription(db), store = createXPushStore(db);
     let lease = await store.claim({ ...sub, workerId: 'saturated-session' }), writes = 0, deliveries = 0;

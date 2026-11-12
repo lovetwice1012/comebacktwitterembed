@@ -33,6 +33,13 @@ function safeHeaders(headers) {
     if (Buffer.byteLength(JSON.stringify(result)) > 8192) fail('X_PUSH_FRAME_INVALID');
     return result;
 }
+function sameMcsHeaders(stored, expected) {
+    try {
+        const existing = safeHeaders(JSON.parse(stored));
+        const names = Object.keys(existing).sort(), expectedNames = Object.keys(expected).sort();
+        return names.length === expectedNames.length && names.every((name, i) => name === expectedNames[i] && existing[name] === expected[name]);
+    } catch { return false; }
+}
 function validateFrame(input) {
     if (!input || typeof input.version !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.version)
         || typeof input.data !== 'string' || input.data.length > MAX_FRAME_BYTES || !/^[A-Za-z0-9_-]*$/.test(input.data)
@@ -229,7 +236,7 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
-    async function recordFrame(lease, input, { authorize, mcsPending = false } = { authorize: undefined }) {
+    async function recordFrame(lease, input, { authorize, mcsPending = false, deferPendingOnLimit = false } = { authorize: undefined }) {
         const headers = validateFrame(input);
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -246,6 +253,10 @@ function createXPushStore(db, options = {}) {
             let row = (await query('SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND version=?', [lease.subscriptionId, input.version]))[0];
             const duplicate = Boolean(row);
             if (mcsPending && row && Number(row.subscription_revision) !== lease.revision) fail('X_PUSH_REVISION_CONFLICT');
+            // A persistent ID is a replay key, not permission to substitute a
+            // different ciphertext or encryption envelope for an existing row.
+            // Processing status and ACK code can legitimately change later.
+            if (mcsPending && row && (row.data_ciphertext !== input.data || !sameMcsHeaders(row.headers_json, headers))) fail('X_PUSH_MCS_ID_CONFLICT');
             if (!row) {
                 const result = await query(`INSERT INTO automation_x_push_inbox (subscription_id,subscription_revision,version,data_ciphertext,headers_json,ack_code,status,received_at_ms) VALUES (?,?,?,?,?,?,?,?)`,
                     [lease.subscriptionId, lease.revision, input.version, input.data, JSON.stringify(headers), input.ackCode, input.status, now()]);
@@ -257,10 +268,16 @@ function createXPushStore(db, options = {}) {
                 if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
                 const same = pending.find(item => item.persistent_id === input.version);
                 if (same && (same.inbox_id == null || String(same.inbox_id) !== String(row.id))) fail('X_PUSH_MCS_ID_CONFLICT');
-                if (pending.length >= 100 && !pending.some(item => item.persistent_id === input.version)) fail('X_PUSH_MCS_PENDING_LIMIT');
-                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
-                    VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
-                [lease.subscriptionId, lease.revision, input.version, row.id, now()]);
+                if (pending.length >= 100 && !same) {
+                    // Disconnected recovery sends no ACK. If the login replay
+                    // list is full, keep the ciphertext but leave this ID for
+                    // the provider to replay after existing IDs are confirmed.
+                    if (!deferPendingOnLimit) fail('X_PUSH_MCS_PENDING_LIMIT');
+                } else {
+                    await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                        VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                    [lease.subscriptionId, lease.revision, input.version, row.id, now()]);
+                }
             }
             // Time can elapse during a slow database operation. Throwing here
             // rolls back the insert, and the caller must close without an ACK.
@@ -271,7 +288,10 @@ function createXPushStore(db, options = {}) {
     async function recordMcsFrame(lease, input, { authorize } = { authorize: undefined }) {
         return recordFrame(lease, input, { authorize, mcsPending: true });
     }
-    async function recordMcsControl(lease, input, { authorize } = { authorize: undefined }) {
+    async function recordMcsRecoveryFrame(lease, input, { authorize } = { authorize: undefined }) {
+        return recordFrame(lease, input, { authorize, mcsPending: true, deferPendingOnLimit: true });
+    }
+    async function recordMcsControlInternal(lease, input, { authorize } = { authorize: undefined }, deferPendingOnLimit = false) {
         if (!input || !['deleted_messages', 'send_error'].includes(input.kind)
             || input.persistentId !== null && (typeof input.persistentId !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.persistentId)))
             fail('X_PUSH_FRAME_INVALID');
@@ -288,10 +308,13 @@ function createXPushStore(db, options = {}) {
                 if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
                 const same = pending.find(item => item.persistent_id === input.persistentId);
                 if (same && same.inbox_id != null) fail('X_PUSH_MCS_ID_CONFLICT');
-                if (pending.length >= 100 && !same) fail('X_PUSH_MCS_PENDING_LIMIT');
-                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
-                    VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
-                [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+                if (pending.length >= 100 && !same) {
+                    if (!deferPendingOnLimit) fail('X_PUSH_MCS_PENDING_LIMIT');
+                } else {
+                    await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                        VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                    [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+                }
             }
             const previous = idHash === null ? [] : await query(`SELECT action FROM automation_audit WHERE actor_user_id=? AND entity_id=?
                 AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
@@ -303,6 +326,8 @@ function createXPushStore(db, options = {}) {
             return { duplicate: previous.length > 0 };
         });
     }
+    async function recordMcsControl(lease, input, options) { return recordMcsControlInternal(lease, input, options); }
+    async function recordMcsRecoveryControl(lease, input, options) { return recordMcsControlInternal(lease, input, options, true); }
     async function pendingMcs(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -508,7 +533,7 @@ function createXPushStore(db, options = {}) {
             return { retryAtMs: null, retryAttempt: 0 };
         });
     }
-    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
+    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsRecoveryFrame, recordMcsControl, recordMcsRecoveryControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }

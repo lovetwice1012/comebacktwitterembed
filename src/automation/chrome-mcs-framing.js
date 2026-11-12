@@ -6,6 +6,7 @@
 // and protobuf varint32 lengths; the version is sent only at login.
 const VERSION = 41;
 const DEFAULT_MAX_FRAME = 64 * 1024;
+const MAX_FRAMES_PER_CHUNK = 1024;
 const fault = () => Object.assign(new Error('X_CHROME_MCS_FRAME_INVALID'), { code: 'X_CHROME_MCS_FRAME_INVALID' });
 
 function encodeLength(size) {
@@ -26,11 +27,14 @@ function encodeFrame(tag, payload, { first = false, maxFrame = DEFAULT_MAX_FRAME
     return Buffer.concat([first ? Buffer.from([VERSION, tag]) : Buffer.from([tag]), encodeLength(payload.length), payload]);
 }
 
-function createFrameDecoder({ maxFrame = DEFAULT_MAX_FRAME } = {}) {
-    if (!Number.isInteger(maxFrame) || maxFrame < 0 || maxFrame > DEFAULT_MAX_FRAME) throw fault();
-    let state = 'version', tag, size = 0, shift = 0, count = 0, payload, position = 0, failed = false;
+function createFrameDecoder({ maxFrame = DEFAULT_MAX_FRAME, captureCompleteOnError = false } = {}) {
+    if (!Number.isInteger(maxFrame) || maxFrame < 0 || maxFrame > DEFAULT_MAX_FRAME || typeof captureCompleteOnError !== 'boolean') throw fault();
+    let state = 'version', tag, size = 0, shift = 0, count = 0, payload, position = 0, failed = false, completedOnError = [];
+    function clearPartial() { payload?.fill(0); payload = undefined; }
+    function discard() { clearPartial(); for (const frame of completedOnError) frame.payload.fill(0); completedOnError = []; failed = true; }
     function push(chunk) {
-        if (failed || !Buffer.isBuffer(chunk)) throw fault();
+        if (failed) throw fault();
+        if (!Buffer.isBuffer(chunk)) { discard(); throw fault(); }
         const frames = [];
         try {
             for (let i = 0; i < chunk.length; i++) {
@@ -51,23 +55,28 @@ function createFrameDecoder({ maxFrame = DEFAULT_MAX_FRAME } = {}) {
                     if (!(byte & 0x80)) {
                         if (count > 1 && byte === 0) throw fault(); // reject non-canonical lengths
                         payload = Buffer.alloc(size); position = 0;
-                        if (size === 0) { frames.push({ tag, payload }); state = 'tag'; }
+                        if (size === 0) { frames.push({ tag, payload }); payload = undefined; state = 'tag'; }
                         else state = 'payload';
                     }
                 } else {
                     const n = Math.min(size - position, chunk.length - i);
                     chunk.copy(payload, position, i, i + n); position += n; i += n - 1;
-                    if (position === size) { frames.push({ tag, payload }); state = 'tag'; }
+                    if (position === size) { frames.push({ tag, payload }); payload = undefined; state = 'tag'; }
                 }
-                if (frames.length > 1024) throw fault();
+                if (frames.length > MAX_FRAMES_PER_CHUNK) throw fault();
             }
             return frames;
-        } catch (error) { failed = true; throw error; }
+        } catch (error) {
+            if (captureCompleteOnError) completedOnError = frames.splice(0, MAX_FRAMES_PER_CHUNK);
+            for (const frame of frames) frame.payload.fill(0);
+            clearPartial(); failed = true; throw error;
+        }
     }
     function finish() {
-        if (failed || state !== 'tag') { failed = true; throw fault(); }
+        if (failed || state !== 'tag') { discard(); throw fault(); }
     }
-    return { push, finish };
+    function takeCompletedOnError() { const frames = completedOnError; completedOnError = []; return frames; }
+    return { push, finish, discard, takeCompletedOnError };
 }
 
 module.exports = { createFrameDecoder, encodeFrame, VERSION, DEFAULT_MAX_FRAME };

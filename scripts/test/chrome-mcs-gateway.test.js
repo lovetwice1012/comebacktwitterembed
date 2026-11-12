@@ -9,6 +9,57 @@ function v(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if 
 function field(n, x) { const b = Buffer.isBuffer(x) ? x : Buffer.from(x); return Buffer.concat([v(n * 8 + 2), v(b.length), b]); }
 const pair = (k, x) => field(7, Buffer.concat([field(1, k), field(2, x)]));
 
+test('Chrome gateway preserves owned queued receipts after disconnect without acknowledging them', { timeout: 5000 }, async () => {
+    const old = fixture(), key = old.push.p256dhPrivateKey;
+    const file = { format: old.format, version: 2,
+        provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion: '140.0.7339.42', readMethod: 'chrome-gcm-snapshot' },
+        push: { deviceId: '123', securityToken: '456', appId: 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2',
+            productCategory: 'com.chrome.windows', authorizedEntity: 'sender_123', scope: 'https://x.com/',
+            p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
+            p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
+    const encryptedFixture = await encrypted(file, { notificationType: 'tweet', text: 'fixture' });
+    for (const mode of ['valid', 'ack_fail', 'ack_confirm', 'flood', 'protocol', 'same_chunk', 'invalid_control', 'revoked', 'database']) {
+        const saved = [], writes = []; let socket, disconnected = false;
+        const lease = { subscriptionId: '11111111-1111-4111-8111-111111111111', ownerUserId: '222222222222222222', revision: 1,
+            token: 'a'.repeat(64), expiresAtMs: Date.now() + 60000, sealedEnvelope: { version: 2 } };
+        const store = { leaseMs: 60000, claim: async () => lease, renew: async () => lease,
+            assertLease: async () => { if (disconnected && mode === 'revoked') throw Object.assign(new Error('revoked'), { code: 'X_PUSH_LEASE_LOST' }); },
+            auditUse: async () => {}, chromeCheckinState: async () => ({ checkedAtMs: Date.now(), intervalSeconds: 172800 }),
+            recordChromeCheckin: async () => { throw new Error('unexpected checkin'); }, recordMcsControl: async () => {},
+            markState: async () => {}, resetRetry: async () => {}, release: async () => {}, pendingMcs: async () => [], confirmMcs: async () => {},
+            recordMcsFrame: async (_lease, frame) => { if (mode === 'database') throw new Error('private database details'); saved.push(frame.version); return { ...frame, id: frame.version, duplicate: false }; } };
+        store.recordMcsRecoveryFrame = (...args) => store.recordMcsFrame(...args);
+        store.recordMcsRecoveryControl = (...args) => store.recordMcsControl(...args);
+        class Socket extends EventEmitter {
+            constructor() { super(); queueMicrotask(() => this.emit('secureConnect')); }
+            write(bytes, done) { writes.push(bytes[0]);
+                if (['ack_fail', 'ack_confirm'].includes(mode) && bytes[0] === 7) { disconnected = true; done(new Error('socket failed')); return; }
+                done();
+                if (bytes[0] === 41) queueMicrotask(() => this.emit('data', encodeFrame(3, field(1, 'ok'), { first: true }))); }
+            pause() {} resume() {} destroy() {}
+            deliver(id, subtype = file.push.appId) { return encodeFrame(8, Buffer.concat([field(3, file.push.authorizedEntity), field(5, file.push.productCategory),
+                pair('subtype', subtype), pair('content-encoding', 'aes128gcm'), field(9, id), field(21, Buffer.from(encryptedFixture.data, 'base64url'))])); }
+        }
+        const gateway = createXPushGateway({ queryDatabase: async () => [] }, { store, enabled: true, chromeEnabled: true,
+            privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 2000, createChromeSocket: () => socket = new Socket() });
+        await assert.rejects(gateway.run({ ...lease, workerId: 'fixture', signal: new AbortController().signal,
+            onSession: () => { const frames = mode === 'flood' ? Array.from({ length: 17 }, (_, i) => socket.deliver(`flood-${i}`))
+                : [socket.deliver('own-1'), socket.deliver('foreign', 'other'), ...(mode === 'ack_confirm' ? [encodeFrame(1, Buffer.from([16, 2]))] : []),
+                    ...(mode === 'invalid_control' ? [encodeFrame(10, Buffer.alloc(0))] : []), socket.deliver('own-2')];
+                socket.emit('data', Buffer.concat(mode === 'same_chunk' ? [...frames, Buffer.from([255])] : frames));
+                if (mode === 'protocol') socket.emit('data', Buffer.from([255]));
+                else if (!['ack_fail', 'ack_confirm', 'same_chunk'].includes(mode)) { disconnected = true; socket.emit('close'); } } }), error => {
+            assert.equal(error.code, mode === 'valid' ? 'X_PUSH_SOCKET_CLOSED' : ['ack_fail', 'ack_confirm'].includes(mode) ? 'X_PUSH_SOCKET_FAILED'
+                : mode === 'flood' ? 'X_PUSH_SOCKET_CLOSED' : ['protocol', 'same_chunk'].includes(mode) ? 'X_PUSH_PROTOCOL_INVALID'
+                : mode === 'revoked' ? 'X_PUSH_LEASE_LOST' : 'X_PUSH_BUFFERED_RECOVERY_FAILED');
+            assert(!error.message.includes('private')); return true;
+        });
+        assert.deepEqual(saved, mode === 'flood' ? Array.from({ length: 17 }, (_, i) => `flood-${i}`)
+            : mode === 'invalid_control' ? ['own-1'] : ['valid', 'ack_fail', 'ack_confirm', 'protocol', 'same_chunk'].includes(mode) ? ['own-1', 'own-2'] : []);
+        assert.deepEqual(writes, ['ack_fail', 'ack_confirm'].includes(mode) ? [41, 7] : [41], 'recovery must not acknowledge queued frames');
+    }
+});
+
 test('Chrome gateway continues a receipt burst while downstream routing is stalled', { timeout: 5000 }, async () => {
     const old = fixture(), key = old.push.p256dhPrivateKey;
     const file = { format: old.format, version: 2,

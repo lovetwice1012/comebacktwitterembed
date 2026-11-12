@@ -349,53 +349,77 @@ function createXPushGateway(db, options = {}) {
                         }
                     },
                 });
-                await session.start();
-                const hello = await transport.read(timeoutMs);
-                if (!hello) throw fault('X_PUSH_HELLO_FAILED');
-                const connected = await session.receive(hello);
-                if (connected.state !== 'listening') throw fault('X_PUSH_HELLO_FAILED');
-                if (connected.heartbeatIntervalMs) heartbeatMs = connected.heartbeatIntervalMs;
-                await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-                await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-                const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
-                checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
-                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion,
-                        ...(isMacChrome ? { platform: 'macos' } : {}) },
-                    ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
-                    ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
-                    ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),
-                    onFailure: error => {
-                        if (finished || input.signal?.aborted) return;
-                        const code = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_CHECKIN_FAILED';
-                        if (code === 'X_PUSH_CHECKIN_UNAUTHORIZED' || code === 'X_PUSH_CHECKIN_ID_CHANGED') {
-                            finalState = 'requires_reenrollment'; reasonCode = code;
+                let chromeEstablished = false;
+                try {
+                    await session.start();
+                    const hello = await transport.read(timeoutMs);
+                    if (!hello) throw fault('X_PUSH_HELLO_FAILED');
+                    const connected = await session.receive(hello);
+                    if (connected.state !== 'listening') throw fault('X_PUSH_HELLO_FAILED');
+                    chromeEstablished = true;
+                    if (connected.heartbeatIntervalMs) heartbeatMs = connected.heartbeatIntervalMs;
+                    await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                    await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                    const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
+                    checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
+                        credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion,
+                            ...(isMacChrome ? { platform: 'macos' } : {}) },
+                        ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
+                        ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
+                        ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),
+                        onFailure: error => {
+                            if (finished || input.signal?.aborted) return;
+                            const code = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_CHECKIN_FAILED';
+                            if (code === 'X_PUSH_CHECKIN_UNAUTHORIZED' || code === 'X_PUSH_CHECKIN_ID_CHANGED') {
+                                finalState = 'requires_reenrollment'; reasonCode = code;
+                            }
+                            renewalFailure = fault(code);
+                            transport?.abort(code);
+                        },
+                    });
+                    await deadline(checkinRunner.start(), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                    if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
+                    let nextPing = now() + heartbeatMs, pingDeadline = null, receiptsSincePing = 0;
+                    while (!input.signal?.aborted) {
+                        if (renewalFailure) throw renewalFailure;
+                        const frame = await transport.read(Math.max(1, (pingDeadline || nextPing) - now()));
+                        if (!frame) {
+                            if (pingDeadline !== null) throw fault('X_PUSH_PONG_TIMEOUT');
+                            await session.ping(); pingDeadline = now() + Math.max(timeoutMs, 60000); continue;
                         }
-                        renewalFailure = fault(code);
-                        transport?.abort(code);
-                    },
-                });
-                await deadline(checkinRunner.start(), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-                if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
-                let nextPing = now() + heartbeatMs, pingDeadline = null, receiptsSincePing = 0;
-                while (!input.signal?.aborted) {
-                    if (renewalFailure) throw renewalFailure;
-                    const frame = await transport.read(Math.max(1, (pingDeadline || nextPing) - now()));
-                    if (!frame) {
-                        if (pingDeadline !== null) throw fault('X_PUSH_PONG_TIMEOUT');
-                        await session.ping(); pingDeadline = now() + Math.max(timeoutMs, 60000); continue;
+                        const outcome = await session.receive(frame);
+                        pingDeadline = null; nextPing = now() + heartbeatMs;
+                        // Under sustained traffic, request confirmations before
+                        // the durable replay-ID limit is reached. This does not
+                        // acknowledge any receipt before its DB commit.
+                        if (outcome.state === 'received' && ++receiptsSincePing >= 25) {
+                            await session.ping(); receiptsSincePing = 0;
+                            pingDeadline = now() + Math.max(timeoutMs, 60000);
+                        }
                     }
-                    const outcome = await session.receive(frame);
-                    pingDeadline = null; nextPing = now() + heartbeatMs;
-                    // Under sustained traffic, request confirmations before
-                    // the durable replay-ID limit is reached. This does not
-                    // acknowledge any receipt before its DB commit.
-                    if (outcome.state === 'received' && ++receiptsSincePing >= 25) {
-                        await session.ping(); receiptsSincePing = 0;
-                        pingDeadline = now() + Math.max(timeoutMs, 60000);
+                    return { state: 'stopped', reasonCode: null };
+                } catch (error) {
+                    // Only a successfully authenticated session may recover
+                    // complete frames that were queued before socket failure.
+                    // No ACK is sent; persisted IDs are replayed on reconnect.
+                    if (chromeEstablished && !renewalFailure && !input.signal?.aborted
+                        && ['X_PUSH_SOCKET_FAILED', 'X_PUSH_SOCKET_CLOSED', 'X_PUSH_SEND_TIMEOUT', 'X_PUSH_BACKPRESSURE', 'X_PUSH_PROTOCOL_INVALID'].includes(error?.code)) {
+                        const frames = transport.takeBufferedAfterDisconnect();
+                        try {
+                            if (frames.length) session.beginRecovery();
+                            for (const frame of frames) {
+                                if (renewalFailure || input.signal?.aborted) throw renewalFailure || fault('X_PUSH_STOPPED');
+                                await assertAuthorized();
+                                await deadline(session.recover(frame), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                                await assertAuthorized();
+                            }
+                        } catch (recoveryError) {
+                            if (['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(recoveryError?.code)) throw recoveryError;
+                            throw fault('X_PUSH_BUFFERED_RECOVERY_FAILED');
+                        } finally { for (const frame of frames) frame.payload.fill(0); }
                     }
-                }
-                session.close();
-                return { state: 'stopped', reasonCode: null };
+                    throw error;
+                } finally { session.close(); }
             }
             if (file.version !== 1) throw fault('X_PUSH_PROTOCOL_INVALID');
             transport = socketTransport(createSocket, timeoutMs, protocol.AUTOPUSH_USER_AGENT);
