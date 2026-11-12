@@ -4,8 +4,9 @@
 // first send of a second fresh subscription after a fixed delay. A 410 on the
 // first send remains a failure, even if a later diagnostic send is accepted.
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
-async function compareFreshSubscriptions({ subscribe, send, sleep, elapsedMs, report, delayMs = 5000 }) {
+async function compareFreshSubscriptions({ subscribe, send, sleep, elapsedMs, report, verifyPair, delayMs = 5000 }) {
     if ([subscribe, send, sleep, elapsedMs, report].some(value => typeof value !== 'function')
+        || verifyPair !== undefined && typeof verifyPair !== 'function'
         || !Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > 10000) throw new Error('FIXTURE_PAIR_CONFIG_INVALID');
     const readTime = () => {
         const value = elapsedMs();
@@ -25,6 +26,7 @@ async function compareFreshSubscriptions({ subscribe, send, sleep, elapsedMs, re
     const first = await subscribe('immediate'), firstAt = readTime();
     const firstResult = await attempt(first, 'immediate', firstAt);
     const second = await subscribe('delayed'), secondAt = readTime();
+    if (verifyPair) await verifyPair(first, second);
     const remaining = delayMs - (readTime() - secondAt);
     if (remaining > 0) await sleep(remaining);
     if (readTime() - secondAt < delayMs) throw new Error('FIXTURE_PAIR_DELAY_INVALID');

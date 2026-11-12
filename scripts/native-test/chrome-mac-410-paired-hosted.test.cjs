@@ -94,6 +94,20 @@ test('paired synthetic subscriptions compare an immediate and a delayed first se
                     throw new Error('FIXTURE_SUBSCRIPTION_INVALID');
                 return value;
             },
+            verifyPair: async (first, second) => {
+                const distinct = first.endpoint !== second.endpoint;
+                const expression = `(async()=>{const r=await navigator.serviceWorker.getRegistration('/paired-a/');` +
+                    `const s=r&&await r.pushManager.getSubscription();return s?s.toJSON():null})()`;
+                const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
+                if (response.exceptionDetails) throw new Error('FIXTURE_PAIR_LOOKUP_FAILED');
+                const current = response.result?.value;
+                const originalRetained = Boolean(current && current.endpoint === first.endpoint && current.keys?.p256dh === first.keys.p256dh
+                    && current.keys?.auth === first.keys.auth);
+                // The values are never printed. This only checks local Chrome
+                // state, not the subscription's validity at FCM.
+                t.diagnostic(`paired synthetic localSubscriptions distinct=${distinct} originalRetained=${originalRetained}`);
+                if (!distinct || !originalRetained) throw new Error('FIXTURE_PAIR_LOCAL_STATE_CHANGED');
+            },
             send: (subscription, label) => webpush.sendNotification(subscription, label, { TTL: 60, timeout: 15000 }),
             sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), elapsedMs,
             report: event => t.diagnostic(`paired synthetic phase=${event.label} result=${event.result} sinceSubscriptionMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs}`),

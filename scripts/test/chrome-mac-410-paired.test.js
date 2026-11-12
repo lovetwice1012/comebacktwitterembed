@@ -23,6 +23,18 @@ test('delivery diagnostics distinguish unaccepted and unattempted sends from obs
     assert.equal(deliveryObservation('not_attempted', false), 'not_attempted');
     assert.equal(deliveryObservation('secret', true), 'not_accepted');
 });
+test('local subscription comparison does not shorten the second subscription delay', async () => {
+    let now = 0, compared = false; const reports = [];
+    const result = await compareFreshSubscriptions({
+        subscribe: async label => label, send: async () => {}, sleep: async ms => { now += ms; },
+        elapsedMs: () => now, report: event => reports.push(event),
+        verifyPair: async (first, second) => { assert.equal(first, 'immediate'); assert.equal(second, 'delayed'); compared = true; now += 250; },
+    });
+    assert.equal(compared, true); assert.equal(result.initialFailure, false);
+    assert.equal(reports[1].sinceSubscriptionMs, 5000);
+    await assert.rejects(compareFreshSubscriptions({ subscribe: async () => {}, send: async () => {}, sleep: async () => {},
+        elapsedMs: () => 0, report: () => {}, verifyPair: 'invalid' }), /FIXTURE_PAIR_CONFIG_INVALID/);
+});
 test('successful immediate send is not repeated and invalid timers fail closed', async () => {
     let now = 0, sends = 0;
     const options = { subscribe: async label => label, send: async () => { sends++; }, sleep: async ms => { now += ms; },
