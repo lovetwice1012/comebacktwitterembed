@@ -33,6 +33,7 @@ function helperWith(build) {
     return loadTs('dashboard/lib/x-setup-download.ts', {
         'server-only': {}, 'node:crypto': { createHash },
         '@/lib/bot-require': { requireBotModule(relativePath) {
+            if (relativePath === 'src/automation/x-setup-release.js') return require('../../src/automation/x-setup-release');
             assert.equal(relativePath, 'scripts/build-angelic-setup-package.cjs');
             return { buildArchive: async (...args) => { assert.equal(args.length, 0); return build(); } };
         } },
@@ -103,6 +104,12 @@ test('download builder reconstructs the exact pinned release from nine source fi
     assert.equal(manifest.capabilities.serverTransfer, false);
     for (const name of FILES) assert.equal(manifest.files[name], hash(entries[name]));
     assert.deepEqual((await fs.readdir(directory)).sort(), ['source'], 'in-memory distribution must write no files');
+});
+test('status metadata and download metadata describe the same verified release', () => {
+    const { DOWNLOAD } = require('../../src/automation/x-setup');
+    const actual = helperWith(() => { throw new Error('builder must not run'); }).X_SETUP_DOWNLOAD;
+    assert.deepEqual(DOWNLOAD, { url: actual.href, version: actual.version, sha256: actual.sha256 });
+    assert.deepEqual(actual, PIN);
 });
 
 test('source edits, missing input, oversized input and changed ZIP/version cannot replace the pinned release', async t => {
@@ -219,6 +226,7 @@ test('Next file tracing and Git attributes retain exact release inputs without t
     for (const name of FILES) assert.ok(traced.includes(`../client/angelic-setup/${name}`));
     assert.ok(traced.includes('../scripts/build-angelic-setup-package.cjs'));
     assert.ok(traced.includes('../src/providers/_loader.js'));
+    assert.ok(traced.includes('../src/automation/x-setup-release.js'));
     assert.ok(traced.includes('../node_modules/fflate/package.json'));
     assert.ok(traced.includes('../node_modules/fflate/lib/node.cjs'));
     assert.ok(traced.every(name => !name.includes('*') && !name.includes('.env') && !name.includes('profile') && !name.includes('push_keys')));
@@ -242,8 +250,9 @@ test('copied standalone trace layout resolves the fixed builder and reproduces t
         { process: { cwd: () => dashboard, env: {} } });
     assert.equal(env.repoRoot(), standalone);
     const builderPath = path.join(standalone, 'scripts/build-angelic-setup-package.cjs');
+    const metadataPath = path.join(standalone, 'src/automation/x-setup-release.js');
     const botRequire = loadTs('dashboard/lib/bot-require.ts', {
-        'server-only': {}, 'node:path': path, '@/lib/env': env, [builderPath]: require(builderPath),
+        'server-only': {}, 'node:path': path, '@/lib/env': env, [builderPath]: require(builderPath), [metadataPath]: require(metadataPath),
     });
     const helper = loadTs('dashboard/lib/x-setup-download.ts', {
         'server-only': {}, 'node:crypto': { createHash }, '@/lib/bot-require': botRequire,

@@ -6,10 +6,10 @@ const { lockOwner } = require('./entitlements');
 const { parseTransferFile, identifyTransfer, createTransferPublicSealer, MAX_FILE_BYTES } = require('./x-setup-transfer');
 const { evaluateXRollout, requireXEnrollment } = require('./x-rollout-policy');
 const { resolveXProcessingPolicy } = require('./x-processing-policy');
+const { X_SETUP_RELEASE } = require('./x-setup-release');
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
-const DOWNLOAD = Object.freeze({ url: '/api/automation/x-setup/download', version: '0.1.0-preview.5',
-    sha256: '4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98' });
+const DOWNLOAD = Object.freeze({ url: X_SETUP_RELEASE.href, version: X_SETUP_RELEASE.version, sha256: X_SETUP_RELEASE.sha256 });
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const hash = text => createHash('sha256').update(text).digest('hex');
 const fail = (code, message, status = 422) => { throw new AutomationError(code, message, status); };

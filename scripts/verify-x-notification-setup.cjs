@@ -103,6 +103,7 @@ async function main() {
         const cookie = `x_setup_fixture=${randomBytes(24).toString('hex')}`;
         const download = loadTs('dashboard/lib/x-setup-download.ts', {
             'server-only': {}, 'node:crypto': { createHash }, '@/lib/bot-require': { requireBotModule(relative) {
+                if (relative === 'src/automation/x-setup-release.js') return require('../src/automation/x-setup-release');
                 assert.equal(relative, 'scripts/build-angelic-setup-package.cjs');
                 return require('../scripts/build-angelic-setup-package.cjs');
             } },

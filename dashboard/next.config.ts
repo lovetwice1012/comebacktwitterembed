@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
     "/api/automation/x-setup/download": [
       // repoRoot() uses this existing directory as its runtime layout marker.
       "../src/providers/_loader.js",
+      "../src/automation/x-setup-release.js",
       "../scripts/build-angelic-setup-package.cjs",
       "../node_modules/fflate/package.json",
       "../node_modules/fflate/lib/node.cjs",
