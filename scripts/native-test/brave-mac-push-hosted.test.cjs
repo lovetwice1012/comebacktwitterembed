@@ -29,6 +29,7 @@ const { createInstrumentedBraveVerifier } = require('./brave-mac-verifier-diagno
 const { buildSyntheticBraveMacTransfer } = require('./brave-mac-synthetic-transfer.cjs');
 const { writeExperimentalMacBraveExport } = require('../../src/automation/brave-mac-private-export');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
+const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -214,7 +215,11 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         }
         await new Promise(resolve => setTimeout(resolve, 10000));
         assert.equal(browserDeliveries, before, 'setup Brave consumed a synthetic push while suppression was enabled');
-        await receiveSyntheticMacPush({ subscription, vapid, ...credentials, browserVersion: engineVersion });
+        if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
+            await verifySyntheticMacDatabaseTransfer(transfer.file, database => receiveSyntheticMacPush({ subscription, vapid, ...credentials,
+                browserVersion: engineVersion, database }), { fileText, braveMac: true });
+            t.diagnostic('synthetic Brave file reached isolated HTTP intake, encrypted database, MCS and notification queue');
+        } else await receiveSyntheticMacPush({ subscription, vapid, ...credentials, browserVersion: engineVersion });
         await new Promise(resolve => setTimeout(resolve, 3000));
         assert.equal(browserDeliveries, before, 'setup Brave consumed a synthetic push while worker was connected');
         t.diagnostic('synthetic push reached MCS while the dedicated setup Brave was open; browser delivery was not observed');

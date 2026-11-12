@@ -50,6 +50,32 @@ function braveFixture() {
     file.push.productCategory = 'com.brave.windows';
     return file;
 }
+test('Mac Brave intake is separately gated and encrypted without affecting Windows Brave', async t => setup(t, async db => {
+    const file = braveFixture(); file.push.productCategory = 'com.brave.macosx';
+    const macSealer = createTransferPublicSealer({ ...vaultConfig, allowBraveMac: true });
+    for (const flags of [
+        { chromeEnabled: true, braveEnabled: true, braveMacEnabled: false, receiverEnabled: true },
+        { chromeEnabled: true, braveEnabled: false, braveMacEnabled: true, receiverEnabled: true },
+        { chromeEnabled: false, braveEnabled: true, braveMacEnabled: true, receiverEnabled: true },
+    ]) {
+        const disabled = createXSetup(db, { sealer: macSealer, ...flags });
+        const rejected = await payload(disabled, A, file);
+        await assert.rejects(disabled.validate(A, { sessionId: rejected.sessionId, fileText: rejected.fileText }), code('X_SETUP_INVALID_FILE'));
+        await assert.rejects(disabled.importFile(A, rejected), code('X_SETUP_INVALID_FILE'));
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 0);
+    }
+    const service = createXSetup(db, { sealer: macSealer, chromeEnabled: true, braveEnabled: true, braveMacEnabled: true, receiverEnabled: true });
+    const body = await payload(service, A, file);
+    assert.equal((await service.validate(A, { sessionId: body.sessionId, fileText: body.fileText })).browserKind, 'brave');
+    const saved = await service.importFile(A, body);
+    const row = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    assert(!JSON.stringify(row).includes(file.push.securityToken));
+    const worker = createTransferPrivateWorkerVault({ activeKeyId: 'fixture1', privateKeys: { fixture1: privateKey }, allowBraveMac: true });
+    assert.deepEqual(worker.open(JSON.parse(row.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), file);
+    await assert.rejects(service.importFile(B, await payload(service, B, file)), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+    const repeated = await service.importFile(A, await payload(service, A, file));
+    assert.equal(repeated.duplicate, true); assert.equal(repeated.subscription.id, saved.subscription.id);
+}));
 test('Mac Chrome intake is separately gated and the enabled transfer stays owner-bound', async t => setup(t, async db => {
     const file = chromeFixture(); file.push.productCategory = 'com.chrome.macosx';
     const disabled = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: false, receiverEnabled: true });

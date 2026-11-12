@@ -65,8 +65,8 @@ function normalizeChromeTransfer(file, { allowMac = true, allowBraveMac = false 
                 p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y, d: jwk.d } } };
     } catch { throw INVALID(); }
 }
-function identifyChromeTransfer(file) {
-    const normalized = normalizeChromeTransfer(file), hash = data => createHash('sha256').update(data).digest('hex');
+function identifyChromeTransfer(file, options) {
+    const normalized = normalizeChromeTransfer(file, options), hash = data => createHash('sha256').update(data).digest('hex');
     return { deviceHash: hash('chrome-device\0' + normalized.push.deviceId),
         // Browser upgrades change provenance, not the Push subscription. Bind
         // idempotency to all device, routing and cryptographic material.

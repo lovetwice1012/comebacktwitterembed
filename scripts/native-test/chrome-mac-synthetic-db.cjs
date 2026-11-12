@@ -14,25 +14,26 @@ const { createQueue } = require('../../src/automation/queue');
 const entitlements = require('../../src/automation/entitlements');
 const { createSyntheticSetupHttp } = require('./chrome-mac-synthetic-http.cjs');
 
-function syntheticTransferText(file, fileText) {
+function syntheticTransferText(file, fileText, { braveMac = false } = {}) {
     const text = fileText === undefined ? JSON.stringify(file) : fileText;
     try {
         if (typeof text !== 'string' || Buffer.byteLength(text) > 32768
-            || JSON.stringify(parseTransferFile(text)) !== JSON.stringify(file)) throw new Error();
+            || JSON.stringify(parseTransferFile(text, { allowBraveMac: braveMac })) !== JSON.stringify(file)) throw new Error();
     } catch { throw new Error('FIXTURE_TRANSFER_MISMATCH'); }
     return text;
 }
 
-async function verifySyntheticMacDatabaseTransfer(file, work, { fileText } = {}) {
+async function verifySyntheticMacDatabaseTransfer(file, work, { fileText, braveMac = false } = {}) {
     if (process.env.CBTE_MAC_DB_FIXTURE !== '1' || process.env.AUTOMATION_TEST_DB_PORT !== '33621') throw new Error('FIXTURE_DB_NOT_ENABLED');
+    if (typeof braveMac !== 'boolean' || braveMac && (file?.provenance?.kind !== 'brave-gcm' || file?.push?.productCategory !== 'com.brave.macosx')) throw new Error('FIXTURE_TRANSFER_MISMATCH');
     const db = await createTestDatabase(33621);
     const previousUrl = process.env.NEXTAUTH_URL;
     try {
         process.env.NEXTAUTH_URL = 'https://automation.example.test';
         const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
-        const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey } });
-        const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: keys.privateKey } });
-        const setup = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: true, receiverEnabled: true, rolloutMode: 'public' });
+        const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey }, allowBraveMac: braveMac });
+        const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: keys.privateKey }, allowBraveMac: braveMac });
+        const setup = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: true, braveEnabled: braveMac, braveMacEnabled: braveMac, receiverEnabled: true, rolloutMode: 'public' });
         const owner = { userId: '222222222222222222' }, other = { userId: '333333333333333333' };
         const http = await createSyntheticSetupHttp(db, setup);
         assert.equal((await http.post('x-setup/sessions', { consent: true }, 'https://wrong.example.test')).status, 403);
@@ -42,7 +43,7 @@ async function verifySyntheticMacDatabaseTransfer(file, work, { fileText } = {})
         // A fixture may supply bytes read from the locally saved file. Verify
         // these are exactly the expected synthetic transfer before the HTTP
         // request, without logging or displaying any key material.
-        const text = syntheticTransferText(file, fileText);
+        const text = syntheticTransferText(file, fileText, { braveMac });
         const preview = await http.post('x-setup/validate', { sessionId: session.sessionId, fileText: text });
         assert.equal(preview.status, 200); assert.equal(preview.body.valid, true);
         const imported = await http.post('x-setup/import', { sessionId: session.sessionId, fileText: text, consent: true });
@@ -76,7 +77,7 @@ async function verifySyntheticMacDatabaseTransfer(file, work, { fileText } = {})
             assert.ok(inbox.length >= 1, 'encrypted receipt missing');
             assert.ok(inbox.every(row => row.status === 'received' && typeof row.data_ciphertext === 'string' && row.data_ciphertext.length > 0), 'invalid encrypted receipt');
             if (process.env.CBTE_MAC_REAL_ROUTE_FIXTURE === '1') {
-                const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, chromeMacEnabled: true,
+                const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, chromeMacEnabled: true, braveMacEnabled: braveMac,
                     privateWorkerVault: vault, rolloutMode: 'public', leaseMs: 300000 });
                 const queue = createQueue(db, {}, { rolloutMode: 'public' });
                 const runtime = createXPushRuntime(db, queue, { enabled: true, gateway, rolloutMode: 'public', processingPolicy: 'batch', assertAllowed: () => {} });

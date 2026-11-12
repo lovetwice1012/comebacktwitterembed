@@ -38,11 +38,11 @@ function canonicalUrl(value) {
     if (url.href !== value || url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) reject();
     return url;
 }
-function normalizeFile(file) {
+function normalizeFile(file, { allowBraveMac = false } = {}) {
     exactFields(file, ['format', 'version', 'provenance', 'push']);
     // Version 2 is sealed with the same owner-bound vault. Intake separately
     // enforces the server-controlled Chrome and receiver rollout flags.
-    if (file.version === 2) return require('./chrome-x-transfer').normalizeChromeTransfer(file);
+    if (file.version === 2) return require('./chrome-x-transfer').normalizeChromeTransfer(file, { allowBraveMac: allowBraveMac === true });
     if (file.version === 3) return require('./edge-wns-transfer').normalizeEdgeTransfer(file);
     if (file.format !== 'x-notification-subscription' || file.version !== 1) reject();
     const provenance = file.provenance;
@@ -83,16 +83,16 @@ function normalizeFile(file) {
         },
     };
 }
-function parseTransferFile(fileText) {
+function parseTransferFile(fileText, options) {
     if (typeof fileText !== 'string') throw invalidFile();
     if (Buffer.byteLength(fileText, 'utf8') > MAX_FILE_BYTES) throw new AutomationError('X_SETUP_FILE_TOO_LARGE', '設定ファイルのサイズが上限を超えています。', 413);
-    try { return normalizeFile(parseUniqueJson(fileText)); } catch { throw invalidFile(); }
+    try { return normalizeFile(parseUniqueJson(fileText), options); } catch { throw invalidFile(); }
 }
-function identifyTransfer(file) {
+function identifyTransfer(file, options) {
     try {
-        const normalized = normalizeFile(file);
+        const normalized = normalizeFile(file, options);
         if (normalized.version === 2) {
-            const id = require('./chrome-x-transfer').identifyChromeTransfer(normalized);
+            const id = require('./chrome-x-transfer').identifyChromeTransfer(normalized, options);
             return { uaidHash: id.deviceHash, channelHash: id.appHash, contentHash: id.contentHash };
         }
         if (normalized.version === 3) {
@@ -127,11 +127,11 @@ function associatedData(context, keyId, version = 1, algorithm = 'A256GCM') {
         || !Number.isSafeInteger(context.revision) || context.revision < 1) throw new Error();
     return Buffer.from(JSON.stringify(['x-notification-subscription-vault', version, algorithm, keyId, context.subscriptionId, context.ownerUserId, context.revision]), 'utf8');
 }
-function sealerFor(config) {
+function sealerFor(config, options) {
     return (file, context) => {
         // Keep file validation errors useful to intake callers, without copying data.
         let normalized;
-        try { normalized = normalizeFile(file); } catch { throw invalidFile(); }
+        try { normalized = normalizeFile(file, options); } catch { throw invalidFile(); }
         try {
             const iv = randomBytes(12);
             const cipher = createCipheriv('aes-256-gcm', config.keys.get(config.activeKeyId), iv, { authTagLength: 16 });
@@ -142,14 +142,15 @@ function sealerFor(config) {
     };
 }
 function createTransferSealer(options) {
-    return Object.freeze({ seal: sealerFor(vaultKeys(options)) });
+    return Object.freeze({ seal: sealerFor(vaultKeys(options), { allowBraveMac: options.allowBraveMac === true }) });
 }
 // This separate constructor is for a trusted future worker. Intake only needs
 // createTransferSealer and must never receive an object exposing open().
 function createTransferWorkerVault(options) {
     const config = vaultKeys(options);
+    const allowBraveMac = options.allowBraveMac === true;
     return Object.freeze({
-        seal: sealerFor(config),
+        seal: sealerFor(config, { allowBraveMac }),
         open(envelope, context) {
             try {
                 exactFields(envelope, ['version', 'algorithm', 'keyId', 'iv', 'ciphertext', 'tag']);
@@ -162,7 +163,7 @@ function createTransferWorkerVault(options) {
                 decipher.setAAD(associatedData(context, envelope.keyId));
                 decipher.setAuthTag(decode(envelope.tag, 16));
                 const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-                return parseTransferFile(plaintext.toString('utf8'));
+                return parseTransferFile(plaintext.toString('utf8'), { allowBraveMac });
             } catch { throw decryptFailed(); }
         },
     });
@@ -203,10 +204,11 @@ function rsaKeys(options, role) {
 // data key, and only the worker's private key can unwrap that key afterwards.
 function createTransferPublicSealer(options) {
     const config = rsaKeys(options, 'public');
+    const allowBraveMac = options.allowBraveMac === true;
     return Object.freeze({
         seal(file, context) {
             let normalized;
-            try { normalized = normalizeFile(file); } catch { throw invalidFile(); }
+            try { normalized = normalizeFile(file, { allowBraveMac }); } catch { throw invalidFile(); }
             let dataKey;
             try {
                 const aad = associatedData(context, config.activeKeyId, 2, HYBRID_ALGORITHM);
@@ -225,6 +227,7 @@ function createTransferPublicSealer(options) {
 
 function createTransferPrivateWorkerVault(options) {
     const config = rsaKeys(options, 'private');
+    const allowBraveMac = options.allowBraveMac === true;
     return Object.freeze({
         open(envelope, context) {
             let dataKey;
@@ -242,7 +245,7 @@ function createTransferPrivateWorkerVault(options) {
                 decipher.setAAD(aad);
                 decipher.setAuthTag(decode(envelope.tag, 16));
                 const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-                return parseTransferFile(plaintext.toString('utf8'));
+                return parseTransferFile(plaintext.toString('utf8'), { allowBraveMac });
             } catch { throw decryptFailed(); }
             finally { dataKey?.fill(0); }
         },

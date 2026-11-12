@@ -53,3 +53,28 @@ test('synthetic Mac intake stores encrypted receipt and replay ID atomically',
             assert.equal(decoded.toString('utf8'), JSON.stringify(payload));
         });
     });
+
+test('synthetic Mac Brave HTTP intake and encrypted receipt route use the explicit fixture gate',
+    { skip: process.env.CBTE_MAC_DB_FIXTURE !== '1', timeout: 30000 }, async () => {
+        const original = fixture(), key = original.push.p256dhPrivateKey;
+        const file = { format: original.format, version: 2,
+            provenance: { kind: 'brave-gcm', adapterVersion: '1.0.0', browserVersion: '156.1.98.63', engineVersion: '156.0.8078.80', readMethod: 'brave-gcm-snapshot' },
+            push: { deviceId: '123456', securityToken: '987654', appId: 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2',
+                productCategory: 'com.brave.macosx', authorizedEntity: 'sender_123', scope: 'https://x.com/',
+                p256dhPublicKey: original.push.p256dhPublicKey, authenticationSecret: original.push.authenticationSecret,
+                p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
+        const text = JSON.stringify(file);
+        assert.throws(() => syntheticTransferText(file, text), /FIXTURE_TRANSFER_MISMATCH/);
+        assert.equal(syntheticTransferText(file, text, { braveMac: true }), text);
+        const payload = { notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
+            url: 'https://x.com/synthetic/status/1234567890123456789', text: 'synthetic' };
+        const wire = await encrypted(file, payload);
+        const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+        await verifySyntheticMacDatabaseTransfer(file, async ({ store, lease }) => {
+            const adapter = createChromeMcsStoreAdapter({ store, lease, authorize: async () => {}, decrypt: frame =>
+                decryptEce(Buffer.from(frame.data, 'base64url'), frame.headers, { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')],
+                    private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] }) });
+            const receipt = await adapter.commit({ persistentId: 'synthetic-brave', encrypted: { data: Buffer.from(wire.data, 'base64url'), headers: wire.headers } });
+            assert.equal(receipt.status, 'received');
+        }, { fileText: text, braveMac: true });
+    });

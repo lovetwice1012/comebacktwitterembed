@@ -53,7 +53,7 @@ function sealerFromEnvironment(env = process.env) {
         if (!key.length || key.toString('base64url') !== keyText) return null;
         const publicKey = createPublicKey({ key, format: 'der', type: 'spki' });
         return createTransferPublicSealer({ activeKeyId: env.X_NOTIFICATION_INTAKE_KEY_ID,
-            publicKeys: { [env.X_NOTIFICATION_INTAKE_KEY_ID]: publicKey } });
+            publicKeys: { [env.X_NOTIFICATION_INTAKE_KEY_ID]: publicKey }, allowBraveMac: env.X_NOTIFICATION_BRAVE_MAC_ENABLED === '1' });
     } catch { return null; }
 }
 
@@ -69,6 +69,9 @@ function createXSetup(db, options = {}) {
     // Brave intake stays off during rolling upgrades until every web and worker
     // process understands its browser kind and transfer metadata.
     const braveEnabled = chromeEnabled && (options.braveEnabled === undefined ? process.env.X_NOTIFICATION_BRAVE_ENABLED === '1' : options.braveEnabled === true);
+    // The experimental Mac variant has its own opt-in. Existing Brave for
+    // Windows must never imply support for the Mac receiver or export tool.
+    const braveMacEnabled = braveEnabled && (options.braveMacEnabled === undefined ? process.env.X_NOTIFICATION_BRAVE_MAC_ENABLED === '1' : options.braveMacEnabled === true);
     const edgeEnabled = options.edgeEnabled === undefined ? process.env.X_NOTIFICATION_EDGE_ENABLED === '1' : options.edgeEnabled === true;
     const edgeConnectV2Enabled = options.edgeConnectV2Enabled === undefined ? process.env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1' : options.edgeConnectV2Enabled === true;
     async function subscriptionRows(query, owner, filter = {}) {
@@ -140,7 +143,7 @@ function createXSetup(db, options = {}) {
         requireActor(actor); available(); exact(input, ['sessionId', 'fileText']);
         await requireXEnrollment(db.queryDatabase, actor, rolloutOptions);
         await checkSession(db.queryDatabase, actor, input.sessionId);
-        const file = parseTransferFile(input.fileText);
+        const file = parseTransferFile(input.fileText, { allowBraveMac: braveMacEnabled });
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 3 && file.push.connectVersion === '2' && !edgeConnectV2Enabled) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
@@ -155,13 +158,13 @@ function createXSetup(db, options = {}) {
         // Check authentication/session before any key operations. Repeat under
         // the owner lock after parsing so concurrent imports cannot replay it.
         await checkSession(db.queryDatabase, actor, input.sessionId);
-        const file = parseTransferFile(input.fileText);
+        const file = parseTransferFile(input.fileText, { allowBraveMac: braveMacEnabled });
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 3 && file.push.connectVersion === '2' && !edgeConnectV2Enabled) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.push.productCategory === 'com.chrome.macosx' && !chromeMacEnabled) fail('X_SETUP_CHROME_MAC_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
-        const identity = identifyTransfer(file);
+        const identity = identifyTransfer(file, { allowBraveMac: braveMacEnabled });
         try {
             return await db.withDatabaseTransaction(async query => {
                 await lockOwner(query, actor.userId);

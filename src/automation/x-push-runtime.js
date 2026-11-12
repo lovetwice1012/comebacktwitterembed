@@ -416,7 +416,9 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
             config = JSON.parse(bytes.subarray(0, length).toString('utf8'));
         } finally { fs.closeSync(handle); }
         if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['activeKeyId', 'privateKeys'].includes(key))) throw new Error();
-        const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault(config);
+        const braveMacEnabled = env.X_NOTIFICATION_CHROME_ENABLED === '1' && env.X_NOTIFICATION_BRAVE_ENABLED === '1'
+            && env.X_NOTIFICATION_BRAVE_MAC_ENABLED === '1';
+        const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault({ ...config, allowBraveMac: braveMacEnabled });
         const edgeEnabled = env.X_NOTIFICATION_EDGE_ENABLED === '1';
         const edgeTokenVault = edgeEnabled ? require('./x-setup-transfer').createWnsTokenWorkerVault(config) : undefined;
         const numberOption = (name, fallback, maximum) => {
@@ -431,7 +433,7 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
         const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
         const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
-            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', edgeEnabled,
+            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', braveMacEnabled, edgeEnabled,
             edgeConnectV2Enabled: env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1', edgeTokenVault });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
             maxConnections, drainConcurrency,

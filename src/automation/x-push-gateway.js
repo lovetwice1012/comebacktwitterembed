@@ -326,7 +326,9 @@ function createXPushGateway(db, options = {}) {
                 // Chrome device identity to the Mozilla WebSocket endpoint.
                 if (options.chromeEnabled !== true) throw fault('X_PUSH_PROTOCOL_INVALID');
                 const isMacChrome = file.push.productCategory === 'com.chrome.macosx';
+                const isMacBrave = file.push.productCategory === 'com.brave.macosx';
                 if (isMacChrome && options.chromeMacEnabled !== true) throw fault('X_PUSH_PROTOCOL_INVALID');
+                if (isMacBrave && options.braveMacEnabled !== true) throw fault('X_PUSH_PROTOCOL_INVALID');
                 const { createChromeMcsTransport } = require('./chrome-mcs-transport');
                 const { createChromeMcsSession } = require('./chrome-mcs-session');
                 const { createChromeMcsStoreAdapter } = require('./chrome-mcs-store-adapter');
@@ -383,7 +385,7 @@ function createXPushGateway(db, options = {}) {
                     const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
                     checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
                         credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion,
-                            ...(isMacChrome ? { platform: 'macos' } : {}) },
+                            ...(isMacChrome || isMacBrave ? { platform: 'macos' } : {}) },
                         ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
                         ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
                         ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),

@@ -9,6 +9,20 @@ on:
       - src/automation/chrome-mac-*.js
       - scripts/native-test/brave-mac-push-hosted.test.cjs
       - scripts/native-test/brave-mac-synthetic-transfer.cjs
+      - scripts/native-test/chrome-mac-synthetic-db.cjs
+      - scripts/native-test/chrome-mac-synthetic-http.cjs
+      - scripts/lib/automation-test-db.js
+      - scripts/test/brave-mac-server-transfer.test.js
+      - scripts/test/brave-mac-transfer-types.test.js
+      - src/automation/x-setup-transfer.d.ts
+      - scripts/test/chrome-mac-synthetic-db.test.js
+      - scripts/test/automation-x-setup-sql.test.js
+      - scripts/test/automation-chrome-mcs-gateway-sql.test.js
+      - src/automation/chrome-x-transfer.js
+      - src/automation/x-setup-transfer.js
+      - src/automation/x-setup.js
+      - src/automation/x-push-gateway.js
+      - src/automation/x-push-runtime.js
       - scripts/test/brave-mac-synthetic-transfer.test.js
       - scripts/native-test/brave-mac-install-diagnostic.cjs
       - scripts/native-test/brave-mac-verifier-diagnostic.cjs
@@ -85,6 +99,10 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
           npm --prefix packages/angelic-angel run build
+      - name: Install isolated fixture database
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install mariadb@11.8
       - name: Prepare isolated helper and synthetic keychain
         run: |
           clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-brave-lock"
@@ -98,8 +116,29 @@ jobs:
       - name: Test actual Brave and isolated profile safety
         env:
           CBTE_MAC_BRAVE_HOSTED: '1'
+          CBTE_MAC_DB_FIXTURE: '1'
+          CBTE_MAC_REAL_ROUTE_FIXTURE: '1'
+          AUTOMATION_TEST_DB_PORT: '33621'
           MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-brave-lock
         run: |
+          set -eu
           test "$GITHUB_ACTIONS" = true
           test "$RUNNER_ENVIRONMENT" = github-hosted
+          dbbase="$(brew --prefix mariadb@11.8)"
+          dbdir="$RUNNER_TEMP/cbte-brave-mariadb-data"
+          mkdir -m 700 "$dbdir"
+          "$dbbase/bin/mariadb-install-db" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --auth-root-authentication-method=normal --skip-test-db > /dev/null
+          "$dbbase/bin/mariadbd" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --socket="$RUNNER_TEMP/cbte-brave-mariadb.sock" --pid-file="$RUNNER_TEMP/cbte-brave-mariadb.pid" --log-error="$RUNNER_TEMP/cbte-brave-mariadb.log" --bind-address=127.0.0.1 --port=33621 --skip-name-resolve --skip-log-bin &
+          dbpid=$!
+          trap 'kill "$dbpid" 2>/dev/null || true; wait "$dbpid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if "$dbbase/bin/mariadb-admin" --no-defaults --protocol=tcp -h 127.0.0.1 -P 33621 -u root ping > /dev/null 2>&1; then ready=1; break; fi
+            if ! kill -0 "$dbpid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          node --test --test-concurrency=1 scripts/test/brave-mac-server-transfer.test.js scripts/test/brave-mac-transfer-types.test.js scripts/test/automation-x-setup-sql.test.js scripts/test/automation-chrome-mcs-gateway-sql.test.js
+          CBTE_MAC_REAL_ROUTE_FIXTURE=0 node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
+          node --test --test-concurrency=1 --test-name-pattern 'synthetic Mac Brave HTTP intake' scripts/test/chrome-mac-synthetic-db.test.js
           node --test --test-concurrency=1 scripts/native-test/brave-mac-push-hosted.test.cjs scripts/test/brave-mac-synthetic-transfer.test.js scripts/test/brave-mac-broker.test.js scripts/test/brave-mac-browser.test.js scripts/test/brave-mac-setup-session.test.js scripts/test/chrome-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/native-test/brave-mac-composed.test.cjs scripts/test/chrome-mac-push-probe.test.js scripts/test/chrome-mac-push-error.test.js scripts/test/brave-mac-install-diagnostic.test.js

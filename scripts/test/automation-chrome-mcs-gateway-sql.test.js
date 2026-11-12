@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { generateKeyPairSync } = require('node:crypto');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const { insertSubscription, fixture, encrypted, vault } = require('./helpers/x-push-fixture.cjs');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
@@ -32,6 +33,138 @@ function braveFixture() {
     file.push.productCategory = 'com.brave.windows';
     return file;
 }
+test('Mac Brave file intake to worker is separately gated and uses Mac check-in and engine version', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const rsaPair = generateKeyPairSync('rsa', { modulusLength: 3072 });
+        const transfers = require('../../src/automation/x-setup-transfer');
+        const sealer = transfers.createTransferPublicSealer({ activeKeyId: 'mac-brave-test', publicKeys: { 'mac-brave-test': rsaPair.publicKey }, allowBraveMac: true });
+        const workerVault = transfers.createTransferPrivateWorkerVault({ activeKeyId: 'mac-brave-test', privateKeys: { 'mac-brave-test': rsaPair.privateKey }, allowBraveMac: true });
+        const service = require('../../src/automation/x-setup').createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: true, braveMacEnabled: true, receiverEnabled: true, rolloutMode: 'public' });
+        const file = braveFixture(); file.push.productCategory = 'com.brave.macosx';
+        const actor = { userId: '222222222222222222' }, session = await service.startSession(actor, { consent: true });
+        const saved = await service.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true });
+        const identity = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId };
+        let opens = 0;
+        const disabled = createXPushGateway(db, { enabled: true, chromeEnabled: true, braveMacEnabled: false, privateWorkerVault: workerVault,
+            rolloutMode: 'public', createChromeSocket: () => { opens++; throw new Error('unexpected network'); } });
+        await assert.rejects(disabled.run({ ...identity, workerId: 'mac-brave-disabled' }), { code: 'X_PUSH_PROTOCOL_INVALID' });
+        assert.equal(opens, 0);
+        const payload = { notificationType: 'tweet', text: 'synthetic-mac-brave' }, cipher = await encrypted(file, payload);
+        const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory), pair('subtype', file.push.appId),
+            pair('content-encoding', 'aes128gcm'), bytes(9, 'mac-brave-fixture'), bytes(21, Buffer.from(cipher.data, 'base64url'))]);
+        const controller = new AbortController(); let socket, clock = 1000000, fire, captured, confirmCheckin, received;
+        const checked = new Promise(resolve => { confirmCheckin = resolve; });
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, braveMacEnabled: true, privateWorkerVault: workerVault,
+            rolloutMode: 'public', requestTimeoutMs: 3000, leaseMs: 300000, now: () => clock, createChromeSocket: () => socket = new FakeSocket(db),
+            chromeCheckinSetTimer: cb => { fire = cb; return 1; }, chromeCheckinClearTimer: () => {},
+            chromeCheckin: async credentials => { captured = credentials; confirmCheckin(); return { intervalSeconds: 50000 }; } });
+        const result = await gateway.run({ ...identity, workerId: 'mac-brave-enabled', signal: controller.signal,
+            onSession: async () => { clock += 60001; fire(); await checked; socket.emit('data', encodeFrame(8, message)); },
+            onReceived: value => { received = value; controller.abort(); } });
+        assert.equal(result.state, 'stopped'); assert.equal(captured.platform, 'macos');
+        assert.equal(captured.browserVersion, file.provenance.engineVersion); assert.deepEqual(received.payload, payload);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+    } finally { await db.close(); }
+});
+test('Mac Brave survives an incompatible worker and routes its retained receipt once after recovery', { timeout: 30000 }, async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    let disabledRuntime, recoveryRuntime;
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
+        const transfer = require('../../src/automation/x-setup-transfer');
+        const publicOptions = { activeKeyId: 'mixed-fleet-test', publicKeys: { 'mixed-fleet-test': keys.publicKey } };
+        const privateOptions = { activeKeyId: 'mixed-fleet-test', privateKeys: { 'mixed-fleet-test': keys.privateKey } };
+        const service = require('../../src/automation/x-setup').createXSetup(db, {
+            sealer: transfer.createTransferPublicSealer({ ...publicOptions, allowBraveMac: true }), chromeEnabled: true,
+            braveEnabled: true, braveMacEnabled: true, receiverEnabled: true, rolloutMode: 'public',
+        });
+        const file = braveFixture(); file.push.productCategory = 'com.brave.macosx';
+        const actor = { userId: '222222222222222222' }, session = await service.startSession(actor, { consent: true });
+        const saved = await service.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true });
+        const identity = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId };
+        let clock = Date.now();
+        await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
+            { planId: 'free', label: 'fixture', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+        const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','fixture',1,'ready','free',?,'bound',1,?,?)",
+            [actor.userId, JSON.stringify({ subscriptionId: identity.subscriptionId }), clock, clock]);
+        await db.withDatabaseTransaction(query => entitlements.assignSlot(query, actor.userId, 'x', String(monitor.insertId)));
+        const payload = { notificationType: 'tweet', text: 'mixed-fleet-fixture', author: { id: '12345', handle: 'example' },
+            url: 'https://x.com/example/status/1234567890123456789' };
+        const cipher = await encrypted(file, payload);
+        const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory), pair('subtype', file.push.appId),
+            pair('content-encoding', 'aes128gcm'), bytes(9, 'mixed-fleet-replay'), bytes(21, Buffer.from(cipher.data, 'base64url'))]);
+        class FailedAckSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] === 7) { this.writes.push(wire); return done(new Error('synthetic ACK write failure')); }
+                return super.write(wire, done);
+            }
+        }
+        const enabledVault = transfer.createTransferPrivateWorkerVault({ ...privateOptions, allowBraveMac: true });
+        let firstSocket;
+        const first = createXPushGateway(db, { enabled: true, chromeEnabled: true, braveMacEnabled: true, privateWorkerVault: enabledVault,
+            rolloutMode: 'public', now: () => clock, chromeCheckin: syntheticCheckin, createChromeSocket: () => firstSocket = new FailedAckSocket(db) });
+        await assert.rejects(first.run({ ...identity, workerId: 'before-mismatch',
+            onSession: () => firstSocket.emit('data', encodeFrame(8, message)) }), { code: 'X_PUSH_SOCKET_FAILED' });
+        const subscriptionBefore = (await db.queryDatabase('SELECT sealed_json,revision,owner_user_id FROM automation_x_subscriptions WHERE id=?', [identity.subscriptionId]))[0];
+        const monitorBefore = (await db.queryDatabase('SELECT notification_settings_json,revision,state FROM automation_x_monitors WHERE id=?', [monitor.insertId]))[0];
+        const inboxBefore = await db.queryDatabase('SELECT id,version,data_ciphertext,status FROM automation_x_push_inbox WHERE subscription_id=?', [identity.subscriptionId]);
+        assert.equal(inboxBefore.length, 1); assert.equal(inboxBefore[0].status, 'received');
+
+        // Production creates this vault with the same disabled flag; rejecting
+        // in the vault precedes the separate gateway protocol guard.
+        let forbiddenSockets = 0;
+        const disabled = createXPushGateway(db, { enabled: true, chromeEnabled: true, braveMacEnabled: false,
+            privateWorkerVault: transfer.createTransferPrivateWorkerVault(privateOptions), rolloutMode: 'public', now: () => clock,
+            createChromeSocket: () => { forbiddenSockets++; throw new Error('unexpected network'); } });
+        disabledRuntime = createXPushRuntime(db, {}, { enabled: true, gateway: disabled, rolloutMode: 'public', processingPolicy: 'batch',
+            clock: () => clock, jitter: () => 0, assertAllowed() {} });
+        await disabledRuntime.tick();
+        let status;
+        for (let attempt = 0; attempt < 200; attempt++) {
+            status = await disabled.store.status(identity);
+            if (status?.retryAttempt === 1 && status?.reasonCode === 'X_PUSH_VAULT_INVALID') break;
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.equal(status?.state, 'error'); assert.equal(status?.reasonCode, 'X_PUSH_VAULT_INVALID');
+        assert.equal(status?.retryAttempt, 1); assert.equal(status?.retryAtMs, clock + 5000); assert.equal(forbiddenSockets, 0);
+        assert.deepEqual((await db.queryDatabase('SELECT sealed_json,revision,owner_user_id FROM automation_x_subscriptions WHERE id=?', [identity.subscriptionId]))[0], subscriptionBefore);
+        assert.deepEqual((await db.queryDatabase('SELECT notification_settings_json,revision,state FROM automation_x_monitors WHERE id=?', [monitor.insertId]))[0], monitorBefore);
+        assert.deepEqual(await db.queryDatabase('SELECT id,version,data_ciphertext,status FROM automation_x_push_inbox WHERE subscription_id=?', [identity.subscriptionId]), inboxBefore);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 0);
+        await disabledRuntime.stop(); disabledRuntime = null;
+
+        clock = status.retryAtMs + 1;
+        const controller = new AbortController(); let socket, replayCallbacks = 0;
+        class SuccessorSocket extends FakeSocket {
+            write(wire, done) {
+                if (wire[0] === 41) { this.writes.push(wire); done(); queueMicrotask(() => this.emit('data', encodeFrame(3, Buffer.concat([bytes(1, 'ok'), Buffer.from([48, 1])]), { first: true }))); return; }
+                if (wire[0] === 7) { this.writes.push(wire); done(); setImmediate(() => controller.abort()); return; }
+                return super.write(wire, done);
+            }
+        }
+        const enabled = createXPushGateway(db, { enabled: true, chromeEnabled: true, braveMacEnabled: true, privateWorkerVault: enabledVault,
+            rolloutMode: 'public', now: () => clock, requestTimeoutMs: 10000, chromeCheckin: syntheticCheckin,
+            createChromeSocket: () => socket = new SuccessorSocket(db) });
+        const queue = createQueue(db, {}, { rolloutMode: 'public' });
+        recoveryRuntime = createXPushRuntime(db, queue, { enabled: true, gateway: enabled, rolloutMode: 'public', processingPolicy: 'batch',
+            clock: () => clock, assertAllowed() {} });
+        const result = await enabled.run({ ...identity, workerId: 'after-mismatch', signal: controller.signal,
+            onSession: async ({ lease }) => {
+                assert(socket.writes[0].includes(Buffer.from('mixed-fleet-replay')));
+                await db.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?', [clock - 301000, identity.subscriptionId]);
+                assert.equal((await recoveryRuntime.drain(lease)).processed, 1);
+                socket.emit('data', encodeFrame(8, message));
+            }, onReceived: () => replayCallbacks++ });
+        assert.equal(result.state, 'stopped'); assert.equal(replayCallbacks, 0);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox WHERE subscription_id=?', [identity.subscriptionId])).length, 1);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 1);
+    } finally {
+        await disabledRuntime?.stop(); await recoveryRuntime?.stop(); await db.close();
+    }
+});
 class FakeSocket extends EventEmitter {
     constructor(db) { super(); this.db = db; this.writes = []; this.destroyed = false; queueMicrotask(() => this.emit('secureConnect')); }
     write(wire, done) {
