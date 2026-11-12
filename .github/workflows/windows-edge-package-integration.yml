@@ -9,6 +9,8 @@ on:
       - scripts/native-test/edge-hosted-package-integration.test.cjs
       - scripts/native-test/edge-hosted-node-selection.ps1
       - scripts/native-test/edge-hosted-node-selection.test.cjs
+      - scripts/native-test/edge-hosted-probe-mode.ps1
+      - scripts/native-test/edge-hosted-probe-mode.test.cjs
       - scripts/native-test/edge-fixture-archive.test.cjs
       - experiments/chrome-push/edge-fixture-archive.cjs
       - experiments/chrome-push/edge-broker-pipe-probe.cjs
@@ -26,6 +28,10 @@ jobs:
   packaged-edge:
     runs-on: windows-2025
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, online-batch, offline-batch]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -47,7 +53,7 @@ jobs:
       - name: Verify immutable package reader
         shell: pwsh
         run: |
-          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs
+          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs scripts/native-test/edge-hosted-probe-mode.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Pinned package test failed' }
       - name: Build exact preview candidate in runner temp
         shell: pwsh
@@ -59,5 +65,5 @@ jobs:
       - name: Run signed Edge, packaged export, isolated DB and WNS
         shell: powershell
         run: |
-          & ./scripts/native-test/edge-hosted-package-integration.ps1
+          & ./scripts/native-test/edge-hosted-package-integration.ps1 -Mode '${{ matrix.mode }}'
           if ($LASTEXITCODE -ne 0) { throw 'Synthetic integration failed' }

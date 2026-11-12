@@ -1,4 +1,5 @@
 #requires -Version 5.1
+param([ValidateSet('normal', 'online-batch', 'offline-batch')][string] $Mode = 'normal')
 <#
   Disposable GitHub-hosted Windows runner only. This downloads a hash-pinned
   MariaDB ZIP to RUNNER_TEMP, starts a private loopback database without
@@ -64,6 +65,8 @@ try {
         'AUTOMATION_TEST_DB_PORT=33621', ('AUTOMATION_TEST_DB_PASSWORD=' + $syntheticPassword),
         'EDGE_PROBE_DATABASE=1', 'EDGE_PROBE_REAL_WNS=1', 'EDGE_PROBE_RELAY_CALIBRATION=1',
         'EDGE_PROBE_CALIBRATION_RUNNER=1', 'EDGE_PROBE_CONNECT_VERSION=2', 'EDGE_PROBE_PINNED_HOSTED_PACKAGE=1')) { $items.Add($item) }
+    . ([IO.Path]::Combine($repo, 'scripts', 'native-test', 'edge-hosted-probe-mode.ps1'))
+    foreach ($item in @(Get-XEdgeHostedProbeFlags -Mode $Mode)) { $items.Add($item) }
     $items.Sort([StringComparer]::OrdinalIgnoreCase); $environment = ($items -join [char]0) + [char]0 + [char]0
     . ([IO.Path]::Combine($repo, 'scripts', 'native-test', 'edge-hosted-node-selection.ps1'))
     $nodeCommands = @(Get-Command node.exe -CommandType Application)
@@ -88,10 +91,8 @@ try {
             throw 'SYNTHETIC_PROBE_FAILED'
         }
         $result = ConvertFrom-Json -InputObject $text
-        if ($result.syntheticProfile -ne $true -or $result.realWnsWorkerTested -ne $true -or $result.databaseRecovery -ne $true -or
-            $result.packagedExport -ne $true -or $result.packagedSnapshotCleaned -ne $true -or $result.otherSiteConsentRequired -ne $true -or
-            $result.explicitConnectVersion -cne '2') { throw 'SYNTHETIC_PROBE_INCOMPLETE' }
-        Write-Output 'Synthetic signed Edge, pinned preview.14, version 2, database and WNS validation passed.'
+        Assert-XEdgeHostedProbeResult -Mode $Mode -Result $result
+        Write-Output ('Synthetic signed Edge, pinned preview.14, version 2, database and WNS validation passed: ' + $Mode)
     } finally {
         try { $job.Stop() } finally { $job.Dispose() }
         [Array]::Clear($inputBytes, 0, $inputBytes.Length)
