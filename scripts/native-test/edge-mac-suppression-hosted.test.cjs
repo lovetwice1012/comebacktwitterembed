@@ -21,7 +21,7 @@ const { buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-sn
 const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
-const { fixtureFailure, safeFixtureSend } = require('./edge-mac-suppression-errors.cjs');
+const { fixtureFailure, safeFixtureSend, sendCategory } = require('./edge-mac-suppression-errors.cjs');
 
 test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -132,10 +132,12 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             assert.ok(item && await waitClosed(item), 'fixture browser did not stop'); await broker.stop();
         }
         webpush.setVapidDetails('mailto:fixture@example.com', calibration.vapid.publicKey, calibration.vapid.privateKey);
-        stage = 'BASELINE'; const baseline = await launch(false), control = `control-${randomBytes(16).toString('hex')}`; markers.add(control);
+        stage = 'BASELINE_OPEN'; const baseline = await launch(false), control = `control-${randomBytes(16).toString('hex')}`; markers.add(control);
+        stage = 'BASELINE_SEND';
         await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
-        let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
-        assert.equal(observed.has(control), true, 'fixture browser did not receive control'); await stop(baseline);
+        stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
+        assert.equal(observed.has(control), true, 'fixture browser did not receive control');
+        stage = 'BASELINE_STOP'; await stop(baseline);
         let stored; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
         const store = { async assertLease(_lease, { authorize }) { await authorize(); }, async recordFrame(_lease, frame, { authorize }) {
             await authorize(); stored = frame; return { ...lease, ...frame, id: '1', duplicate: false }; } };
@@ -164,5 +166,8 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             await stop(suppressed);
         });
         rotated?.fill(0); t.diagnostic('synthetic Mac Edge control browser received; suppressed browser not observed over 5 seconds while WNS session received and decrypted');
-        } catch { throw fixtureFailure(stage); }
+        } catch (error) {
+            if (stage === 'BASELINE_SEND' || stage === 'SEND') t.diagnostic(`synthetic send failure category=${sendCategory(error)}`);
+            throw fixtureFailure(stage);
+        }
     });
