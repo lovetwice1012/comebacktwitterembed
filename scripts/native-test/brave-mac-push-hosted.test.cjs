@@ -26,6 +26,9 @@ const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
 const { snapshotBraveInstallation, diagnoseBraveInstallation } = require('./brave-mac-install-diagnostic.cjs');
 const { createInstrumentedBraveVerifier } = require('./brave-mac-verifier-diagnostic.cjs');
+const { buildSyntheticBraveMacTransfer } = require('./brave-mac-synthetic-transfer.cjs');
+const { writeExperimentalMacBraveExport } = require('../../src/automation/brave-mac-private-export');
+const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -176,6 +179,26 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
                 } finally { await keyDb.close().catch(() => {}); await deviceDb.close().catch(() => {}); }
             } }) });
         t.diagnostic('synthetic Brave category, device token and subscription keys matched the private snapshot; credentials omitted');
+        // Adapt only the fixture's loopback subscription in memory. Production
+        // intake remains closed for Mac Brave, including this synthetic file.
+        const transfer = buildSyntheticBraveMacTransfer({ origin, subscription, ...credentials,
+            browserVersion: installed.browserVersion, engineVersion });
+        const exportDir = path.join(base, 'synthetic-export'); await fs.mkdir(exportDir, { mode: 0o700 });
+        const exportName = 'synthetic-brave-notifications.json', exportPath = path.join(exportDir, exportName);
+        await assert.rejects(writeExperimentalMacBraveExport({ directory: exportDir, filename: exportName, file: transfer.file,
+            confirmed: true, otherSubscriptionCount: 1, otherSitesConsent: false, experimental: true }), { code: 'X_BRAVE_MAC_EXPORT_INVALID' });
+        await assert.rejects(fs.access(exportPath), { code: 'ENOENT' });
+        const exported = await writeExperimentalMacBraveExport({ directory: exportDir, filename: exportName, file: transfer.file,
+            confirmed: true, otherSubscriptionCount: transfer.otherSubscriptionCount, otherSitesConsent: true, experimental: true });
+        assert.equal(exported.uploaded, false); assert.equal(exported.encrypted, false);
+        const stat = await fs.lstat(exportPath);
+        assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.uid === process.getuid() && (stat.mode & 0o777) === 0o600 && stat.nlink === 1);
+        const fileText = await fs.readFile(exportPath, 'utf8');
+        let matches = false;
+        try { matches = JSON.stringify(JSON.parse(fileText)) === JSON.stringify(transfer.file); } catch { /* Never log file contents. */ }
+        assert.ok(matches, 'synthetic file contents did not match');
+        assert.throws(() => parseTransferFile(fileText), { code: 'X_SETUP_INVALID_FILE' });
+        t.diagnostic('synthetic Brave transfer saved privately; production parser correctly remains closed');
         // The setup broker uses the same receive-suppression flags as Windows.
         broker = await startChromeBroker({ chromePath: installed.executable, profilePath: profile.profilePath, origin,
             pipeTimeoutMs: 30000, extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
