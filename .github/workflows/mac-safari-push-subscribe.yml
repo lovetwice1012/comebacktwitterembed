@@ -40,4 +40,5 @@ jobs:
       - name: Attempt one synthetic subscription, without sending a notification
         env:
           CBTE_SAFARI_PUSH_HOSTED: '1'
+          CBTE_SAFARI_SYNTHETIC_ALLOW: '1'
         run: node --test scripts/native-test/safari-hosted-push-subscribe.test.cjs

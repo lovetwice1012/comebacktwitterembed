@@ -1,4 +1,4 @@
-// Read-only diagnostics for the synthetic Safari session on a disposable runner.
+// Synthetic Safari diagnostics and narrowly scoped consent on a disposable runner.
 // Never print accessibility strings, browser identifiers, or window contents.
 import AppKit
 import ApplicationServices
@@ -15,11 +15,12 @@ func safariApps() -> [NSRunningApplication] {
     NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").filter { !$0.isTerminated }
 }
 
-if CommandLine.arguments.dropFirst().first == "baseline" {
+let mode = CommandLine.arguments.dropFirst().first
+if mode == "baseline" {
     print(safariApps().isEmpty ? "baseline=clean" : "baseline=not_clean")
     exit(0)
 }
-guard CommandLine.arguments.dropFirst().first == "inspect", AXIsProcessTrusted() else {
+guard (mode == "inspect" || (mode == "allow" && env["CBTE_SAFARI_SYNTHETIC_ALLOW"] == "1")), AXIsProcessTrusted() else {
     print("diagnostic=unknown")
     exit(0)
 }
@@ -68,31 +69,55 @@ while cursor < queue.count && cursor < 300 {
 if cursor < queue.count { incomplete = true }
 
 var matchingDialogs = 0
+var eligibleButtons: [AXUIElement] = []
 for dialog in candidateDialogs {
     var nodes: [(AXUIElement, Int)] = [(dialog, 0)]
-    var index = 0, origin = false, notification = false, allow = false, reject = false
+    var index = 0, origin = false, notification = false
+    var allowButtons: [AXUIElement] = [], rejectButtons: [AXUIElement] = []
     while index < nodes.count && index < 200 {
         let (node, depth) = nodes[index]; index += 1
         let role = text(node, kAXRoleAttribute as String)
         let pieces = [text(node, kAXTitleAttribute as String), text(node, kAXDescriptionAttribute as String),
                       text(node, kAXValueAttribute as String)]
+        var isAllow = false, isReject = false
         for piece in pieces {
             let value = piece.lowercased().replacingOccurrences(of: "’", with: "'")
             origin = origin || value.contains("127.0.0.1")
             notification = notification || value.contains("notification")
             if role == "AXButton" {
-                allow = allow || value == "allow"
-                reject = reject || value == "don't allow"
+                isAllow = isAllow || value == "allow"
+                isReject = isReject || value == "don't allow"
             }
         }
+        if isAllow { allowButtons.append(node) }
+        if isReject { rejectButtons.append(node) }
         let nested = children(node)
         if nested.count > 100 || (depth >= 12 && !nested.isEmpty) { incomplete = true }
         if depth < 12 { nodes.append(contentsOf: nested.prefix(100).map { ($0, depth + 1) }) }
     }
     if index < nodes.count { incomplete = true }
-    if origin && notification && allow && reject { matchingDialogs += 1 }
+    if origin && notification && allowButtons.count == 1 && rejectButtons.count == 1 {
+        matchingDialogs += 1
+        eligibleButtons.append(allowButtons[0])
+    }
 }
 
 // Anything ambiguous, inaccessible, truncated or differently localized is
 // unknown. Even a fully traversed tree cannot prove that no prompt exists.
-print(!incomplete && matchingDialogs == 1 ? "diagnostic=notification_prompt_present" : "diagnostic=unknown")
+guard !incomplete && candidateDialogs.count == 1 && matchingDialogs == 1 && eligibleButtons.count == 1 else {
+    print("diagnostic=unknown"); exit(0)
+}
+if mode == "inspect" { print("diagnostic=notification_prompt_present"); exit(0) }
+let currentApps = safariApps()
+let currentLabel = [text(eligibleButtons[0], kAXTitleAttribute as String),
+                    text(eligibleButtons[0], kAXDescriptionAttribute as String)]
+    .map { $0.lowercased().replacingOccurrences(of: "’", with: "'") }
+guard currentApps.count == 1, currentApps[0].processIdentifier == apps[0].processIdentifier,
+      text(window, kAXTitleAttribute as String) == "Push subscription fixture",
+      text(eligibleButtons[0], kAXRoleAttribute as String) == "AXButton",
+      currentLabel.contains("allow"), !currentLabel.contains("don't allow"),
+      (attribute(eligibleButtons[0], kAXEnabledAttribute as String) as? Bool) == true, !incomplete else {
+    print("diagnostic=unknown"); exit(0)
+}
+let result = AXUIElementPerformAction(eligibleButtons[0], kAXPressAction as CFString)
+print(result == .success ? "diagnostic=allow_pressed" : "diagnostic=unknown")

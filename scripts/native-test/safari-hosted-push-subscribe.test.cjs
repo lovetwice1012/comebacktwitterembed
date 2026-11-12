@@ -25,6 +25,7 @@ function axProbe(mode) {
   if (mode === 'baseline' && output === 'baseline=clean') return 'clean';
   if (mode === 'baseline' && output === 'baseline=not_clean') return 'not_clean';
   if (mode === 'inspect' && output === 'diagnostic=notification_prompt_present') return 'notification_prompt_present';
+  if (mode === 'allow' && output === 'diagnostic=allow_pressed') return 'allow_pressed';
   return 'unknown';
 }
 
@@ -102,7 +103,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   // Do not inspect a Safari process that predates this synthetic session.
   const baseline = axProbe('baseline');
   console.log(`Safari synthetic AX baseline: ${baseline}`);
-  assert.notEqual(baseline, 'not_clean', 'Safari was already running on the hosted runner');
+  assert.equal(baseline, 'clean', 'Could not confirm that no Safari was running on the hosted runner');
   let driver, driverPort, session, listening = false, attempted = false, clean = false;
   const page = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
@@ -139,19 +140,22 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
           cancelled = true;
           const current = subscription || (registration && await registration.pushManager.getSubscription());
           const removed = !current || await current.unsubscribe();
+          const gone = !registration || !(await registration.pushManager.getSubscription());
           const workerRemoved = !registration || await registration.unregister();
-          return {removed, workerRemoved};
+          return {hadSubscription: !!current, removed, gone, workerRemoved};
         };
         </script>`);
     } else res.writeHead(404).end();
   });
   const exec = async (script, stage, timeout = 15000) => command(driverPort, 'POST', `/session/${session}/execute/sync`, { script, args: [] }, stage, timeout);
-  const cleanup = async () => {
+  const cleanup = async (requireSubscription = false) => {
     const result = await command(driverPort, 'POST', `/session/${session}/execute/async`, {
       script: 'const done=arguments[arguments.length-1]; window.fixtureCleanup().then(done,()=>done({removed:false,workerRemoved:false}));', args: [],
     }, 'fixture cleanup', 20000);
     assert.equal(result?.removed, true, 'Synthetic subscription could not be removed');
+    assert.equal(result?.gone, true, 'Synthetic subscription still exists after removal');
     assert.equal(result?.workerRemoved, true, 'Synthetic worker could not be unregistered');
+    if (requireSubscription) assert.equal(result?.hadSubscription, true, 'No synthetic subscription was available to remove');
   };
   try {
     const pagePort = await listen(page); listening = true;
@@ -186,7 +190,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     console.log('Safari subscription fixture: clicking synthetic button');
     attempted = true;
     await command(driverPort, 'POST', `/session/${session}/element/${elementId}/click`, {}, 'synthetic button click', 30000);
-    const subscriptionDeadline = Date.now() + 45000;
+    const subscriptionDeadline = Date.now() + 90000;
     let clickDiagnosticsReported = false;
     let axDiagnosticsReported = false;
     do {
@@ -197,20 +201,30 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         clickDiagnosticsReported = true;
       }
       if (!axDiagnosticsReported && status?.state === 'pending') {
-        // A failed baseline prevents all inspection; no permissions are requested.
-        const result = baseline === 'clean' ? axProbe('inspect') : 'unknown';
+        // The helper repeats every isolation and UI identity check immediately
+        // before pressing the unique synthetic prompt's Allow button.
+        assert.equal(status.permission, 'default', 'Unexpected synthetic notification permission state');
+        assert.equal(status.trustedClick, true, 'Synthetic click was not trusted');
+        assert.equal(status.activationAvailable, true, 'User activation API was unavailable');
+        assert.equal(status.activationActive, true, 'Synthetic click had no user activation');
+        const result = axProbe('allow');
         console.log(`Safari synthetic notification UI: ${result}`);
         axDiagnosticsReported = true;
+        assert.equal(result, 'allow_pressed', 'Synthetic notification permission control was not uniquely verified');
       }
       if (status?.state !== 'pending') break;
       await delay(500);
     } while (Date.now() < subscriptionDeadline);
     const result = outcome(status?.state, status?.permission);
     console.log(`Safari subscription fixture outcome: ${result}`);
+    assert.equal(axDiagnosticsReported, true, 'Synthetic notification permission control was not inspected');
+    assert.equal(status?.permission, 'granted', 'Synthetic notification permission was not granted');
+    console.log('Safari subscription fixture: notification permission granted');
     // A default permission state is evidence only of a pending decision, not that
     // a dialog appeared. Failure and timeout must never count as a subscription.
     assert.equal(result, 'subscribed', `Synthetic push subscription did not succeed: ${result}`);
-    await cleanup(); clean = true;
+    console.log('Safari subscription fixture: subscription confirmed');
+    await cleanup(true); clean = true;
     console.log('Safari subscription fixture: subscription and worker removed');
     await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session closure'); session = undefined;
   } finally {
