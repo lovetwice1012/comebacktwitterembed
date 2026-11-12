@@ -86,12 +86,17 @@ function runExperiment({ platform = process.platform, env = process.env, execute
         resultCode = typeof cause?.code === 'string' && /^FIXTURE_[A-Z_]+$/.test(cause.code) ? cause.code : 'FIXTURE_APSD_EXPERIMENT_FAILED';
     } finally {
         if (changed) {
-            let stopped = !loadAttempted, disabledRestored = false;
+            let stopped = !loadAttempted, processGone = false, disabledRestored = false;
             try {
                 // The service was disabled and not loaded when this test began.
-                // Stop only that fixed service. A failed or timed-out bootout
-                // is unconfirmed, even if a follow-up lookup also fails.
-                if (loadAttempted) stopped = checked(launchctl('bootout', LABEL), 'FIXTURE_APSD_CLEANUP_FAILED').status === 0;
+                // Stop only that fixed service. After a nonzero or timed-out
+                // bootout, only the exact absent-service diagnostic is enough
+                // to establish that it is no longer loaded.
+                if (loadAttempted) {
+                    const bootout = launchctl('bootout', LABEL);
+                    stopped = Boolean(bootout && !bootout.error && bootout.status === 0)
+                        || serviceState(launchctl('print', LABEL)) === 'not_loaded';
+                }
             } catch { stopped = false; }
             try {
                 // Always attempt to restore the disabled flag, including when
@@ -99,7 +104,11 @@ function runExperiment({ platform = process.platform, env = process.env, execute
                 const disable = checked(launchctl('disable', LABEL), 'FIXTURE_APSD_CLEANUP_FAILED');
                 disabledRestored = disable.status === 0 && disabled() === true;
             } catch { disabledRestored = false; }
-            cleanupOk = stopped && disabledRestored;
+            try {
+                const processCheck = checked(execute('/usr/bin/sudo', ['-n', '/usr/bin/pgrep', '-x', 'apsd']), 'FIXTURE_APSD_PROCESS_UNKNOWN');
+                processGone = processCheck.status === 1;
+            } catch { processGone = false; }
+            cleanupOk = stopped && disabledRestored && processGone;
         }
         report(`Safari CI APNs service: restoration ${cleanupOk ? 'confirmed' : 'unconfirmed'}`);
     }

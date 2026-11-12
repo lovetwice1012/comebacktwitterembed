@@ -4,19 +4,21 @@ const assert = require('node:assert/strict');
 const { createExecutor, disabledState, serviceState, runExperiment } = require('../native-test/safari-apsd-ci-experiment.cjs');
 
 const validEnv = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CBTE_SAFARI_APSD_EXPERIMENT: '1', RUNNER_TEMP: '/tmp/runner' };
-function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, processStatus = 1, initialLoaded = false, bootoutFails = false, unknownService = false } = {}) {
-    let disabled = true, loaded = initialLoaded; const calls = [], reports = [];
+function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, processStatus = 1, finalProcessStatus = processStatus,
+    initialLoaded = false, bootoutFails = false, bootoutAbsent = false, unknownService = false, unknownAfterBootout = false } = {}) {
+    let disabled = true, loaded = initialLoaded, processChecks = 0, afterBootout = false; const calls = [], reports = [];
     const execute = (file, args) => {
         calls.push([file, ...args]);
         if (file === process.execPath) return { status: testStatus };
-        if (args.includes('/usr/bin/pgrep')) return { status: processStatus };
+        if (args.includes('/usr/bin/pgrep')) return { status: processChecks++ === 0 ? processStatus : finalProcessStatus };
         if (args.includes('print-disabled')) return { status: 0, stdout: `"com.apple.apsd" => ${disabled ? 'disabled' : 'enabled'}\n` };
-        if (args.includes('print')) return loaded ? { status: 0 } : unknownService ? { status: 1, stderr: 'private permission error' }
+        if (args.includes('print')) return loaded ? { status: 0 } : unknownService || afterBootout && unknownAfterBootout ? { status: 1, stderr: 'private permission error' }
             : { status: 113, stderr: 'Bad request.\nCould not find service "com.apple.apsd" in domain for system\n' };
         if (args.includes('enable')) { disabled = false; return { status: failEnable ? 1 : 0 }; }
         if (args.includes('bootstrap')) { loaded = bootstrapStatus === 0; return { status: bootstrapStatus }; }
         if (args.includes('kickstart')) return { status: 0 };
-        if (args.includes('bootout')) { if (bootoutFails) return { status: null, error: new Error('timeout') }; loaded = false; return { status: 0 }; }
+        if (args.includes('bootout')) { afterBootout = true; if (bootoutFails) return { status: null, error: new Error('timeout') };
+            loaded = false; return { status: bootoutAbsent ? 1 : 0 }; }
         if (args.includes('disable')) { disabled = true; return { status: 0 }; }
         throw new Error('unexpected command');
     };
@@ -57,6 +59,16 @@ test('disabled state is restored even if stopping the temporary service fails', 
         { code: 'FIXTURE_APSD_CLEANUP_FAILED' });
     assert.equal(f.state().disabled, true);
     assert(f.calls.some(call => call.includes('disable')));
+});
+test('nonzero bootout requires a verified absent service and an absent process', () => {
+    const absent = fixture({ bootoutAbsent: true });
+    assert.deepEqual(runExperiment({ platform: 'darwin', env: validEnv, execute: absent.execute, report: absent.report }), { state: 'passed', restored: true });
+    for (const options of [{ bootoutAbsent: true, unknownAfterBootout: true }, { finalProcessStatus: 0 }, { finalProcessStatus: 2 }]) {
+        const f = fixture(options);
+        assert.throws(() => runExperiment({ platform: 'darwin', env: validEnv, execute: f.execute, report: f.report }),
+            { code: 'FIXTURE_APSD_CLEANUP_FAILED' });
+        assert.equal(f.state().disabled, true);
+    }
 });
 test('only a disabled and stopped hosted service is temporarily enabled and restored', () => {
     const f = fixture();
