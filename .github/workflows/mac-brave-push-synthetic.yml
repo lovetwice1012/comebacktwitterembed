@@ -37,7 +37,7 @@ jobs:
       - name: Install Brave on disposable hosted runner
         run: |
           if [ ! -x '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser' ]; then
-            brew install --cask --no-quarantine brave-browser
+            brew install --cask brave-browser
           fi
           sudo xattr -cr '/Applications/Brave Browser.app'
       - name: Install locked dependencies without lifecycle scripts
