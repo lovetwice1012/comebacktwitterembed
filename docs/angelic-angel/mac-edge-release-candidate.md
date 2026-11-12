@@ -42,3 +42,7 @@ node scripts/build-mac-edge-release-candidate.cjs \
 研究用のセッション試験では、index 読取前に lock を取得すれば通常の並行起動を拒否できることと、helper 喪失時に協調する作業を中断できることを合成コードで確認しました。一方、helper が失われると lock が解放されるため、停止要求に応じない古い作業と次の設定操作が重なるケースも再現しました。待機時間の上限は event loop の動作が前提で、同期処理の無限停止や lock を保持したままの無期限待機を止める保証はありません。これらは実装候補の安全性を証明するものではなく、通常の入口には接続していません。実 Mac での lock 解放検証も別途必要です。
 
 代替案として、設定を実行する Node 本体内の Node-API addon が lock を持つ方式を調査しています。外部 helper の先行終了を避けられ、プロセス終了時の OS 解放を利用できます。ただし Apple の [fcntl の説明](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html) では、同一プロセスが同じファイルを指す別の descriptor を閉じても record lock が解放されます。専用 descriptor の管理だけで安全とは断定できず、同資料が説明する `flock` も選択肢です。両方式は同じ方式で参加者を統一して試験する必要があります。[Node-API の環境ライフサイクル](https://nodejs.org/api/n-api.html) に沿った cleanup、同一プロセス内の多重取得、worker、異常終了、実行中の filesystem 操作、旧プロフィールと index の保存、Apple Silicon・Intel の検証が必要です。既存候補は固定 Node と `MacLevelDB.node` の署名検証を行っていますが、追加 addon のビルド・署名・公証・ロードは未実装・未検証です。
+
+未接続の `mac-flock-research` は、専用の合成ファイルを開く最小試験です。ファイル名が指す inode を差し替えると、元の inode をロックしたまま新しい inode で別のロックを取得できる問題があるため、安全に固定・検証できない環境では採用できません。研究版には Node 環境の終了時 cleanup がなく、worker 終了後にロックが残り得ます。`close` が失敗したときはプロセス内で以降の取得を拒否しますが、実際の異常終了と復旧は未検証です。CLOEXEC フラグの確認と Node 子プロセスでの FD 非継承は別の観測であり、後者は Node の spawn による FD 制限も影響し得ます。
+
+`close` の失敗は、研究専用の別ビルドで descriptor を閉じずに失敗を模擬し、再取得拒否とプロセス終了後の解放を試します。これは実 OS の `close` 障害を再現した結果ではありません。`O_NOFOLLOW` はパスの最終要素を検証するためのもので、親ディレクトリの同一 UID による置換は別に対策が必要です。候補への導入は行っていません。
