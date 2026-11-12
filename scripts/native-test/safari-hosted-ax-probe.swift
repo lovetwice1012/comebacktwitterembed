@@ -128,4 +128,6 @@ guard currentApps.count == 1, currentApps[0].processIdentifier == apps[0].proces
     print("diagnostic=unknown"); exit(0)
 }
 let result = AXUIElementPerformAction(eligibleButtons[0], kAXPressAction as CFString)
-print(result == .success ? "diagnostic=allow_pressed" : "diagnostic=unknown")
+// A failed AX response does not prove that no action took effect. Make that
+// state distinct from pre-action uncertainty so callers never press again.
+print(result == .success ? "diagnostic=allow_pressed" : "diagnostic=action_uncertain")

@@ -233,6 +233,8 @@ function classifyAxProbe(probe, mode) {
   if (mode === 'baseline' && output === 'baseline=not_clean') return { value: 'not_clean', reason: 'ok' };
   if (mode === 'inspect' && output === 'diagnostic=notification_prompt_present') return { value: 'notification_prompt_present', reason: 'ok' };
   if (mode === 'allow' && output === 'diagnostic=allow_pressed') return { value: 'allow_pressed', reason: 'ok' };
+  if (mode === 'allow' && output === 'diagnostic=action_uncertain') return { value: 'unknown', reason: 'action_uncertain' };
+  if (mode === 'allow' && output === 'diagnostic=unknown') return { value: 'unknown', reason: 'not_identified' };
   return { value: 'unknown', reason: 'unexpected_output' };
 }
 function validCompiledAxHelper(info, actual, expected, uid, expectedSha, observedSha) {
@@ -266,7 +268,7 @@ function inspectCompiledAxHelper(filename, expected, expectedSha, uid) {
     return info;
   } finally { bytes?.fill(0); if (fd !== undefined) syncFs.closeSync(fd); }
 }
-function axProbe(mode) {
+function axProbeDetails(mode) {
   let executable = '/usr/bin/swift', args = [axProbePath, mode], helperIdentity;
   if (process.env.CBTE_SAFARI_AX_HELPER) {
     try {
@@ -278,7 +280,7 @@ function axProbe(mode) {
       const supplied = process.env.CBTE_SAFARI_AX_HELPER;
       helperIdentity = inspectCompiledAxHelper(supplied, expected, process.env.CBTE_SAFARI_AX_SHA256, process.getuid());
       executable = expected; args = [mode];
-    } catch { console.log('Safari synthetic AX inspection: helper_invalid'); return 'unknown'; }
+    } catch { return { value: 'unknown', reason: 'helper_invalid' }; }
   }
   const probe = spawnSync(executable, args, {
     // Fresh hosted VMs may need to initialise Swift compiler caches first.
@@ -288,11 +290,28 @@ function axProbe(mode) {
     try {
       const current = inspectCompiledAxHelper(executable, executable, process.env.CBTE_SAFARI_AX_SHA256, process.getuid());
       if (!sameAxIdentity(helperIdentity, current)) throw new Error();
-    } catch { console.log('Safari synthetic AX inspection: helper_changed'); return 'unknown'; }
+    } catch { return { value: 'unknown', reason: 'helper_changed' }; }
   }
-  const result = classifyAxProbe(probe, mode);
+  return classifyAxProbe(probe, mode);
+}
+function axProbe(mode) {
+  const result = axProbeDetails(mode);
   if (result.value === 'unknown') console.log(`Safari synthetic AX inspection: ${result.reason}`);
   return result.value;
+}
+
+async function waitForFixturePrompt(probe, wait, attempts) {
+  if (typeof probe !== 'function' || typeof wait !== 'function' || !Number.isInteger(attempts) || attempts < 1 || attempts > 12)
+    throw new Error('FIXTURE_SAFARI_AX_CONFIG_INVALID');
+  for (let i = 0; i < attempts; i++) {
+    const result = probe('allow');
+    if (result?.value === 'allow_pressed') return { value: 'allow_pressed', reason: 'ok', attempts: i + 1 };
+    // Unidentified is the only safe retry: helper, hash, process, and other
+    // failures stop immediately. Each helper call rechecks the full UI identity.
+    if (result?.value !== 'unknown' || result.reason !== 'not_identified') return { value: 'unknown', reason: 'probe_failed', attempts: i + 1 };
+    if (i + 1 < attempts) await wait(500);
+  }
+  return { value: 'unknown', reason: 'not_identified', attempts };
 }
 
 function inspectClickFailure(error, inspect) {
@@ -358,7 +377,7 @@ function outcome(state, permission) {
 }
 
 function fixturePushStatus(value) {
-  const names = ['event', 'showResolved', 'showRejected', 'fetchFailed'];
+  const names = ['control', 'event', 'showResolved', 'showRejected', 'fetchFailed'];
   if (!value || typeof value !== 'object' || names.some(name => typeof value[name] !== 'boolean'))
     throw new Error('FIXTURE_SAFARI_PUSH_STATUS_INVALID');
   return Object.fromEntries(names.map(name => [name, value[name]]));
@@ -374,8 +393,8 @@ test('subscription result categories do not turn pending or refusal into success
 });
 
 test('synthetic push status reports only fixed boolean stages', () => {
-  assert.deepEqual(fixturePushStatus({ event: true, showResolved: false, showRejected: false, fetchFailed: true, private: 'not-logged' }),
-    { event: true, showResolved: false, showRejected: false, fetchFailed: true });
+  assert.deepEqual(fixturePushStatus({ control: true, event: true, showResolved: false, showRejected: false, fetchFailed: true, private: 'not-logged' }),
+    { control: true, event: true, showResolved: false, showRejected: false, fetchFailed: true });
   assert.throws(() => fixturePushStatus({ event: true }), /FIXTURE_SAFARI_PUSH_STATUS_INVALID/);
 });
 
@@ -386,6 +405,23 @@ test('AX helper classifies failures without exposing raw output', () => {
   assert.deepEqual(classifyAxProbe({ status: null, signal: 'SIGTERM' }, 'allow'), { value: 'unknown', reason: 'terminated' });
   assert.deepEqual(classifyAxProbe({ status: 1, stderr: 'private' }, 'allow'), { value: 'unknown', reason: 'execution_failed' });
   assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'private' }, 'baseline'), { value: 'unknown', reason: 'unexpected_output' });
+  assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'diagnostic=unknown' }, 'allow'), { value: 'unknown', reason: 'not_identified' });
+  assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'diagnostic=action_uncertain' }, 'allow'), { value: 'unknown', reason: 'action_uncertain' });
+});
+
+test('fixture prompt retries only an unidentified UI and never presses twice', async () => {
+  let calls = 0, waits = 0;
+  const result = await waitForFixturePrompt(mode => { assert.equal(mode, 'allow'); calls++;
+    return calls === 3 ? { value: 'allow_pressed', reason: 'ok' } : { value: 'unknown', reason: 'not_identified' };
+  }, async () => { waits++; }, 5);
+  assert.deepEqual(result, { value: 'allow_pressed', reason: 'ok', attempts: 3 }); assert.equal(calls, 3); assert.equal(waits, 2);
+  for (const reason of ['helper_invalid', 'helper_changed', 'timeout', 'execution_failed', 'action_uncertain']) {
+    calls = 0;
+    const failed = await waitForFixturePrompt(() => { calls++; return { value: 'unknown', reason }; }, async () => { assert.fail('must not retry'); }, 5);
+    assert.equal(failed.value, 'unknown'); assert.equal(calls, 1);
+  }
+  assert.deepEqual(await waitForFixturePrompt(() => ({ value: 'unknown', reason: 'not_identified' }), async () => {}, 2),
+    { value: 'unknown', reason: 'not_identified', attempts: 2 });
 });
 
 test('compiled AX helper requires an owned bounded fixed executable', () => {
@@ -544,17 +580,21 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
       // Start showNotification immediately, then report its completion and
       // the Push event independently to same-origin fixture clients.
-      res.end(`self.addEventListener('push', e => e.waitUntil((async () => {
+      res.end(`const notifyFixture = async (stage, value) => {
+        const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
+        for (const client of clients) client.postMessage({fixtureMarker:value, stage}); };
+      self.addEventListener('message', e => {
+        if (e.data?.kind === 'fixture-ping') e.waitUntil(notifyFixture('control', e.data.marker));
+      });
+      self.addEventListener('push', e => e.waitUntil((async () => {
         const value = e.data ? e.data.text() : '';
-        const notify = async stage => { const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
-          for (const client of clients) client.postMessage({fixtureMarker:value, stage}); };
         let showing; try { showing = self.registration.showNotification('Synthetic fixture').then(() => true, () => false); }
         catch { showing = Promise.resolve(false); }
-        await notify('event');
-        const shown = await showing; await notify(shown ? 'showResolved' : 'showRejected');
+        await notifyFixture('event', value);
+        const shown = await showing; await notifyFixture(shown ? 'showResolved' : 'showRejected', value);
         if (!shown) return;
         try { await fetch('/fixture-received?tag=' + encodeURIComponent(value)); }
-        catch { await notify('fetchFailed'); }
+        catch { await notifyFixture('fetchFailed', value); }
       })()));`);
     } else if (req.method === 'GET' && req.url === `/fixture-received?tag=${pushMarker}`) {
       pushDelivered = true; res.writeHead(200, { 'cache-control': 'no-store' }).end('ok');
@@ -564,8 +604,9 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         <button id="subscribe" disabled>Subscribe</button><script>
         let registration, subscription, cancelled = false;
         let state = 'loading', trustedClick = false, activationAvailable = false, activationActive = false;
-        const pushStages = {event:false, showResolved:false, showRejected:false, fetchFailed:false};
+        const pushStages = {control:false, event:false, showResolved:false, showRejected:false, fetchFailed:false};
         window.fixturePushStatus = () => ({...pushStages});
+        window.fixturePingWorker = () => navigator.serviceWorker.ready.then(r => r.active.postMessage({kind:'fixture-ping', marker:${JSON.stringify(pushMarker)}}));
         navigator.serviceWorker.addEventListener('message', event => {
           if (event.data?.fixtureMarker !== ${JSON.stringify(pushMarker)}) return;
           if (Object.hasOwn(pushStages, event.data.stage)) pushStages[event.data.stage] = true;
@@ -705,10 +746,10 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         assert.equal(status.trustedClick, true, 'Synthetic click was not trusted');
         assert.equal(status.activationAvailable, true, 'User activation API was unavailable');
         assert.equal(status.activationActive, true, 'Synthetic click had no user activation');
-        const result = axProbe('allow');
-        console.log(`Safari synthetic notification UI: ${result}`);
+        const result = await waitForFixturePrompt(axProbeDetails, delay, process.env.CBTE_SAFARI_AX_HELPER ? 12 : 1);
+        console.log(`Safari synthetic notification UI: ${result.value} reason=${result.reason} attempts=${result.attempts}`);
         axDiagnosticsReported = true;
-        assert.equal(result, 'allow_pressed', 'Synthetic notification permission control was not uniquely verified');
+        assert.equal(result.value, 'allow_pressed', 'Synthetic notification permission control was not uniquely verified');
         recordApsdState('after_allow');
       }
       if (status?.state !== 'pending') break;
@@ -741,11 +782,21 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     }
     if (process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1') {
       const { sendHostedSafariFixturePush } = require('./safari-synthetic-push-probe.cjs');
+      // The same client-message path used by the Push diagnostics must first
+      // work for an independent, local-only service-worker control message.
+      await exec('window.fixturePingWorker(); return true;', 'synthetic worker messaging control');
+      const controlDeadline = Date.now() + 15000; let stages = { control: false, event: false, showResolved: false, showRejected: false, fetchFailed: false };
+      while (!stages.control && Date.now() < controlDeadline) {
+        stages = fixturePushStatus(await exec('return window.fixturePushStatus();', 'synthetic worker control status'));
+        if (!stages.control) await delay(250);
+      }
+      if (!stages.control) throw new Error('FIXTURE_SAFARI_PUSH_CONTROL_NOT_CONFIRMED');
+      console.log('Safari synthetic push: worker client-message control confirmed');
       const vapidPublic = Buffer.from(publicKey), vapidPrivate = key.getPrivateKey();
       try { await sendHostedSafariFixturePush({ subscription: captured, publicKey: vapidPublic, privateKey: vapidPrivate, marker: pushMarker }); }
       finally { vapidPublic.fill(0); vapidPrivate.fill(0); }
       console.log('Safari synthetic push: provider accepted');
-      const pushDeadline = Date.now() + 45000; let stages = { event: false, showResolved: false, showRejected: false, fetchFailed: false };
+      const pushDeadline = Date.now() + 45000;
       while (Date.now() < pushDeadline) {
         stages = fixturePushStatus(await exec('return window.fixturePushStatus();', 'synthetic push status'));
         if (pushDelivered || stages.event && stages.showResolved || stages.showRejected) break;
