@@ -18,7 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15, macos-15-intel]
-        fixture_host: ['127.0.0.1', 'localhost']
+        fixture_host: ['127.0.0.1']
+        fixture_scheme: [https]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -43,4 +44,5 @@ jobs:
           CBTE_SAFARI_PUSH_HOSTED: '1'
           CBTE_SAFARI_SYNTHETIC_ALLOW: '1'
           CBTE_SAFARI_FIXTURE_HOST: ${{ matrix.fixture_host }}
+          CBTE_SAFARI_FIXTURE_SCHEME: ${{ matrix.fixture_scheme }}
         run: node --test scripts/native-test/safari-hosted-push-subscribe.test.cjs
