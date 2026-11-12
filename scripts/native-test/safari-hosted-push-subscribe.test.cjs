@@ -98,6 +98,25 @@ function launchdApsdState() {
   return parseLaunchctlState(result.stdout);
 }
 
+function parseApsdDisabledState(output) {
+  // launchctl's diagnostic output is not a stable API. Only the exact system
+  // service label and one explicit boolean are accepted. Absence, unexpected
+  // syntax, and duplicate entries do not establish whether the service runs.
+  if (typeof output !== 'string' || output.length > 262144) return 'unknown';
+  const matches = [...output.matchAll(/^[\t ]*"com\.apple\.apsd"[\t ]*=>[\t ]*(true|false)[\t ]*$/gm)];
+  return matches.length === 1 ? matches[0][1] === 'true' : 'unknown';
+}
+
+function launchdApsdDisabled() {
+  const options = { timeout: 4000, encoding: 'utf8', maxBuffer: 262144, stdio: ['ignore', 'pipe', 'ignore'] };
+  let result = spawnSync('/bin/launchctl', ['print-disabled', 'system'], options);
+  if (result.status !== 0) {
+    // Read-only fallback on the disposable hosted runner; never modify launchd.
+    result = spawnSync('/usr/bin/sudo', ['-n', '/bin/launchctl', 'print-disabled', 'system'], options);
+  }
+  return result.status === 0 ? parseApsdDisabledState(result.stdout) : 'unknown';
+}
+
 function parsePsApsdPresence(output) {
   const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const names = lines.map(line => path.posix.basename(line));
@@ -117,7 +136,7 @@ function psApsdPresence() {
 function recordApsdState(stage) {
   try {
     // Raw launchctl/ps output, identifiers, environment and paths stay in memory.
-    console.log(`Safari hosted apsd ${stage}: ${JSON.stringify({ launchd: launchdApsdState(),
+    console.log(`Safari hosted apsd ${stage}: ${JSON.stringify({ launchd: launchdApsdState(), disabled: launchdApsdDisabled(),
       psBasename: psApsdPresence(), pgrepExact: processPresence('apsd') })}`);
   } catch {
     console.log(`Safari hosted apsd ${stage}: unknown`);
@@ -301,6 +320,13 @@ test('apsd diagnostics reject ambiguous service output and match exact process b
   assert.equal(parsePsApsdPresence('/bin/ps\n/usr/libexec/notapsd\n'), false);
   assert.equal(parsePsApsdPresence('unrecognized format'), 'unknown');
   assert.equal(parsePsApsdPresence(''), 'unknown');
+  assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => true\n}\n'), true);
+  assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => false\n}\n'), false);
+  assert.equal(parseApsdDisabledState('disabled services = {}'), 'unknown');
+  assert.equal(parseApsdDisabledState('"com.apple.apsd" => true\n"com.apple.apsd" => false'), 'unknown');
+  assert.equal(parseApsdDisabledState('"com.apple.apsd.other" => true'), 'unknown');
+  assert.equal(parseApsdDisabledState('"com.apple.apsd" => yes'), 'unknown');
+  assert.equal(parseApsdDisabledState('x'.repeat(262145)), 'unknown');
 });
 
 test('WebPush logs classify only known messages and reject malformed output', () => {
