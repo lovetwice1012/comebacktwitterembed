@@ -1,0 +1,63 @@
+name: macOS Edge cross-profile synthetic WNS
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-edge-cross-profile.yml
+      - scripts/native-test/edge-mac-cross-profile-hosted.test.cjs
+      - scripts/native-test/edge-mac-calibration-hosted-child.cjs
+      - scripts/native-test/edge-mac-fixture-error.cjs
+      - scripts/test/edge-mac-fixture-error.test.js
+      - scripts/native-test/edge-mac-version-diagnostic.cjs
+      - scripts/native-test/edge-mac-codesign-diagnostic.cjs
+      - scripts/test/edge-mac-version-diagnostic.test.js
+      - experiments/chrome-push/edge-fixture-record.cjs
+      - src/automation/edge-mac-*.js
+      - src/automation/edge-calibration-*.js
+      - src/automation/edge-wns-*.js
+      - client/angelic-setup/mac/edge-process-identity.c
+      - client/angelic-setup/mac/edge-socket-owner.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install Edge on the disposable runner
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          if [ ! -x '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge' ]; then
+            brew install --cask --no-quarantine microsoft-edge
+          fi
+          sudo xattr -cr '/Applications/Microsoft Edge.app'
+      - name: Install locked test dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Build isolated peer helpers
+        run: |
+          clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"
+          clang -O2 client/angelic-setup/mac/edge-socket-owner.c -o "$RUNNER_TEMP/MacEdgeSocketOwner"
+      - name: Compare independent synthetic profiles
+        env:
+          CBTE_MAC_EDGE_HOSTED: '1'
+          MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
+          MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
+        run: node --test --test-concurrency=1 scripts/test/edge-mac-fixture-error.test.js scripts/test/edge-mac-version-diagnostic.test.js scripts/native-test/edge-mac-cross-profile-hosted.test.cjs

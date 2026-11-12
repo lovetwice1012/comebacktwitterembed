@@ -61,6 +61,16 @@ async function ReadPushSubscription(input) {
             || names.some(name => !fields.includes(name) || !Object.hasOwn(descriptors[name], 'value'))) fail(code);
     }
     function safePath(value) {
+        // ProfD is supplied by Firefox, but its spelling must still match the
+        // expected isolated profile. macOS paths are case-sensitive here:
+        // folding case could accidentally authorize a different directory.
+        if (Services.appinfo.OS === 'Darwin') {
+            if (typeof value !== 'string' || value.length > 4096 || !value.startsWith('/')
+                || /[\u0000-\u001f\u007f\\]/.test(value)
+                || value.slice(1).split('/').some(part => !part || part === '.' || part === '..')) fail('X_EXPORT_ARGUMENTS_INVALID');
+            return value;
+        }
+        if (Services.appinfo.OS !== 'WINNT') fail('X_EXPORT_BROWSER_UNSUPPORTED');
         if (typeof value !== 'string' || !/^[A-Za-z]:[\\/]/.test(value) || value.length > 32767
             || /[\u0000-\u001f]/.test(value) || value.slice(2).includes(':')) fail('X_EXPORT_ARGUMENTS_INVALID');
         const normalized = value.replace(/\//g, '\\').replace(/\\+$/, '');

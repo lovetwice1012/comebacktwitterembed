@@ -131,7 +131,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $script:ExitCode = 3
 $script:AppId = 'x-notification-setup'
-$script:PackageVersion = '0.1.0-preview.5'
+$script:PackageVersion = '0.1.0-preview.6'
 $script:OwnerName = 'owner.json'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 # 画面版や外部ツールが5.1の状態JSON/日本語エラーを同じ文字コードで読めるよう、

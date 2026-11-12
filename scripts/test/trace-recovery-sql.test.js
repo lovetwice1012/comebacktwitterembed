@@ -7,6 +7,7 @@ const os = require('node:os');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const mysql = require('mysql');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const { TABLES, SCHEMA_STATEMENTS } = require('../../src/db_schema');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT || 0);
@@ -16,6 +17,10 @@ test('retained SQL traces recover through the agent exactly once across an inges
     const sqlite = path.join(temp, 'agent.sqlite'), spool = path.join(temp, 'spool');
     fs.mkdirSync(spool);
     const user = 'fixture_' + randomUUID().replaceAll('-', '').slice(0, 12), password = 'fixture-pass';
+    // Docker port forwarding can make the database see a bridge address
+    // instead of 127.0.0.1. Grant only the actual fixture client host.
+    const [{ client_host: clientHost }] = await db.queryDatabase("SELECT SUBSTRING_INDEX(USER(), '@', -1) AS client_host");
+    const account = `${mysql.escape(user)}@${mysql.escape(clientHost)}`;
     const py = process.env.PYTHON || 'python';
     const runPython = (code, input = '') => {
         const result = spawnSync(py, ['-c', code, sqlite], { input, encoding: 'utf8' });
@@ -46,8 +51,8 @@ d.commit();d.close()`, Buffer.concat(chunks).toString());
         runPython(`import sqlite3,sys
 d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(id INTEGER,ready INTEGER);INSERT INTO request_roots_meta VALUES(1,1);CREATE TABLE request_roots(run_id TEXT PRIMARY KEY);CREATE TABLE events(id TEXT UNIQUE,run_id TEXT,kind TEXT,seq INTEGER PRIMARY KEY AUTOINCREMENT,payload TEXT);");d.close()`);
         await db.queryDatabase(SCHEMA_STATEMENTS.find(sql => sql.startsWith(`CREATE TABLE IF NOT EXISTS ${TABLES.botProviderExpansionTraces} (`)));
-        await db.queryDatabase(`CREATE USER '${user}'@'127.0.0.1' IDENTIFIED BY '${password}'`);
-        await db.queryDatabase(`GRANT SELECT ON \`${db.schema}\`.* TO '${user}'@'127.0.0.1'`);
+        await db.queryDatabase(`CREATE USER ${account} IDENTIFIED BY ${mysql.escape(password)}`);
+        await db.queryDatabase(`GRANT SELECT ON \`${db.schema}\`.* TO ${account}`);
         const stamp = Date.now() - 600000;
         for (let i = 0; i < 201; i++) await db.queryDatabase(`INSERT INTO ${TABLES.botProviderExpansionTraces}
             (trace_id,boot_id,state,outcome,created_at_ms,updated_at_ms,completed_at_ms,provider_id,raw_url,guild_id,channel_id,author_user_id,message_id,output_json)
@@ -68,7 +73,7 @@ d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(
         assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from events').fetchone()[0]);d.close()"), '402');
     } finally {
         server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
-        await db.queryDatabase(`DROP USER IF EXISTS '${user}'@'127.0.0.1'`); await db.close();
+        await db.queryDatabase(`DROP USER IF EXISTS ${account}`); await db.close();
         fs.rmSync(temp, { recursive: true, force: true });
     }
 });

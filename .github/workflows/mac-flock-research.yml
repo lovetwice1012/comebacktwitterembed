@@ -1,0 +1,55 @@
+name: macOS in-process flock research
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-flock-research.yml
+      - scripts/native-test/mac-flock-research.c
+      - scripts/native-test/mac-flock-session-v2.c
+      - scripts/native-test/mac-flock-session-v2.test.cjs
+      - scripts/native-test/mac-flock-research.test.cjs
+      - scripts/native-test/mac-flock-rotation-child.cjs
+      - scripts/native-test/edge-mac-protected-session.cjs
+      - scripts/native-test/edge-mac-manifest-research.cjs
+      - scripts/test/edge-mac-manifest-research.test.js
+      - scripts/test/edge-mac-protected-session.test.js
+      - src/automation/chrome-mac-process-group.js
+      - src/automation/chrome-mac-profile*.js
+      - src/automation/edge-mac-profile-rotation.js
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.21.0'
+      - name: Compile unsigned disposable Node-API fixture
+        run: |
+          set -eu
+          nodehome="$(dirname "$(dirname "$(command -v node)")")"
+          test -f "$nodehome/include/node/node_api.h"
+          clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -I "$nodehome/include/node" scripts/native-test/mac-flock-research.c -o "$RUNNER_TEMP/MacFlockResearch.node"
+          clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -DCBTE_RESEARCH_FAULT_INJECT -I "$nodehome/include/node" scripts/native-test/mac-flock-research.c -o "$RUNNER_TEMP/MacFlockResearchFault.node"
+          clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -I "$nodehome/include/node" scripts/native-test/mac-flock-session-v2.c -o "$RUNNER_TEMP/MacFlockSessionV2.node"
+          codesign --force --sign - "$RUNNER_TEMP/MacFlockSessionV2.node"
+          codesign --verify --strict "$RUNNER_TEMP/MacFlockSessionV2.node"
+          node -e 'const fs=require("node:fs"),crypto=require("node:crypto");const b=fs.readFileSync(process.argv[2]);fs.writeFileSync(process.argv[1],JSON.stringify({kind:"mac-edge-lock-research-v1",addonSha256:crypto.createHash("sha256").update(b).digest("hex")}),{flag:"wx",mode:0o600})' "$RUNNER_TEMP/MacFlockManifest.json" "$RUNNER_TEMP/MacFlockSessionV2.node"
+      - name: Test synthetic ownership and lifecycle
+        env:
+          CBTE_MAC_FLOCK_RESEARCH: '1'
+          CBTE_MAC_FLOCK_ADDON: ${{ runner.temp }}/MacFlockResearch.node
+          CBTE_MAC_FLOCK_FAULT_ADDON: ${{ runner.temp }}/MacFlockResearchFault.node
+          CBTE_MAC_FLOCK_V2_ADDON: ${{ runner.temp }}/MacFlockSessionV2.node
+          CBTE_MAC_FLOCK_MANIFEST: ${{ runner.temp }}/MacFlockManifest.json
+        run: node --test scripts/native-test/mac-flock-research.test.cjs scripts/native-test/mac-flock-session-v2.test.cjs scripts/test/edge-mac-protected-session.test.js scripts/test/edge-mac-manifest-research.test.js

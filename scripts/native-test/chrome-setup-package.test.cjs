@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { unzipSync } = require('fflate');
 
-test('Windows Chrome package protects its profile, rejects tampering and never overwrites existing output',
+for (const channel of ['published', 'candidate']) test(`Windows Chrome ${channel} package protects its profile, rejects tampering and never overwrites existing output`,
     { skip: process.platform !== 'win32', timeout: 90000 }, async t => {
         const parent = await fsp.realpath(os.tmpdir()), root = await fsp.mkdtemp(path.join(parent, 'cbte-chrome-package-test-'));
         t.after(async () => {
@@ -17,7 +17,8 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         });
         const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
         await fsp.mkdir(bundle);
-        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip'));
+        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip'))
+            : (await require('../build-chrome-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath })).archive;
         for (const [name, content] of Object.entries(unzipSync(archive))) {
             assert.match(name, /^(?:_app\/)?[^/\\]+$/); await fsp.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
             await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
@@ -51,13 +52,15 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         assert.equal(tampered.status, 1); assert.match(tampered.data.message, /^X_CHROME_PACKAGE_INVALID:/);
         assert.equal(fs.existsSync(path.join(root, 'new-owned')), false);
     });
-test('Chrome and Brave launchers select the right browser in paths with Japanese and symbols',
+for (const channel of ['published', 'candidate']) test(`Chrome and Brave ${channel} launchers select the right browser in paths with Japanese and symbols`,
     { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
         const parent = await fsp.realpath(os.tmpdir()), root = await fsp.mkdtemp(path.join(parent, 'cbte-chrome-launch-test-'));
         t.after(async () => { const actual = await fsp.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), parent.toLowerCase());
             assert.match(path.basename(actual), /^cbte-chrome-launch-test-/); await fsp.rm(actual, { recursive: true }); });
         const bundle = path.join(root, '日本語 [folder] & ! $value %literal%'); await fsp.mkdir(bundle);
-        const entries = unzipSync(await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip')));
+        const archive = channel === 'published' ? await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip'))
+            : (await require('../build-chrome-setup-package.cjs').buildArchive({ nodeExecutable: process.execPath })).archive;
+        const entries = unzipSync(archive);
         for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) await fsp.writeFile(path.join(bundle, name), entries[name]);
         const app = path.join(bundle, '_app'); await fsp.mkdir(app);
         const resultPath = path.join(root, 'launcher-result.json');

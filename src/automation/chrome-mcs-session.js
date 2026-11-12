@@ -10,7 +10,7 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = _
     if (!credentials || !route || !store || typeof store.pending !== 'function' || typeof store.commit !== 'function'
         || typeof store.confirm !== 'function' || typeof send !== 'function' || typeof onReceipt !== 'function' || typeof now !== 'function')
         throw error('X_CHROME_SESSION_CONFIG_INVALID');
-    let state = 'new', inbound = 0, outbound = 0, confirmed = 0, busy = false;
+    let state = 'new', inbound = 0, outbound = 0, confirmed = 0, busy = false, authenticated = false, recoveryConfirmed = 0, uncertainOutbound = 0;
     const sent = new Map();
     let unacknowledged = [];
     async function exclusive(work) {
@@ -25,7 +25,8 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = _
         const next = outbound + 1;
         // An uncertain write always ends this session. On reconnect, the store
         // supplies every committed but unconfirmed ID in the login request.
-        await send(encodeFrame(tag, payload, { first }));
+        try { await send(encodeFrame(tag, payload, { first })); }
+        catch (cause) { uncertainOutbound = next; throw cause; }
         outbound = next;
         if (ids.length) sent.set(next, ids.slice());
     }
@@ -60,7 +61,7 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = _
                 const response = protocol.loginResponse(frame.payload);
                 if (!response.accepted) throw error('X_CHROME_SESSION_LOGIN_FAILED');
                 await confirmPackets(protocol.lastStreamReceived(3, frame.payload));
-                inbound = 1; state = 'listening';
+                inbound = 1; state = 'listening'; authenticated = true;
                 return { state, ...(response.heartbeatIntervalMs ? { heartbeatIntervalMs: response.heartbeatIntervalMs } : {}) };
             }
             if (state !== 'listening' || ![0, 1, 7, 8].includes(frame.tag)) throw error('X_CHROME_SESSION_FRAME_INVALID');
@@ -102,6 +103,41 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = _
             if (state !== 'listening') throw error('X_CHROME_SESSION_INVALID');
             await acknowledge(0);
         }),
+        // The gateway invokes this only after an authenticated socket failure.
+        // Recovery records bounded, already-decoded frames without sending an
+        // ACK or confirming prior IDs; a successor can retry durable receipts.
+        beginRecovery: () => {
+            if (!authenticated || busy || !['listening', 'failed'].includes(state)) throw error('X_CHROME_SESSION_INVALID');
+            recoveryConfirmed = confirmed; state = 'recovering';
+        },
+        recover: async frame => {
+            if (state !== 'recovering' || busy || !frame || ![0, 1, 7, 8].includes(frame.tag) || !Buffer.isBuffer(frame.payload))
+                throw error('X_CHROME_SESSION_INVALID');
+            busy = true;
+            try {
+                const last = protocol.lastStreamReceived(frame.tag, frame.payload);
+                // A failed write may have reached the server despite the local
+                // error. Permit that single uncertain sequence for validation,
+                // but never confirm or delete replay IDs during recovery.
+                if (last && (last > Math.max(outbound, uncertainOutbound) || last < recoveryConfirmed)) throw error('X_CHROME_SESSION_SEQUENCE_INVALID');
+                if (last) recoveryConfirmed = last;
+                if (inbound >= 0x7fffffff) throw error('X_CHROME_SESSION_SEQUENCE_INVALID');
+                inbound++;
+                if (frame.tag !== 8 || protocol.inspectControlMessage(frame.payload)) return { state: 'control' };
+                const message = protocol.dataMessage(frame.payload, route);
+                if (!message.matches) return { state: 'discarded' };
+                if (message.control) {
+                    if (typeof store.recoverControl !== 'function') throw error('X_CHROME_SESSION_CONTROL_UNAVAILABLE');
+                    await store.recoverControl(message); return { state: 'provider_control' };
+                }
+                if (!message.persistentId) throw error('X_CHROME_SESSION_ID_MISSING');
+                const encrypted = protocol.encryptedPayload(message);
+                if (typeof store.recover !== 'function') throw error('X_CHROME_SESSION_RECOVERY_UNAVAILABLE');
+                const inbox = await store.recover({ ...message, encrypted });
+                return { state: 'received', inbox };
+            } catch (cause) { state = 'failed'; throw cause; }
+            finally { busy = false; }
+        },
         close: () => { state = 'closed'; },
     };
 }

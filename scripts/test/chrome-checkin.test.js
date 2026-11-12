@@ -19,6 +19,14 @@ test('check-in matches Chromium wire fields including full uint64 device ID and 
     assert.throws(() => encodeRequest({ ...identity, deviceId: '0' }));
     assert.throws(() => encodeRequest({ ...identity, browserVersion: 'evil\nheader' }));
 });
+test('Mac check-in uses the source browser platform and leaves Windows encoding unchanged', () => {
+    const build = Buffer.concat([num(1, 2), bin(2, identity.browserVersion), num(3, 1)]);
+    const expected = Buffer.concat([num(2, identity.deviceId), bin(4, Buffer.concat([num(12, 3), bin(13, build)])),
+        fixed(13, identity.securityToken), num(14, 3), num(22, 0)]);
+    assert.deepEqual(encodeRequest({ ...identity, platform: 'macos' }), expected);
+    assert.deepEqual(encodeRequest({ ...identity, platform: 'windows' }), encodeRequest(identity));
+    for (const platform of ['linux', '', null, 2]) assert.throws(() => encodeRequest({ ...identity, platform }), { code: 'X_PUSH_CHECKIN_INVALID' });
+});
 test('check-in applies full and incremental settings, minimum interval and deletions', () => {
     assert.equal(decodeResponse(response(num(9, 0), setting('checkin_interval', '120')), identity).intervalSeconds, 43200);
     assert.equal(decodeResponse(response(num(9, 1)), identity, 100000).intervalSeconds, 100000);

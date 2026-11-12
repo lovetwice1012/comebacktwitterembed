@@ -1,0 +1,58 @@
+# Mac Edge の配布候補
+
+この手順は、Mac 上で未公開の Edge 用候補を作るためのものです。候補の作成ではアプリを Apple の公証サービスへ送信します。実行には、事前に用意した Developer ID Application 証明書と `notarytool` の Keychain profile が必要です。パスワードや秘密鍵をコマンド引数やチャットに記載しません。
+
+Apple Silicon と Intel のそれぞれで、固定済み Node 24.21.0 の対象アーキテクチャの実行ファイルと LICENSE を用意します。出力先には存在しないファイルを指定します。
+
+```sh
+node scripts/build-mac-edge-release-candidate.cjs \
+  arm64 1.2.3 <TEAM_ID> '<IDENTITY>' <PROFILE> \
+  /absolute/path/to/node /absolute/path/to/LICENSE \
+  /absolute/path/to/edge-mac-arm64-1.2.3.zip
+```
+
+`IDENTITY` は `Developer ID Application: ...` 形式の証明書名、`PROFILE` は既存 Keychain profile の名前です。Intel 用は `arm64` を `x64` に変更します。スクリプトは証明書や profile を作りません。
+
+候補用の入口はダブルクリックで起動する設計です。Edge が利用できる状態でアプリを開き、設定用 Edge で X の通知をオンにします。ファイルは利用者が保存し、登録画面で選択してアップロードします。通常の Edge プロフィールを読み込まず、専用 Chromium も同梱しません。
+
+校正用の Edge プロフィールは設定用プロフィールとは別に作成します。接続先の情報を確認後、起動したプロセスの終了を確認してから一時領域を削除します。終了や領域の所有権を確認できない場合は削除せず、処理を停止します。他サイトの通知または分類できない情報がある場合は、サーバーに届く可能性と現時点で破棄する扱いを確認してからファイルを保存します。
+
+校正では、利用者の X 情報を使わない一時的な購読を作り、通知サーバーへの接続で方式を確認します。別プロフィールの校正情報と設定用プロフィールの受信情報の組合せは、下記の合成購読で検証しました。プロセスグループの終了確認だけで、グループ外へ離脱したすべての子孫が終了したことまでは証明できません。一時領域の検査と削除の間の同一ユーザーによる置換競合も完全には排除できません。
+
+設定用プロフィールの通知情報を読み取れない場合は、明示的な選択により新しい設定用プロフィールを作る候補を開発中です。旧プロフィールと index のバックアップを残し、既存のサーバー登録は変更しません。切替の途中で失敗すると、新しいプロフィール、書きかけの一時ファイル、または書きかけのバックアップが残る場合があります。ファイル名だけを根拠にバックアップを復元せず、所有権・内容・対象プロフィールを確認したうえで対応します。切替後の保存確定を確認できなかった場合も両プロフィールを保持し、どちらが選択されているか確認します。実 Mac と実 X による一連の検証が終わるまで公開しません。
+
+復旧時は設定ツールと設定用 Edge の停止を確認し、まず現在の `edge-setup-profile.json` とバックアップの保全用コピーを作ります。各ファイルが本人所有の通常ファイルであること、index の構造と参照先がツール所有のプロフィールに一致することを確認します。現在の index が有効なら自動的に別の index に切り替えません。復元が必要なときは、完全なバックアップと旧プロフィールの対応を検証し、既存ファイルを保全したうえで registry lock を使って切り替えます。書きかけファイルや所有者・対応先を確認できないものは削除・復元せず残し、サポートで個別に確認します。購読情報や認証情報の内容は診断ログに出しません。
+
+３つの補助プログラムを署名してから manifest にハッシュを記録します。公証受理後にチケットを添付し、最終 ZIP を展開して署名・チケット・Gatekeeper とハッシュを検証します。失敗した場合は候補 ZIP を作らず、既存ファイルも上書きしません。署名・公証時の制約は [Mac Chrome 候補の手順](mac-chrome-release-candidate.md) と共通です。
+
+候補作成で配布設定は変わりません。Developer ID による正式署名、Apple 公証、Finder からの起動、候補 ZIP を使った実 Edge の一連の操作、実 X 通知と Discord 配送は未検証です。実 X の確認は利用者が後日行う方針です。停止中に送られた複数の通知をすべて受信できない問題も未解決のため、受付・公開 gate は無効のままにします。内部 manifest は `0.1.0-mac-edge-preview.1` を使い、ZIP に指定した版とは区別します。
+
+2026年11月12日の [Actions run 43203905870](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43203905870) では、Apple Silicon・Intel の両方で関連試験64件と Mac 専用試験5件が成功しました。Edge 候補 ZIP の組み立て、署名済み helper のハッシュ照合、同梱 Node と native addon の合成データ読み書き、初期ダイアログへの到達を確認しました。署名は ad-hoc、公証と Gatekeeper の応答は模擬です。正式な Developer ID 署名・Apple 公証・Finder の実操作や、実 X・Discord の通知はこの試験に含まれません。
+
+[Actions run 43203905813](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43203905813) では、両 CPU で各57件が成功しました。署名済み Edge を利用者情報のない別プロフィールで校正し、終了後に校正用 workspace が削除され、設定用の合成プロフィールが変わらないことを確認しました。候補 ZIP を通した操作や実 X の確認ではありません。
+
+[Actions run 43203905959](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43203905959) の Intel では、合成プロフィール B の情報による対照の後、別プロフィール A の校正情報と B の購読・鍵を組み合わせ、実 WNS での合成通知の受信・復号に成功しました。Apple Silicon は校正段階で失敗し、既存ログでは詳しい原因を特定できません。異なるプロフィールの組合せがすべての環境で使えることや、停止中の通知保持を示す結果ではありません。
+
+[Actions run 43209142747](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43209142747) では、Apple Silicon と Intel の両方で、別の合成プロフィールを使った校正情報と購読情報の組合せによる実 WNS の通知受信・復号が成功しました。これは使い捨て環境での合成通知の結果です。実 X の通知、停止中に届いた通知の欠落、長期運用時の互換性は確認できていません。
+
+手動切替では新旧 index を切替直前に確認しますが、確認と rename の間の同一ユーザーによる置換を原子的には防げません。registry の更新同士と同じプロフィールへのアクセスは、それぞれ registry lock とプロフィール lease で排他します。
+
+別の設定プロセスが旧 index を取得した後、明示切替が完了してからそのプロセスが設定を続ける競合は未解決です。旧プロフィールは保持されますが、新旧両方の設定操作が並行する可能性があります。この競合を解消して検証するまで候補を公開しません。既存の registry lock と profile lease は強制終了後の stale lock を自動復旧しないため、同じ仕組みの長時間 lock を追加して回避することはしていません。
+
+研究用のセッション試験では、index 読取前に lock を取得すれば通常の並行起動を拒否できることと、helper 喪失時に協調する作業を中断できることを合成コードで確認しました。一方、helper が失われると lock が解放されるため、停止要求に応じない古い作業と次の設定操作が重なるケースも再現しました。待機時間の上限は event loop の動作が前提で、同期処理の無限停止や lock を保持したままの無期限待機を止める保証はありません。これらは実装候補の安全性を証明するものではなく、通常の入口には接続していません。実 Mac での lock 解放検証も別途必要です。
+
+代替案として、設定を実行する Node 本体内の Node-API addon が lock を持つ方式を調査しています。外部 helper の先行終了を避けられ、プロセス終了時の OS 解放を利用できます。ただし Apple の [fcntl の説明](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html) では、同一プロセスが同じファイルを指す別の descriptor を閉じても record lock が解放されます。専用 descriptor の管理だけで安全とは断定できず、同資料が説明する `flock` も選択肢です。両方式は同じ方式で参加者を統一して試験する必要があります。[Node-API の環境ライフサイクル](https://nodejs.org/api/n-api.html) に沿った cleanup、同一プロセス内の多重取得、worker、異常終了、実行中の filesystem 操作、旧プロフィールと index の保存、Apple Silicon・Intel の検証が必要です。既存候補は固定 Node と `MacLevelDB.node` の署名検証を行っていますが、追加 addon のビルド・署名・公証・ロードは未実装・未検証です。
+
+未接続の `mac-flock-research` は、専用の合成ファイルを開く最小試験です。ファイル名が指す inode を差し替えると、元の inode をロックしたまま新しい inode で別のロックを取得できる問題があるため、安全に固定・検証できない環境では採用できません。研究版には Node 環境の終了時 cleanup がなく、worker 終了後にロックが残り得ます。`close` が失敗したときはプロセス内で以降の取得を拒否しますが、実際の異常終了と復旧は未検証です。CLOEXEC フラグの確認と Node 子プロセスでの FD 非継承は別の観測であり、後者は Node の spawn による FD 制限も影響し得ます。
+
+`close` の失敗は、研究専用の別ビルドで descriptor を閉じずに失敗を模擬し、再取得拒否とプロセス終了後の解放を試します。これは実 OS の `close` 障害を再現した結果ではありません。`O_NOFOLLOW` はパスの最終要素を検証するためのもので、親ディレクトリの同一 UID による置換は別に対策が必要です。候補への導入は行っていません。
+
+[Actions run 43215001240](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43215001240) では、Apple Silicon と Intel の両方で、固定 Node 24.21.0 から未署名の研究 addon を使い、合成ファイルの通常取得・競合・別 FD の close・所有プロセスの SIGKILL 後の再取得を確認しました。CLOEXEC フラグと Node spawn での非継承は別々に観測しています。負の試験では、inode の差替えによる排他回避と worker 終了後の lock 残留を両 CPU で再現しました。close 失敗は注入です。正式署名・公証や製品への接続は検証していません。
+
+[Actions run 43216074016](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43216074016) の未接続 v2 研究版は両 CPU で compile と合成試験 3 件が成功しました。worker の通常 cleanup と操作中終了時の lock 保持、別 addon 実体の競合、親 directory の差替え検出、実 registry／rotation の競合と旧プロフィール保持を確認しました。検査後の同一 UID による置換、進行中 filesystem 操作の異常終了、正式署名・公証、実アプリへの接続は未検証です。詳細は [排他の研究設計](mac-edge-lock-design.md) を参照してください。
+
+[Actions run 43212534451](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43212534451) の Apple Silicon と Intel の両方で、初回中止後に reader が確認できない合成 profile から、明示切替による旧 profile と index の保持、別の設定用 Edge の起動・停止を確認しました。[Actions run 43213032553](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43213032553) も両 CPU で成功し、同じ復旧に加えて、独立した helper の lock 競合・owner 強制終了後の解放を合成ファイルで確認しました。いずれも UI 全体や実 X の試験ではありません。
+
+[Actions run 43217586048](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43217586048) は、preview.18 の broker 修正を含む Mac Edge の試験で Apple Silicon・Intel とも各 75 件が成功しました。合成プロフィールの明示復旧、ブラウザー起動と模擬受信の範囲であり、実 X や抑制中の実 WNS 受信を証明する結果ではありません。別の [抑制試験 43220496780](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43220496780) では、両 CPU とも通常 browser に送信した対照通知の 30 秒観測で受信を確認できず、抑制試験の判定前に失敗しました。Push の到達と観測用 service worker のどちらが原因かは未特定で、独立した観測対照で調査中です。
+
+[独立観測対照 43222805649](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43222805649) では、両 CPU とも同じ合成購読の active service worker、page と service worker の固定 ping/pong、service worker から localhost への観測を確認しました。通常 browser 向けの合成通知送信は `H201-DABSENT-WRECEIVED` でしたが、30 秒間の固定 Push event、page への固定 message と payload は非観測で、baseline で失敗しました。message や fetch 自体の観測漏れを排除できず、Push event 不発や provider 内部の原因は断定できません。抑制 browser を開いたままの WNS 受信試験には到達していません。実 X と通常プロフィールは使用していません。

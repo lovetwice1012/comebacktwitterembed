@@ -1,0 +1,63 @@
+name: macOS Chrome synthetic suppression comparison
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-chrome-suppression-matrix.yml
+      - scripts/native-test/chrome-mac-suppression-matrix.test.cjs
+      - scripts/native-test/chrome-mac-suppression-baseline.cjs
+      - scripts/native-test/chrome-mac-suppression-receive.cjs
+      - scripts/native-test/chrome-mac-push-error.cjs
+      - scripts/native-test/chrome-mac-push-probe.cjs
+      - scripts/test/chrome-mac-suppression-baseline.test.js
+      - src/automation/chrome-mac-*.js
+      - src/automation/chrome-mcs-*.js
+      - packages/angelic-angel/src/crypto.ts
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: ${{ matrix.os }} / ${{ matrix.case }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+        case: [none, old_resolver, new_resolver, endpoint, combined]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Prepare hosted fixture only
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo xattr -cr '/Applications/Google Chrome.app'
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+          keychain="$RUNNER_TEMP/cbte-suppression-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
+      - name: Compare one synthetic subscription
+        env:
+          CBTE_MAC_SUPPRESSION_HOSTED: '1'
+          CBTE_MAC_SUPPRESSION_CASE: ${{ matrix.case }}
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+        run: node --test --test-concurrency=1 scripts/test/chrome-mac-suppression-baseline.test.js scripts/native-test/chrome-mac-suppression-matrix.test.cjs

@@ -2,13 +2,16 @@
 // Direct WNS interoperability probe for freshly generated test credentials.
 // This is not a production receiver and never logs or persists its input.
 const tls = require('node:tls');
-const { randomInt, randomBytes } = require('node:crypto');
+const { randomBytes } = require('node:crypto');
 const { rewriteSyntheticBind } = require('./edge-fixture-rewrite.cjs');
 const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const { rewriteSyntheticChallenge } = require('./edge-fixture-challenge.cjs');
-const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
 const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const { syntheticRecipientMatches } = require('./edge-fixture-routing.cjs');
+const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+const { parseNotification, createAcknowledgement } = require('../../src/automation/edge-wns-notification');
+const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
+const wnsProtocol = require('../../src/automation/edge-wns-protocol');
 const fail = code => Object.assign(new Error(code), { code });
 
 function selectSyntheticHandshake(chunks) {
@@ -104,8 +107,8 @@ function syntheticFrame(command, body) {
 }
 function syntheticPrelude() {
     return {
-        cnt: syntheticFrame('CNT 1 CON', '<connect><ver>1</ver><agent><os>Windows 10</os><osVer>10.0.00000</osVer><proc>x86_64</proc><lcid>en</lcid></agent></connect>'),
-        ath: syntheticFrame('ATH 2 CON\\DEVICE', '<device><provision>false</provision></device>'),
+        cnt: wnsProtocol.connectFrame({ os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' }, 1),
+        ath: wnsProtocol.deviceFrame(2),
     };
 }
 
@@ -122,110 +125,116 @@ function syntheticClientMetadata(bindFrame) {
     return { channel: firstLine[3], protocolVersion: client[1], clientName: client[2], clientVersion: client[3] };
 }
 
-function syntheticHandshake(key, token, productConstants, metadata = { channel: '100', protocolVersion: '1.0', clientName: 'Microsoft Edge', clientVersion: '157.0.4341.42' }) {
-    if (typeof token !== 'string' || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
-        || productConstants.id.length !== 16 || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e)
-        || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
+function syntheticHandshake(key, token, productConstants, metadata, { includeChallenge = true } = {}) {
+    if (!metadata || typeof metadata !== 'object' || typeof includeChallenge !== 'boolean' || typeof token !== 'string'
+        || !/^[\x21-\x7e]{1,4096}$/.test(token) || /[<>&]/.test(token)
+        || includeChallenge && (!productConstants || !Buffer.isBuffer(productConstants.id) || productConstants.id.length !== 16
+            || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e) || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
+        || !includeChallenge && productConstants != null)
         throw fail('PROBE_DIRECT_CONFIG_INVALID');
-    const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
-    const signature = syntheticReconnectSignature(key, token, nonce);
+    const nonce = wnsProtocol.createNonce(), tokenBytes = Buffer.from(token, 'ascii'); let bnd;
     try {
         if (!/^[0-9a-f]{1,16}$/i.test(metadata.channel || '') || [metadata.protocolVersion, metadata.clientName, metadata.clientVersion]
             .some(value => typeof value !== 'string' || value.length < 1 || value.length > 128 || !/^[\x20-\x7e]+$/.test(value) || /[<>&]/.test(value)))
             throw fail('PROBE_DIRECT_CONFIG_INVALID');
+        bnd = wnsProtocol.bindFrame({ ...metadata, nonce, reconnectToken: tokenBytes, deviceKey: key }, 3);
         const prelude = syntheticPrelude();
-        return { ...prelude,
-            bnd: syntheticFrame(`BND 3 CON\\WNS ${metadata.channel}`, `<wns><ver>${metadata.protocolVersion}</ver><client><name>${metadata.clientName}</name><ver>${metadata.clientVersion}</ver><nonce>${nonce}</nonce><signature>${signature.toString('base64')}</signature><reconnect-token>${token}</reconnect-token></client></wns>`),
+        return { ...prelude, bnd, ...(includeChallenge ? {
             challenge: syntheticFrame(`PUT 4 WNS\\CHALLENGE ${metadata.channel}`, `<challenge><appId>${productConstants.id.toString('ascii')}</appId><response>${'0'.repeat(32)}</response></challenge>`),
-        };
-    } finally { signature.fill(0); }
+        } : {}) };
+    } catch { bnd?.fill(0); throw fail('PROBE_DIRECT_CONFIG_INVALID'); } finally { tokenBytes.fill(0); }
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, observePrior, expectedChannel, sendOtherNotification }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, onExchangeShape, skipChallenge = false, observePrior, expectedChannel, sendOtherNotification }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
         || onRotatedToken !== undefined && typeof onRotatedToken !== 'function'
         || onTargetCiphertext !== undefined && typeof onTargetCiphertext !== 'function'
+        || onBindShape !== undefined && typeof onBindShape !== 'function'
+        || onExchangeShape !== undefined && typeof onExchangeShape !== 'function'
+        || typeof skipChallenge !== 'boolean'
         || !Number.isInteger(ackSettleMs) || ackSettleMs < 0 || ackSettleMs > 2000 || ackSingle && ackAndFollowup) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
         || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
         || observePrior.windowMs < 100 || observePrior.windowMs > 30000)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
-    const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
-    const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
+    const nonce = wnsProtocol.createNonce();
+    const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata, { includeChallenge: !skipChallenge }) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
-    const prelude = generated || (generatedPrelude ? syntheticPrelude() : null), socket = connect();
-    let pending = Buffer.alloc(0), waiting = null, failure = null, closed = false; const queue = [];
-    const abort = code => { if (failure) return; failure = fail(code); if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.reject(failure); } };
-    socket.on('error', () => abort('PROBE_DIRECT_SOCKET_FAILED'));
-    socket.on('close', () => { closed = true; abort('PROBE_DIRECT_SOCKET_CLOSED'); });
-    socket.on('data', chunk => {
-        try {
-            if (!Buffer.isBuffer(chunk) || pending.length + chunk.length > 262144) throw fail('PROBE_DIRECT_FRAME_INVALID');
-            pending = Buffer.concat([pending, chunk]);
-            while (pending.length) {
-                const end = pending.indexOf('\r\n'); if (end < 0) { if (pending.length > 512) throw fail('PROBE_DIRECT_FRAME_INVALID'); break; }
-                if (end > 512 || pending.subarray(0, end).some(byte => byte < 0x20 || byte > 0x7e)) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const parts = pending.subarray(0, end).toString('ascii').split(' '), size = parts.at(-1);
-                if (!/^\d{1,6}$/.test(size)) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const finish = end + 2 + Number(size); if (finish > 262144) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                if (pending.length < finish) break;
-                const frame = Buffer.from(pending.subarray(0, finish)); pending = Buffer.from(pending.subarray(finish));
-                if (queue.length >= 16) { frame.fill(0); throw fail('PROBE_DIRECT_FRAME_INVALID'); }
-                queue.push(frame);
-                if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.resolve(queue.shift()); }
-            }
-        } catch { abort('PROBE_DIRECT_FRAME_INVALID'); socket.destroy(); }
-    });
-    function next(waitMs = timeoutMs) {
-        if (failure) return Promise.reject(failure);
-        if (queue.length) return Promise.resolve(queue.shift());
-        return new Promise((resolve, reject) => { const timer = setTimeout(() => { waiting = null; reject(fail('PROBE_DIRECT_TIMEOUT')); }, waitMs); waiting = { resolve, reject, timer }; });
+    const prelude = generated || (generatedPrelude ? syntheticPrelude() : null);
+    const transport = createEdgeWnsTransport({ socketFactory: connect, timeoutMs });
+    async function next(waitMs = timeoutMs) {
+        try { return await transport.next(waitMs); }
+        catch (error) {
+            throw fail(error?.code === 'X_EDGE_WNS_RECEIVE_TIMEOUT' ? 'PROBE_DIRECT_TIMEOUT'
+                : error?.code === 'X_EDGE_WNS_SOCKET_CLOSED' ? 'PROBE_DIRECT_SOCKET_CLOSED' : 'PROBE_DIRECT_SOCKET_FAILED');
+        }
+    }
+    async function send(frame) {
+        try { await transport.send(frame); } catch { throw fail('PROBE_DIRECT_WRITE_FAILED'); }
     }
     async function exchange(frame, verb, destination = 'CON') {
-        await new Promise((resolve, reject) => socket.write(frame, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve()));
+        await send(frame);
         const response = await next();
         try {
             const end = response.indexOf('\r\n'), parts = response.subarray(0, end).toString('ascii').split(' ');
             if (parts[0] !== verb || parts[2] !== destination) {
                 const actual = /^WNS\/\d(?:\.\d)?$/.test(parts[0] || '') ? 'WNS_VERSION' : /^[A-Z]{1,12}$/.test(parts[0] || '') ? parts[0]
                     : /^2\d\d$/.test(parts[0] || '') ? 'STATUS_SUCCESS' : /^4\d\d$/.test(parts[0] || '') ? 'STATUS_CLIENT_ERROR'
-                        : /^5\d\d$/.test(parts[0] || '') ? 'STATUS_SERVER_ERROR' : /^\d+$/.test(parts[0] || '') ? 'NUMBER'
+                        : /^5\d\d$/.test(parts[0] || '') ? 'STATUS_SERVER_ERROR' : /^\d{1,4}$/.test(parts[0] || '')
+                            ? `NUMBER_${[...parts[0]].map(digit => ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE'][Number(digit)]).join('_')}`
                     : (parts[0] || '') === '' ? 'EMPTY' : 'OTHER';
                 const route = ['CON', 'WNS', 'WNS\\CHALLENGE', 'WNS\\NOTIF'].includes(parts[2]) ? parts[2].replace('\\', '_') : 'OTHER';
                 throw fail(`PROBE_DIRECT_EXPECTED_${verb}_GOT_${actual}_ROUTE_${route}`);
             }
-            if (verb !== 'BND') return {};
-            const nonces = [...response.toString('ascii').matchAll(/<nonce>([^<]{1,256})<\/nonce>/g)];
-            const tokens = [...response.toString('ascii').matchAll(/<reconnect-token>([^<]{1,4096})<\/reconnect-token>/g)];
-            if (onRotatedToken) {
-                if (tokens.length !== 1 || !/^[\x21-\x7e]{1,4096}$/.test(tokens[0][1])) throw fail('PROBE_DIRECT_FRAME_INVALID');
-                const captured = Buffer.from(tokens[0][1], 'ascii');
-                try { await onRotatedToken(captured); } finally { captured.fill(0); }
+            if (onExchangeShape) {
+                const requestEnd = frame.indexOf('\r\n'), requestParts = frame.subarray(0, requestEnd).toString('ascii').split(' ');
+                const separator = response.indexOf('\r\n\r\n', end + 2);
+                const headerText = separator >= 0 ? response.subarray(end + 2, separator).toString('ascii') : '';
+                const headerNames = headerText.split('\r\n').map(line => line.slice(0, line.indexOf(':')).toLowerCase())
+                    .map(name => ['ms-cv', 'context', 'status', 'status-code', 'error', 'error-code', 'content-type'].includes(name) ? name : 'other');
+                const body = separator >= 0 ? response.subarray(separator + 4).toString('ascii') : '';
+                await onExchangeShape({ verb, responseParts: parts.length, sequenceMatchesRequest: parts[1] === requestParts[1],
+                    hasHeaders: separator >= 0, headerNames, hasBody: body.length > 0, hasErrorTag: /<error(?:\s|>)/i.test(body) });
             }
-            return { hasReconnectToken: response.includes(Buffer.from('<reconnect-token>')),
-                hasNonce: nonces.length === 1, reconnectTokenUnchanged: tokens.length === 1 ? tokens[0][1] === token : null,
-                serverNonce: nonces.length === 1 ? nonces[0][1] : null };
+            if (verb !== 'BND') return {};
+            if (onBindShape) {
+                const separator = response.indexOf('\r\n\r\n', end + 2);
+                if (separator < 0 || separator > end + 8192) throw fail('PROBE_DIRECT_FRAME_INVALID');
+                const body = response.subarray(separator + 4).toString('ascii');
+                const allowed = new Set(['wns', 'client', 'nonce', 'reconnect-token', 'ver', 'error', 'status']);
+                const tags = [...body.matchAll(/<\/?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?\/?\s*>/g)]
+                    .map(match => allowed.has(match[1]) ? match[1] : 'other');
+                await onBindShape({ commandParts: parts.length, sequenceMatchesRequest: parts[1] === '3', tags, hasDeclaration: /<\?/.test(body),
+                    hasDoctype: /<!/i.test(body), hasAttributes: /<[A-Za-z][A-Za-z0-9-]*\s/.test(body) });
+            }
+            const binding = parseBindResponse(response, 3), original = Buffer.from(token, 'ascii');
+            try {
+                if (onRotatedToken) await onRotatedToken(binding.reconnectToken);
+                return { hasReconnectToken: true, hasNonce: true, reconnectTokenUnchanged: binding.reconnectToken.equals(original),
+                    serverNonce: binding.nonce };
+            } finally { binding.reconnectToken.fill(0); original.fill(0); }
         } finally { response.fill(0); }
     }
     try {
-        await new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { socket.destroy(); reject(fail('PROBE_DIRECT_TIMEOUT')); }, timeoutMs);
-            socket.once('secureConnect', () => { clearTimeout(timer); resolve(); });
-            socket.once('error', () => { clearTimeout(timer); reject(fail('PROBE_DIRECT_SOCKET_FAILED')); });
-        });
+        try { await transport.connect(); } catch { throw fail('PROBE_DIRECT_SOCKET_FAILED'); }
         await exchange(prelude?.cnt || frames.cnt, 'CNT'); await exchange(prelude?.ath || frames.ath, 'ATH');
         const response = await exchange(bind, 'BND');
         const result = { cntResponse: true, athResponse: true, bindResponse: true,
             hasReconnectToken: response.hasReconnectToken, hasNonce: response.hasNonce, reconnectTokenUnchanged: response.reconnectTokenUnchanged };
         if (sendNotification !== undefined || decryptNotification !== undefined) {
             const challengeTemplate = generated?.challenge || frames?.challenge;
-            if (!Buffer.isBuffer(challengeTemplate) || typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
-                || !productConstants || !response.serverNonce)
+            if (typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
+                || !skipChallenge && (!Buffer.isBuffer(challengeTemplate) || !productConstants || !response.serverNonce))
                 throw fail('PROBE_DIRECT_CONFIG_INVALID');
-            const challenge = rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
-            try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
-            finally { challenge.fill(0); }
+            if (!skipChallenge) {
+                const challenge = generatedHandshake
+                    ? wnsProtocol.challengeFrame({ channel: clientMetadata.channel, serverNonce: response.serverNonce,
+                        productKey: productConstants.key, productId: productConstants.id }, 4)
+                    : rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
+                try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
+                finally { challenge.fill(0); }
+            }
             if (observePrior) {
                 const observed = { offlineNotification: false, priorNotificationReplay: false, otherFrames: 0 };
                 const deadline = Date.now() + observePrior.windowMs;
@@ -253,12 +262,15 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 try {
                     const other = await next();
                     try {
-                        if (syntheticRecipientMatches(other, expectedChannel)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID');
+                        let parsed;
+                        try { parsed = parseNotification(other, expectedChannel); }
+                        catch (error) { throw fail(`PROBE_DIRECT_FOREIGN_ROUTE_INVALID_${/^[A-Z_]+$/.test(error?.stage || '') ? error.stage : 'OTHER'}`); }
+                        if (parsed.kind !== 'foreign' || syntheticRecipientMatches(other, expectedChannel)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID');
                         const ciphertext = firstFixtureNotification([other]);
                         try { if (!ciphertext?.equals(expectedOther)) throw fail('PROBE_DIRECT_FOREIGN_ROUTE_INVALID'); }
                         finally { ciphertext?.fill(0); }
-                        const acknowledgement = syntheticNotificationAck(other, acknowledgementSequence++);
-                        try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
+                        const acknowledgement = createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++);
+                        try { await send(acknowledgement); }
                         finally { acknowledgement.fill(0); }
                         Object.assign(result, { otherReceived: true, otherCipherMatched: true, otherDiscardedBeforeDecrypt: true, otherAckWritten: true });
                     } finally { other.fill(0); }
@@ -271,8 +283,9 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 try { notification = await next(); }
                 catch (error) { if (error.code === 'PROBE_DIRECT_TIMEOUT' || error.code === 'PROBE_DIRECT_SOCKET_CLOSED') return { ...result, notificationReceived: false }; throw error; }
                 try {
-                    if (expectedChannel && !syntheticRecipientMatches(notification, expectedChannel)) throw fail('PROBE_DIRECT_TARGET_ROUTE_INVALID');
-                    const ciphertext = firstFixtureNotification([notification]);
+                    const parsed = expectedChannel ? parseNotification(notification, expectedChannel) : null;
+                    if (parsed && (parsed.kind !== 'target' || !syntheticRecipientMatches(notification, expectedChannel))) throw fail('PROBE_DIRECT_TARGET_ROUTE_INVALID');
+                    const ciphertext = parsed ? parsed.data : firstFixtureNotification([notification]);
                     if (!ciphertext) return { ...result, notificationReceived: false };
                     try {
                         const matchesSentCiphertext = ciphertext.equals(expected);
@@ -281,8 +294,9 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                         if (onTargetCiphertext && matchesSentCiphertext) await onTargetCiphertext(ciphertext, notification);
                         const received = { ...result, notificationReceived: true, matchesSentCiphertext, payloadDecrypted: await decryptNotification(ciphertext) };
                         if ((!ackAndFollowup && !ackSingle) || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
-                        const acknowledgement = syntheticNotificationAck(notification, acknowledgementSequence++);
-                        try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
+                        const acknowledgement = parsed ? createAcknowledgement(parsed.acknowledgement, acknowledgementSequence++)
+                            : syntheticNotificationAck(notification, acknowledgementSequence++);
+                        try { await send(acknowledgement); }
                         finally { acknowledgement.fill(0); }
                         if (ackSingle) {
                             if (ackSettleMs) await new Promise(resolve => setTimeout(resolve, ackSettleMs));
@@ -308,12 +322,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
         }
         return result;
     } finally {
-        if (!closed) {
-            let timer;
-            const done = new Promise(resolve => { socket.once('close', resolve); timer = setTimeout(resolve, 2000); });
-            socket.destroy(); await done; clearTimeout(timer);
-        }
-        pending.fill(0); for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
+        transport.close(); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
     }
 }
 module.exports = { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticPrelude, syntheticClientMetadata, syntheticHandshake, independentSyntheticReconnect };

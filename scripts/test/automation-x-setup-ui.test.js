@@ -47,6 +47,21 @@ async function fixture({ current = status(), respond, opened = true, active = tr
     return f;
 }
 
+test('scheduled reconnect is clear without exposing internal error codes', async () => {
+    const f = await fixture({ upload: false, current: status({ receiverEnabled: true,
+        subscriptions: [subscription({ browserKind: 'chrome', receiverState: 'error', receiverRetryPending: true })] }) });
+    try {
+        assert.match(f.container.textContent, /再接続待ち/);
+        assert.match(f.container.textContent, /再接続を待っています/);
+        assert.doesNotMatch(f.container.textContent, /X_PUSH_CHROME_LOGIN_FAILED/);
+        const parse = f.exports.parseXSetupSubscription;
+        assert.equal(parse(subscription({ receiverState: 'error', receiverRetryPending: true })).receiverRetryPending, true);
+        assert.throws(() => parse(subscription({ receiverState: 'listening', receiverRetryPending: true })));
+        assert.throws(() => parse(subscription({ receiverState: 'error', receiverRetryPending: 'true' })));
+        f.assertPrivate();
+    } finally { await f.close(); }
+});
+
 test('beginner setup leads with concrete steps and clearly explains manual upload, consent, sensitive data and receiver readiness', async () => {
     const f = await fixture({ opened: false });
     try {
@@ -85,8 +100,31 @@ test('Chrome preparation and review appear only when Chrome intake is enabled', 
     try { assert.equal([...disabled.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Chrome'), false); }
     finally { await disabled.close(); }
     const chromeOnly = await fixture({ current: status({ chromeEnabled: true, braveEnabled: false }), upload: false });
-    try { assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false); }
+    try {
+        assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false);
+        const chrome = [...chromeOnly.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome');
+        await chromeOnly.act(async () => chrome.querySelector('input').click());
+        assert(!chromeOnly.container.textContent.includes('Mac（Appleシリコン）'));
+    }
     finally { await chromeOnly.close(); }
+});
+test('Mac Chrome shows only published architectures and keeps upload manual', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, receiverEnabled: true,
+        chromeMacDownloads: { arm64: true, x64: false } }), upload: false });
+    try {
+        const chrome = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome');
+        await f.act(async () => chrome.querySelector('input').click());
+        const arm = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Mac（Appleシリコン）');
+        assert(arm); assert(!f.container.textContent.includes('Mac（Intel）'));
+        await f.act(async () => arm.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome-mac?arch=arm64');
+        assert.match(f.container.textContent, /「X通知の準備」を開き/);
+        assert.match(f.container.textContent, /「設定できた」を押してファイルを保存/);
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+        assert.deepEqual({ ...f.exports.parseXSetupStatus(status({ chromeEnabled: true, receiverEnabled: false,
+            chromeMacDownloads: { arm64: true, x64: true } })).chromeMacDownloads }, { arm64: false, x64: false });
+        assert.throws(() => f.exports.parseXSetupStatus(status({ chromeMacDownloads: { arm64: 'true', x64: false } })));
+    } finally { await f.close(); }
 });
 test('Brave preparation uses a separate launcher and review labels the imported browser', async () => {
     const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,
@@ -107,6 +145,26 @@ test('saved Brave receiver remains identifiable and compatible with old receiver
         assert.match(f.container.textContent, /Brave 157\.1\.99\.55/);
         assert.equal(f.exports.parseXSetupSubscription(subscription({ browserKind: 'brave' })).browserKind, 'brave');
         assert.equal(f.exports.parseXSetupSubscription(subscription()).browserKind, 'firefox');
+    } finally { await f.close(); }
+});
+test('Edge setup is independently gated and labels its download and imported receiver', async () => {
+    const hidden = await fixture({ current: status({ chromeEnabled: true, edgeEnabled: false, receiverEnabled: true }), upload: false });
+    try { assert.equal([...hidden.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Edge'), false); }
+    finally { await hidden.close(); }
+    const f = await fixture({ current: status({ chromeEnabled: false, edgeEnabled: true, receiverEnabled: true }), upload: false,
+        respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
+            ? { valid: true, browserVersion: '157.0.4341.42', browserKind: 'edge', scope: 'https://x.com/', formatVersion: 3 } : undefined });
+    try {
+        const edge = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Edge'); assert(edge);
+        await f.act(async () => edge.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-edge');
+        assert.match(f.container.textContent, /Edgeで開始/); await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        assert.match(f.review().textContent, /Edge 157\.0\.4341\.42/); f.assertPrivate();
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ browserKind: 'edge' })).browserKind, 'edge');
+        assert.throws(() => f.exports.parseXSetupPreview({ valid: true, browserVersion: '157.0.4341.42', scope: 'https://x.com/', formatVersion: 3 }));
+        assert.throws(() => f.exports.parseXSetupPreview({ valid: true, browserVersion: '157.0.4341.42', scope: 'https://x.com/other', formatVersion: 3, browserKind: 'edge' }));
+        assert.equal(f.exports.parseXSetupStatus(status({ edgeEnabled: true, receiverEnabled: false })).edgeEnabled, false);
+        assert.equal(f.exports.parseXSetupStatus(status({ edgeEnabled: true, receiverEnabled: true, rollout: { mode: 'supporters', eligible: false, reasonCode: 'X_ROLLOUT_SUPPORTERS_ONLY', reason: null } })).edgeEnabled, false);
     } finally { await f.close(); }
 });
 test('provider loss notice is visible without exposing event identifiers', async () => {

@@ -40,11 +40,20 @@ test('download package is pinned, complete and includes no profile data', () => 
     for (const name of ['ChromeSetup.ps1', 'Start-ChromeSetup.ps1', 'ChromeSnapshot.ps1'])
         assert.deepEqual([...Buffer.from(entries[`_app/${name}`]).subarray(0, 3)], [0xef, 0xbb, 0xbf], `${name} needs UTF-8 BOM for Windows PowerShell 5.1`);
 });
-test('Windows release rebuild matches the pinned Chrome download', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
+test('Windows rebuild matches the pinned Chrome release or reproducibly builds a newer candidate', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
     const meta = load('dashboard/lib/x-chrome-setup-download.ts', { 'server-only': {}, 'node:crypto': { createHash },
         'node:fs/promises': {}, 'node:path': path, '@/lib/env': { repoRoot: () => root } }).X_CHROME_SETUP_DOWNLOAD;
     const built = await require('../build-chrome-setup-package.cjs').buildArchive();
-    assert.equal(built.version, meta.version); assert.equal(built.sha256, meta.sha256); assert.equal(built.archive.length, meta.bytes);
+    if (built.version === meta.version) {
+        assert.equal(built.sha256, meta.sha256); assert.equal(built.archive.length, meta.bytes);
+    } else {
+        const candidate = /^0\.1\.0-chrome-preview\.([1-9]\d*)$/.exec(built.version);
+        const published = /^0\.1\.0-chrome-preview\.([1-9]\d*)$/.exec(meta.version);
+        assert(candidate && published && Number(candidate[1]) > Number(published[1]), 'candidate must advance the published preview');
+        assert.notEqual(built.sha256, meta.sha256);
+        const second = await require('../build-chrome-setup-package.cjs').buildArchive();
+        assert.equal(second.version, built.version); assert.equal(second.sha256, built.sha256); assert.equal(second.archive.length, built.archive.length);
+    }
 });
 test('production file tracing includes the pinned Chrome download', () => {
     const meta = load('dashboard/lib/x-chrome-setup-download.ts', { 'server-only': {}, 'node:crypto': { createHash },

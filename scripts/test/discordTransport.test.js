@@ -45,7 +45,7 @@ test('Bun captures its ws adapter for Discord and restores the native global', a
         target,
         loadWebSocket: () => ({ WebSocket: compatWebSocket }),
         loadDiscord: () => {
-            assert.equal(target.WebSocket, compatWebSocket);
+            assert.equal(Object.getPrototypeOf(target.WebSocket), compatWebSocket);
             return discord;
         },
         loadUndici: () => ({
@@ -68,6 +68,7 @@ test('Bun captures its ws adapter for Discord and restores the native global', a
 
     assert.equal(runtime.discord, discord);
     assert.equal(runtime.gatewayTransport, 'bun-ws-compat');
+    assert.equal(Object.getPrototypeOf(runtime.gatewayWebSocket), compatWebSocket);
     assert.equal(runtime.restTransport, 'npm-undici');
     assert.equal(target.WebSocket, nativeWebSocket);
 
@@ -97,4 +98,17 @@ test('Bun restores the native global if discord.js fails to load', () => {
         /discord load failed/
     );
     assert.equal(target.WebSocket, nativeWebSocket);
+});
+test('Bun Discord adapter ignores pre-open sends but preserves open and closed behavior', () => {
+    class Socket {
+        constructor() { this.readyState = 0; this.sent = []; }
+        send(value) { if (this.readyState !== 1) throw new Error('not open'); this.sent.push(value); }
+    }
+    const target = {}, runtime = loadDiscordRuntime({ isBun: true, target, loadWebSocket: () => ({ WebSocket: Socket }),
+        loadDiscord: () => ({}), loadUndici: () => ({ fetch: async () => ({}) }) });
+    const socket = new runtime.gatewayWebSocket();
+    assert.doesNotThrow(() => socket.send('before')); assert.deepEqual(socket.sent, []);
+    socket.readyState = 1; socket.send('after'); assert.deepEqual(socket.sent, ['after']);
+    socket.readyState = 3; assert.throws(() => socket.send('closed'), /not open/);
+    assert.equal(target.WebSocket, undefined);
 });

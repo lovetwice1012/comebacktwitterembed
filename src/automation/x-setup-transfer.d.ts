@@ -16,28 +16,38 @@ export interface ChromeTransferFile {
     format: 'x-notification-subscription';
     version: 2;
     provenance: { kind: 'chrome-gcm'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'chrome-gcm-snapshot' };
-    push: { deviceId: string; securityToken: string; appId: string; productCategory: 'com.chrome.windows'; authorizedEntity: string;
+    push: { deviceId: string; securityToken: string; appId: string; productCategory: 'com.chrome.windows' | 'com.chrome.macosx'; authorizedEntity: string;
         scope: 'https://x.com/'; p256dhPublicKey: string; authenticationSecret: string;
         p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
 }
 export interface BraveTransferFile extends Omit<ChromeTransferFile, 'provenance' | 'push'> {
     provenance: { kind: 'brave-gcm'; adapterVersion: '1.0.0'; browserVersion: string; engineVersion: string; readMethod: 'brave-gcm-snapshot' };
-    push: Omit<ChromeTransferFile['push'], 'productCategory'> & { productCategory: 'com.brave.windows' };
+    push: Omit<ChromeTransferFile['push'], 'productCategory'> & { productCategory: 'com.brave.windows' | 'com.brave.macosx' };
 }
-export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile;
+export interface EdgeTransferFile {
+    format: 'x-notification-subscription'; version: 3;
+    provenance: { kind: 'edge-wns'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'edge-wns-snapshot' };
+    push: { scope: 'https://x.com/'; siteChannel: string; deviceKey: string; reconnectToken: string; connectVersion?: '2';
+        agent: { os: string; osVersion: string; architecture: string; locale: string };
+        client: { channel: string; protocolVersion: string; clientName: string; clientVersion: string };
+        p256dhPublicKey: string; authenticationSecret: string; applicationServerKey: string;
+        p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
+}
+export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile | EdgeTransferFile;
 export interface TransferIdentity { uaidHash: string; channelHash: string; contentHash: string }
 export interface TransferContext { subscriptionId: string; ownerUserId: string; revision: number }
-export interface TransferVaultOptions { activeKeyId: string; keys: Record<string, Buffer> | Map<string, Buffer> }
+export interface TransferParseOptions { allowBraveMac?: boolean }
+export interface TransferVaultOptions extends TransferParseOptions { activeKeyId: string; keys: Record<string, Buffer> | Map<string, Buffer> }
 export interface TransferEnvelope { version: 1; algorithm: 'A256GCM'; keyId: string; iv: string; ciphertext: string; tag: string }
 export interface TransferSealer { seal(file: TransferFile, context: TransferContext): TransferEnvelope }
 export interface TransferWorkerVault extends TransferSealer { open(envelope: TransferEnvelope, context: TransferContext): TransferFile }
-export function parseTransferFile(fileText: string): TransferFile;
-export function identifyTransfer(file: TransferFile): TransferIdentity;
+export function parseTransferFile(fileText: string, options?: TransferParseOptions): TransferFile;
+export function identifyTransfer(file: TransferFile, options?: TransferParseOptions): TransferIdentity;
 export function createTransferSealer(options: TransferVaultOptions): TransferSealer;
 /** Trusted worker constructor; never provide this object to web intake. */
 export function createTransferWorkerVault(options: TransferVaultOptions): TransferWorkerVault;
-export interface TransferPublicSealerOptions { activeKeyId: string; publicKeys: Record<string, KeyObject | string> | Map<string, KeyObject | string> }
-export interface TransferPrivateWorkerOptions { activeKeyId: string; privateKeys: Record<string, KeyObject | string> | Map<string, KeyObject | string> }
+export interface TransferPublicSealerOptions extends TransferParseOptions { activeKeyId: string; publicKeys: Record<string, KeyObject | string> | Map<string, KeyObject | string> }
+export interface TransferPrivateWorkerOptions extends TransferParseOptions { activeKeyId: string; privateKeys: Record<string, KeyObject | string> | Map<string, KeyObject | string> }
 export interface TransferHybridEnvelope { version: 2; algorithm: 'RSA-OAEP-256+A256GCM'; keyId: string; wrappedKey: string; iv: string; ciphertext: string; tag: string }
 export interface TransferPublicSealer { seal(file: TransferFile, context: TransferContext): TransferHybridEnvelope }
 export interface TransferPrivateWorkerVault { open(envelope: TransferHybridEnvelope, context: TransferContext): TransferFile }

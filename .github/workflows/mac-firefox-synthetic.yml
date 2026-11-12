@@ -1,0 +1,115 @@
+name: macOS Firefox synthetic validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-firefox-synthetic.yml
+      - src/automation/firefox-mac-*.js
+      - scripts/native-test/firefox-mac-*.cjs
+      - scripts/native-test/macos-sandbox-probe.test.cjs
+      - scripts/test/firefox-mac-reader-protocol.test.js
+      - scripts/test/firefox-mac-reader-result.test.js
+      - scripts/test/firefox-mac-setup-browser.test.js
+      - scripts/test/firefox-mac-setup-session.test.js
+      - scripts/test/firefox-mac-dialogs.test.js
+      - scripts/test/firefox-mac-app.test.js
+      - scripts/test/firefox-mac-app-entry.test.js
+      - scripts/test/firefox-mac-preview-layout.test.js
+      - scripts/test/firefox-xpcshell-bootstrap.test.js
+      - scripts/firefox-mac-app.cjs
+      - scripts/build-mac-firefox-preview.cjs
+      - scripts/build-mac-chrome-preview.cjs
+      - scripts/build-mac-chrome-setup-bundle.cjs
+      - scripts/native-test/chrome-mac-adhoc-package.test.cjs
+      - src/automation/automation-error.js
+      - src/automation/x-setup-transfer.js
+      - src/automation/service.js
+      - client/angelic-setup/mac/FirefoxXPCShellReader.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - client/angelic-setup/mac/launch-native.c
+      - client/angelic-setup/mac/Firefox-試験用.txt
+      - client/angelic-setup/Read-PushSubscription.js
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Build temporary lock helper
+        run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+      - name: Run synthetic Firefox checks
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+          CBTE_MAC_SYNTHETIC_SANDBOX: '1'
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 \
+            scripts/native-test/firefox-mac-hosted.test.cjs \
+            scripts/native-test/firefox-mac-setup-browser-hosted.test.cjs \
+            scripts/native-test/macos-sandbox-probe.test.cjs \
+            scripts/test/firefox-mac-reader-protocol.test.js \
+            scripts/test/firefox-mac-reader-result.test.js \
+            scripts/test/firefox-mac-setup-browser.test.js \
+            scripts/test/firefox-mac-setup-session.test.js \
+            scripts/test/firefox-mac-dialogs.test.js \
+            scripts/test/firefox-mac-app.test.js \
+            scripts/test/firefox-mac-app-entry.test.js \
+            scripts/test/firefox-xpcshell-bootstrap.test.js \
+            scripts/native-test/firefox-mac-export-flow.test.cjs \
+            scripts/native-test/firefox-mac-reader-directory.test.cjs \
+            scripts/native-test/firefox-mac-reader-script.test.cjs \
+            scripts/native-test/firefox-mac-reader-artifacts.test.cjs \
+            scripts/native-test/firefox-mac-snapshot.test.cjs \
+            scripts/native-test/firefox-mac-local-flow.test.cjs \
+            scripts/native-test/firefox-mac-profile-lock.test.cjs
+
+  preview:
+    name: Preview ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build isolated unsigned Firefox preview
+        run: |
+          case "$(uname -m)" in arm64) arch=arm64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
+          curl -fsSL --retry 2 --max-time 180 "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-$arch.tar.gz" -o "$RUNNER_TEMP/node.tar.gz"
+          mkdir "$RUNNER_TEMP/node-dist"
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP/node-dist" --strip-components=1
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/MacStoreLock"
+          printf '\0' > "$RUNNER_TEMP/restrict-section"
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/launch-native.c -Wl,-sectcreate,__RESTRICT,__restrict,"$RUNNER_TEMP/restrict-section" -o "$RUNNER_TEMP/Launch"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/Launch"
+          node scripts/build-mac-firefox-preview.cjs "$arch" "$RUNNER_TEMP/node-dist/bin/node" "$RUNNER_TEMP/Launch" "$RUNNER_TEMP/MacStoreLock" "$RUNNER_TEMP/node-dist/LICENSE" "$RUNNER_TEMP/firefox-preview.zip"
+      - name: Validate packaged startup and isolated layout
+        env:
+          MAC_PREVIEW_ZIP: ${{ runner.temp }}/firefox-preview.zip
+          CBTE_MAC_FIREFOX_PREVIEW: '1'
+        run: node --test --test-concurrency=1 scripts/test/firefox-mac-preview-layout.test.js scripts/native-test/chrome-mac-adhoc-package.test.cjs

@@ -119,7 +119,7 @@ function mockDatabase(records, counters) {
     };
 }
 
-async function invoke(records, { offline = true, pushEnabled = false, actualProfile = profilePath, input } = {}) {
+async function invoke(records, { offline = true, pushEnabled = false, actualProfile = profilePath, browserOS = 'WINNT', input } = {}) {
     const counters = { databaseOpens: 0, databaseClosed: 0, transactions: 0, valueReads: 0, metadataValueReads: 0, logs: 0, networkCalls: 0 };
     const database = mockDatabase(records, counters);
     const blockedNetwork = () => { counters.networkCalls++; throw new Error('Network is forbidden in this synthetic test'); };
@@ -131,7 +131,7 @@ async function invoke(records, { offline = true, pushEnabled = false, actualProf
         Services: {
             dirsvc: { get: () => ({ path: actualProfile }) },
             scriptSecurityManager: { getSystemPrincipal: () => ({ syntheticPrincipal: true }) },
-            io: { offline }, prefs: { getBoolPref: () => pushEnabled }, appinfo: { version: '160.0a1' },
+            io: { offline }, prefs: { getBoolPref: () => pushEnabled }, appinfo: { version: '160.0a1', OS: browserOS },
         },
         ChromeUtils: {
             importESModule(modulePath) {
@@ -309,6 +309,18 @@ test('enabled Push service rejects before opening a database', async () => {
 });
 test('wrong reader profile rejects before opening a database', async () => {
     assert.equal((await rejected([record()], 'X_EXPORT_PROFILE_MISMATCH', 0, { actualProfile: 'C:\\synthetic-only\\different-reader' })).databaseOpens, 0);
+});
+test('Mac isolated profile uses exact POSIX path comparison before reading', async () => {
+    const macPath = '/Users/test/Library/Application Support/X通知/reader';
+    const input = { uaid, expectedProfilePath: macPath };
+    const success = await invoke([record()], { browserOS: 'Darwin', actualProfile: macPath, input });
+    assert.equal(success.response.ok, true);
+    assert.equal(success.counters.databaseOpens, 1);
+    for (const actualProfile of ['/Users/test/Library/Application Support/X通知/Reader', '/Users/test/Library/../reader', '/Users/test//reader', '/Users/test/reader/']) {
+        const code = actualProfile.includes('/Reader') ? 'X_EXPORT_PROFILE_MISMATCH' : 'X_EXPORT_ARGUMENTS_INVALID';
+        assert.equal((await rejected([record()], code, 0, { browserOS: 'Darwin', actualProfile, input })).databaseOpens, 0);
+    }
+    assert.equal((await rejected([record()], 'X_EXPORT_BROWSER_UNSUPPORTED', 0, { browserOS: 'Linux' })).databaseOpens, 0);
 });
 test('extra input field rejects before opening a database', async () => {
     assert.equal((await rejected([record()], 'X_EXPORT_ARGUMENTS_INVALID', 0, { input: { uaid, expectedProfilePath: profilePath, extra: 'SYNTHETIC' } })).databaseOpens, 0);

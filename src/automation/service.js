@@ -7,15 +7,13 @@ const { withRateOperation } = require('./rate-operation');
 const { gzip, gunzip } = require('node:zlib');
 const { assertWorkflow, newWorkflow } = require('./schema');
 const { validateDictionary } = require('./dictionary');
+const { AutomationError } = require('./automation-error');
 const compress = promisify(gzip), decompress = promisify(gunzip);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const TABLES = { workflow: 'automation_workflows', dictionary: 'automation_dictionaries', destination: 'automation_destinations' };
 let dictionaryValidator;
 
-class AutomationError extends Error {
-    constructor(code, message, status = 400) { super(message); this.name = 'AutomationError'; this.code = code; this.status = status; }
-}
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 function requireActor(actor) {
     if (!/^\d{1,32}$/.test(actor?.userId || '')) fail('AUTH_REQUIRED', 'ログインが必要です。', 401);

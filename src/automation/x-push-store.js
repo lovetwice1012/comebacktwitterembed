@@ -33,6 +33,13 @@ function safeHeaders(headers) {
     if (Buffer.byteLength(JSON.stringify(result)) > 8192) fail('X_PUSH_FRAME_INVALID');
     return result;
 }
+function sameMcsHeaders(stored, expected) {
+    try {
+        const existing = safeHeaders(JSON.parse(stored));
+        const names = Object.keys(existing).sort(), expectedNames = Object.keys(expected).sort();
+        return names.length === expectedNames.length && names.every((name, i) => name === expectedNames[i] && existing[name] === expected[name]);
+    } catch { return false; }
+}
 function validateFrame(input) {
     if (!input || typeof input.version !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.version)
         || typeof input.data !== 'string' || input.data.length > MAX_FRAME_BYTES || !/^[A-Za-z0-9_-]*$/.test(input.data)
@@ -63,10 +70,15 @@ function createXPushStore(db, options = {}) {
         || !Number.isSafeInteger(leaseMs) || leaseMs < 100 || leaseMs > 300000) fail('X_PUSH_STORE_CONFIG_INVALID');
     // Keep the owner -> subscription -> receiver lock order used by intake and
     // deletion. A delete cannot race a fenced inbox commit or resurrect a lease.
-    async function locked(input, work, { createReceiver = false } = {}) {
+    /** @param {any} input @param {any} work @param {{createReceiver?: boolean, signal?: AbortSignal, authorize?: any, postAuthorize?: any}} [options] */
+    async function locked(input, work, { createReceiver = false, signal, authorize, postAuthorize } = {}) {
         identity(input);
+        if (signal !== undefined && !(signal instanceof AbortSignal)) fail('X_PUSH_CONFIG_INVALID');
+        if (authorize !== undefined && typeof authorize !== 'function' || postAuthorize !== undefined && typeof postAuthorize !== 'function') fail('X_PUSH_CONFIG_INVALID');
+        if (signal?.aborted) fail('X_PUSH_STOPPED');
         try {
             return await db.withDatabaseTransaction(async query => {
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
                 await lockOwner(query, input.ownerUserId);
                 const subscription = (await query('SELECT * FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE', [input.subscriptionId, input.ownerUserId]))[0];
                 if (!subscription) fail('X_PUSH_SUBSCRIPTION_NOT_FOUND');
@@ -78,31 +90,68 @@ function createXPushStore(db, options = {}) {
                     VALUES (?,'awaiting',?,?) ON DUPLICATE KEY UPDATE subscription_id=VALUES(subscription_id)`,
                 [input.subscriptionId, Number(subscription.revision), now()]);
                 const receiver = (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE', [input.subscriptionId]))[0];
-                return work(query, subscription, receiver);
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                if (authorize) await authorize(query);
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                const result = await work(query, subscription, receiver);
+                const completionGuard = postAuthorize || authorize;
+                if (completionGuard && typeof completionGuard.assertStillAllowed === 'function') completionGuard.assertStillAllowed();
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                return result;
             });
         } catch (error) {
             if (typeof error?.code === 'string' && error.code.startsWith('X_PUSH_')) throw error;
             fail('X_PUSH_STORE_UNAVAILABLE');
         }
     }
-    function fence(lease, subscription, receiver) {
+    function fence(lease, subscription, receiver, { allowProcessing = false } = {}) {
         leaseIdentity(lease);
-        if (!receiver || Number(subscription.revision) !== lease.revision || Number(receiver.subscription_revision) !== lease.revision
-            || receiver.lease_token !== lease.token || Number(receiver.lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
+        const processing = lease.purpose === 'processing';
+        if (lease.purpose !== undefined && lease.purpose !== 'receive' && !processing || processing && !allowProcessing) fail('X_PUSH_LEASE_LOST');
+        if (!receiver || Number(subscription.revision) !== lease.revision || Number(receiver.subscription_revision) !== lease.revision) fail('X_PUSH_LEASE_LOST');
+        if (processing) {
+            if (Number(receiver.processing_revision) !== lease.revision || receiver.processing_lease_token !== lease.token
+                || !Number.isSafeInteger(Number(receiver.processing_lease_expires_at_ms)) || Number(receiver.processing_lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
+        } else if (receiver.lease_token !== lease.token || Number(receiver.lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
     }
-    async function claim(input) {
+    /** @param {any} input @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function claim(input, { authorize, signal } = {}) {
         if (typeof input?.workerId !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(input.workerId)) fail('X_PUSH_WORKER_INVALID');
         return locked(input, async (query, subscription, receiver) => {
+            const processingParts = [receiver?.processing_lease_token, receiver?.processing_worker_id, receiver?.processing_lease_expires_at_ms, receiver?.processing_revision];
+            if (processingParts.some(value => value != null)) {
+                if (typeof receiver.processing_lease_token !== 'string' || !/^[0-9a-f]{64}$/.test(receiver.processing_lease_token)
+                    || typeof receiver.processing_worker_id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(receiver.processing_worker_id)
+                    || receiver.processing_lease_expires_at_ms == null || !Number.isSafeInteger(Number(receiver.processing_lease_expires_at_ms))
+                    || receiver.processing_revision == null || !Number.isSafeInteger(Number(receiver.processing_revision))) fail('X_PUSH_OFFLINE_STATE_INVALID');
+            }
             if (receiver?.state === 'requires_reenrollment' || receiver?.lease_token && Number(receiver.lease_expires_at_ms) > now()
                 || Number(receiver?.retry_at_ms || 0) > now()) return null;
             const token = randomBytes(32).toString('hex'), expiresAtMs = now() + leaseMs, revision = Number(subscription.revision);
-            await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,lease_token,worker_id,subscription_revision,lease_expires_at_ms,updated_at_ms)
-                VALUES (?,'connecting',NULL,?,?,?,?,?) ON DUPLICATE KEY UPDATE state='connecting',reason_code=NULL,lease_token=VALUES(lease_token),worker_id=VALUES(worker_id),subscription_revision=VALUES(subscription_revision),lease_expires_at_ms=VALUES(lease_expires_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
-                [input.subscriptionId, token, input.workerId, revision, expiresAtMs, now()]);
+            let connectionGeneration;
+            if (receiver && Object.hasOwn(receiver, 'connection_generation')) {
+                if (['processing_lease_token', 'processing_worker_id', 'processing_lease_expires_at_ms', 'processing_revision']
+                    .some(name => !Object.hasOwn(receiver, name))) fail('X_PUSH_OFFLINE_MIGRATION_REQUIRED');
+                const previous = Number(receiver.connection_generation);
+                if (!Number.isSafeInteger(previous) || previous < 0 || previous >= Number.MAX_SAFE_INTEGER) fail('X_PUSH_OFFLINE_STATE_INVALID');
+                connectionGeneration = previous + 1;
+                // Network work takes precedence over offline drains. Both
+                // ownership changes happen under the receiver row lock;
+                // processing operations fence this token before writing.
+                await query(`UPDATE automation_x_push_receivers SET state='connecting',reason_code=NULL,lease_token=?,worker_id=?,subscription_revision=?,lease_expires_at_ms=?,connection_generation=?,processing_lease_token=NULL,processing_worker_id=NULL,processing_lease_expires_at_ms=NULL,processing_revision=NULL,updated_at_ms=? WHERE subscription_id=?`,
+                    [token, input.workerId, revision, expiresAtMs, connectionGeneration, now(), input.subscriptionId]);
+            } else {
+                // The additive migration is not required for the existing
+                // receiver path. Processing-only work cannot start on it.
+                await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,lease_token,worker_id,subscription_revision,lease_expires_at_ms,updated_at_ms)
+                    VALUES (?,'connecting',NULL,?,?,?,?,?) ON DUPLICATE KEY UPDATE state='connecting',reason_code=NULL,lease_token=VALUES(lease_token),worker_id=VALUES(worker_id),subscription_revision=VALUES(subscription_revision),lease_expires_at_ms=VALUES(lease_expires_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
+                    [input.subscriptionId, token, input.workerId, revision, expiresAtMs, now()]);
+            }
             let sealedEnvelope;
             try { sealedEnvelope = JSON.parse(subscription.sealed_json); } catch { fail('X_PUSH_VAULT_INVALID'); }
-            return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope };
-        }, { createReceiver: true });
+            return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope,
+                ...(connectionGeneration === undefined ? {} : { connectionGeneration }) };
+        }, { createReceiver: true, authorize, signal });
     }
     async function renew(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -116,15 +165,16 @@ function createXPushStore(db, options = {}) {
             // generation after the socket watchdog has already closed it.
             fence(lease, subscription, receiver);
             return { ...lease, expiresAtMs };
-        });
+        }, { postAuthorize: authorize });
     }
-    async function assertLease(lease, { authorize } = { authorize: undefined }) {
+    /** @param {any} lease @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function assertLease(lease, { authorize, signal } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (authorize) await authorize(query);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return true;
-        });
+        }, { signal, postAuthorize: authorize });
     }
     async function chromeCheckinState(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -137,7 +187,7 @@ function createXPushStore(db, options = {}) {
             if (!Number.isSafeInteger(checkedAtMs) || checkedAtMs < 0 || !Number.isSafeInteger(intervalSeconds)
                 || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
             return { checkedAtMs, intervalSeconds };
-        });
+        }, { postAuthorize: authorize });
     }
     async function recordChromeCheckin(lease, { intervalSeconds }, { authorize } = { authorize: undefined }) {
         if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
@@ -150,7 +200,7 @@ function createXPushStore(db, options = {}) {
                 [checkedAtMs, intervalSeconds, lease.revision, lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { checkedAtMs, intervalSeconds };
-        });
+        }, { postAuthorize: authorize });
     }
     // This API is inert until an Edge intake and receiver are explicitly wired.
     // A token is never returned until the lease and authorization transaction commits.
@@ -185,7 +235,7 @@ function createXPushStore(db, options = {}) {
                     revision: lease.revision, generation: state.generation });
                 fence(lease, subscription, receiver);
                 return { generation: state.generation, token: opened };
-            });
+            }, { postAuthorize: authorize });
         } catch (error) { opened?.fill(0); throw error; }
     }
     /** @param {any} lease @param {{vault?: any, authorize?: any, token?: Buffer, expectedGeneration?: number}} [options] */
@@ -208,9 +258,10 @@ function createXPushStore(db, options = {}) {
                 [serialized, lease.revision, generation, lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { generation };
-        });
+        }, { postAuthorize: authorize });
     }
-    async function markState(lease, state, reasonCode = null) {
+    /** @param {any} lease @param {any} state @param {any} [reasonCode] @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function markState(lease, state, reasonCode = null, { authorize, signal } = {}) {
         if (!STATES.has(state)) fail('X_PUSH_STATE_INVALID');
         validReason(reasonCode);
         return locked(lease, async (query, subscription, receiver) => {
@@ -218,7 +269,7 @@ function createXPushStore(db, options = {}) {
             await query(`UPDATE automation_x_push_receivers SET state=?,reason_code=?,updated_at_ms=?${state === 'listening' ? ',last_connected_at_ms=?' : ''} WHERE subscription_id=?`,
                 [state, reasonCode, now(), ...(state === 'listening' ? [now()] : []), lease.subscriptionId]);
             return { state, reasonCode };
-        });
+        }, { authorize, signal });
     }
     async function release(lease, { state = 'stopped', reasonCode = null } = {}) {
         if (!['stopped', 'error', 'requires_reenrollment'].includes(state)) fail('X_PUSH_STATE_INVALID');
@@ -229,7 +280,7 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
-    async function recordFrame(lease, input, { authorize, mcsPending = false } = { authorize: undefined }) {
+    async function recordFrame(lease, input, { authorize, mcsPending = false, deferPendingOnLimit = false } = { authorize: undefined }) {
         const headers = validateFrame(input);
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -246,6 +297,10 @@ function createXPushStore(db, options = {}) {
             let row = (await query('SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND version=?', [lease.subscriptionId, input.version]))[0];
             const duplicate = Boolean(row);
             if (mcsPending && row && Number(row.subscription_revision) !== lease.revision) fail('X_PUSH_REVISION_CONFLICT');
+            // A persistent ID is a replay key, not permission to substitute a
+            // different ciphertext or encryption envelope for an existing row.
+            // Processing status and ACK code can legitimately change later.
+            if (mcsPending && row && (row.data_ciphertext !== input.data || !sameMcsHeaders(row.headers_json, headers))) fail('X_PUSH_MCS_ID_CONFLICT');
             if (!row) {
                 const result = await query(`INSERT INTO automation_x_push_inbox (subscription_id,subscription_revision,version,data_ciphertext,headers_json,ack_code,status,received_at_ms) VALUES (?,?,?,?,?,?,?,?)`,
                     [lease.subscriptionId, lease.revision, input.version, input.data, JSON.stringify(headers), input.ackCode, input.status, now()]);
@@ -257,21 +312,30 @@ function createXPushStore(db, options = {}) {
                 if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
                 const same = pending.find(item => item.persistent_id === input.version);
                 if (same && (same.inbox_id == null || String(same.inbox_id) !== String(row.id))) fail('X_PUSH_MCS_ID_CONFLICT');
-                if (pending.length >= 100 && !pending.some(item => item.persistent_id === input.version)) fail('X_PUSH_MCS_PENDING_LIMIT');
-                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
-                    VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
-                [lease.subscriptionId, lease.revision, input.version, row.id, now()]);
+                if (pending.length >= 100 && !same) {
+                    // Disconnected recovery sends no ACK. If the login replay
+                    // list is full, keep the ciphertext but leave this ID for
+                    // the provider to replay after existing IDs are confirmed.
+                    if (!deferPendingOnLimit) fail('X_PUSH_MCS_PENDING_LIMIT');
+                } else {
+                    await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                        VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                    [lease.subscriptionId, lease.revision, input.version, row.id, now()]);
+                }
             }
             // Time can elapse during a slow database operation. Throwing here
             // rolls back the insert, and the caller must close without an ACK.
             fence(lease, subscription, receiver);
             return { ...inboxDto(row, lease.ownerUserId), duplicate };
-        });
+        }, { postAuthorize: authorize });
     }
     async function recordMcsFrame(lease, input, { authorize } = { authorize: undefined }) {
         return recordFrame(lease, input, { authorize, mcsPending: true });
     }
-    async function recordMcsControl(lease, input, { authorize } = { authorize: undefined }) {
+    async function recordMcsRecoveryFrame(lease, input, { authorize } = { authorize: undefined }) {
+        return recordFrame(lease, input, { authorize, mcsPending: true, deferPendingOnLimit: true });
+    }
+    async function recordMcsControlInternal(lease, input, { authorize } = { authorize: undefined }, deferPendingOnLimit = false) {
         if (!input || !['deleted_messages', 'send_error'].includes(input.kind)
             || input.persistentId !== null && (typeof input.persistentId !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.persistentId)))
             fail('X_PUSH_FRAME_INVALID');
@@ -288,10 +352,13 @@ function createXPushStore(db, options = {}) {
                 if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
                 const same = pending.find(item => item.persistent_id === input.persistentId);
                 if (same && same.inbox_id != null) fail('X_PUSH_MCS_ID_CONFLICT');
-                if (pending.length >= 100 && !same) fail('X_PUSH_MCS_PENDING_LIMIT');
-                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
-                    VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
-                [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+                if (pending.length >= 100 && !same) {
+                    if (!deferPendingOnLimit) fail('X_PUSH_MCS_PENDING_LIMIT');
+                } else {
+                    await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                        VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                    [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+                }
             }
             const previous = idHash === null ? [] : await query(`SELECT action FROM automation_audit WHERE actor_user_id=? AND entity_id=?
                 AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
@@ -301,8 +368,10 @@ function createXPushStore(db, options = {}) {
                 [lease.ownerUserId, lease.subscriptionId, action, JSON.stringify({ revision: lease.revision, providerEventIdHash: idHash }), now()]);
             fence(lease, subscription, receiver);
             return { duplicate: previous.length > 0 };
-        });
+        }, { postAuthorize: authorize });
     }
+    async function recordMcsControl(lease, input, options) { return recordMcsControlInternal(lease, input, options); }
+    async function recordMcsRecoveryControl(lease, input, options) { return recordMcsControlInternal(lease, input, options, true); }
     async function pendingMcs(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -313,7 +382,7 @@ function createXPushStore(db, options = {}) {
             if (rows.length > 100) fail('X_PUSH_MCS_PENDING_LIMIT');
             if (rows.some(row => Number(row.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
             return rows.map(row => row.persistent_id);
-        });
+        }, { postAuthorize: authorize });
     }
     async function confirmMcs(lease, ids, { authorize } = { authorize: undefined }) {
         if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length
@@ -325,23 +394,27 @@ function createXPushStore(db, options = {}) {
                 [lease.subscriptionId, lease.revision, ids]);
             fence(lease, subscription, receiver);
             return Number(result.affectedRows);
-        });
+        }, { postAuthorize: authorize });
     }
-    async function markRouted(lease, id) {
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function markRouted(lease, id, { signal, authorize } = {}) {
         if (!/^[0-9]{1,20}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='routed',routed_at_ms=? WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [now(), String(id), lease.subscriptionId, lease.revision]);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return result.affectedRows === 1;
-        });
+        }, { signal, authorize });
     }
-    async function auditUse(lease, outcome) {
+    /** @param {any} lease @param {any} outcome @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function auditUse(lease, outcome, { signal, authorize } = {}) {
         if (!['opened', 'failed'].includes(outcome)) fail('X_PUSH_AUDIT_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.vault.open', JSON.stringify({ revision: lease.revision, outcome }), now()]);
-        });
+            fence(lease, subscription, receiver, { allowProcessing: true });
+        }, { signal, authorize });
     }
     async function getInbox(input) {
         identity(input);
@@ -360,37 +433,39 @@ function createXPushStore(db, options = {}) {
         const afterId = input.afterId || '0', limit = input.limit ?? 20;
         if (!/^[0-9]{1,20}$/.test(String(afterId)) || !Number.isInteger(limit) || limit < 1 || limit > 20) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const rows = await query("SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND subscription_revision=? AND id>? AND status='unsupported' AND ack_code=100 ORDER BY id LIMIT ?",
                 [lease.subscriptionId, lease.revision, String(afterId), limit]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return rows.map(row => inboxDto(row, lease.ownerUserId));
-        });
+        }, { signal: input.signal });
     }
-    async function restoreQuarantinedInbox(lease, inboxId, { authorize } = { authorize: undefined }) {
+    /** @param {any} lease @param {any} inboxId @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function restoreQuarantinedInbox(lease, inboxId, { authorize, signal } = { authorize: undefined }) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (authorize) await authorize(query);
             const result = await query("UPDATE automation_x_push_inbox SET status='received' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='unsupported' AND ack_code=100",
                 [String(inboxId), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.adapter.recovered', JSON.stringify({ inboxId: String(inboxId), adapterVersion: 1 }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal });
     }
-    async function markUnmatched(lease, inboxId) {
+    /** @param {any} lease @param {any} inboxId @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function markUnmatched(lease, inboxId, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='unmatched' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'",
                 [String(inboxId), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.target.unmatched', JSON.stringify({ inboxId: String(inboxId) }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal, authorize });
     }
     async function status(input) {
         identity(input);
@@ -402,14 +477,14 @@ function createXPushStore(db, options = {}) {
         const rows = await db.queryDatabase('SELECT s.id,s.revision,s.updated_at_ms,r.state,r.reason_code,r.last_connected_at_ms,r.lease_expires_at_ms,r.retry_at_ms,r.retry_attempt FROM automation_x_subscriptions s LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id WHERE s.owner_user_id=? ORDER BY s.id LIMIT 100', [ownerUserId]);
         return rows.map(row => stateDto(row, now()));
     }
-    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>,resolveProcessing?:(query:any)=>Promise<{effectiveMode:string,intervalMinutes:number|null}>}} [options] */
+    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>,resolveProcessing?:(query:any)=>Promise<{effectiveMode:string,intervalMinutes:number|null}>,signal?:AbortSignal,authorize?:(query:any)=>Promise<void>}} [options] */
     async function beginProcessing(lease, intervalMinutes, options = {}) {
         if (options.resolveInterval !== undefined && typeof options.resolveInterval !== 'function') fail('X_PUSH_PROCESSING_INVALID');
         if (options.resolveProcessing !== undefined && typeof options.resolveProcessing !== 'function'
             || options.resolveProcessing && options.resolveInterval) fail('X_PUSH_PROCESSING_INVALID');
         if (!options.resolveInterval && !options.resolveProcessing && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080)) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             // Recheck the owner's persisted choice and the current contract's
             // explicit permission under the same owner lock as plan changes.
             // A zero delay is available only through this trusted resolver.
@@ -417,7 +492,7 @@ function createXPushStore(db, options = {}) {
             const processingMode = processing ? processing.effectiveMode : 'batch';
             const selectedInterval = processingMode === 'realtime' ? 0
                 : processing ? processing.intervalMinutes : options.resolveInterval ? await options.resolveInterval(query) : intervalMinutes;
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (!['batch', 'realtime'].includes(processingMode) || !Number.isSafeInteger(selectedInterval)
                 || selectedInterval < (processingMode === 'realtime' ? 0 : 1) || selectedInterval > 10080)
                 return { ready: false, code: 'X_MONITOR_NOT_CONFIGURED' };
@@ -434,55 +509,60 @@ function createXPushStore(db, options = {}) {
             if (dueAtMs > now()) return { ready: false, dueAtMs };
             const windowAtMs = now();
             await query('UPDATE automation_x_push_receivers SET process_window_at_ms=?,process_window_mode=?,process_cursor_id=0 WHERE subscription_id=?', [windowAtMs, processingMode, lease.subscriptionId]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return { ready: true, windowAtMs, cursorId: '0', processingMode };
-        });
+        }, { signal: options.signal, authorize: options.authorize });
     }
-    async function advanceProcessing(lease, input) {
+    /** @param {any} lease @param {any} input @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function advanceProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0 || !/^[1-9]\d{0,19}$/.test(String(input.cursorId))) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (receiver.process_window_at_ms == null || Number(receiver.process_window_at_ms) !== input.windowAtMs
                 || BigInt(input.cursorId) < BigInt(receiver.process_cursor_id)) fail('X_PUSH_PROCESSING_INVALID');
             await query('UPDATE automation_x_push_receivers SET process_cursor_id=? WHERE subscription_id=?', [String(input.cursorId), lease.subscriptionId]);
-            fence(lease, subscription, receiver);
-        });
+            fence(lease, subscription, receiver, { allowProcessing: true });
+        }, { signal, authorize });
     }
-    async function completeProcessing(lease, input) {
+    /** @param {any} lease @param {any} input @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function completeProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (receiver.process_window_at_ms == null || Number(receiver.process_window_at_ms) !== input.windowAtMs) fail('X_PUSH_PROCESSING_INVALID');
             // Reset on every completed window: records which remained pending
             // are reconsidered next time, even when later records were routed.
             await query('UPDATE automation_x_push_receivers SET last_process_at_ms=?,process_window_at_ms=NULL,process_window_mode=NULL,process_cursor_id=0 WHERE subscription_id=?', [input.windowAtMs, lease.subscriptionId]);
-            fence(lease, subscription, receiver);
-        });
+            fence(lease, subscription, receiver, { allowProcessing: true });
+        }, { signal, authorize });
     }
-    async function markUnsupported(lease, id) {
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function markUnsupported(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='unsupported' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [String(id), lease.subscriptionId, lease.revision]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return result.affectedRows === 1;
-        });
+        }, { signal, authorize });
     }
-    async function markRecoveryQuarantined(lease, id) {
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
+    async function markRecoveryQuarantined(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const row = (await query('SELECT id,received_at_ms FROM automation_x_push_inbox WHERE id=? AND subscription_id=? AND subscription_revision=? FOR UPDATE', [String(id), lease.subscriptionId, lease.revision]))[0];
             if (!row || require('./recovery-origin').inboxAllowed({ id: row.id, subscriptionId: lease.subscriptionId, revision: lease.revision, receivedAtMs: Number(row.received_at_ms) })) return false;
             const result = await query("UPDATE automation_x_push_inbox SET status='recovery_quarantined' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status IN ('received','unsupported')", [String(id), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.recovery.quarantine', JSON.stringify({ inboxId: String(id), revision: lease.revision }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal, authorize });
     }
     async function recordRetry(input, reasonCode, delayMs) {
         if (!Number.isSafeInteger(input?.revision) || input.revision < 1) fail('X_PUSH_IDENTITY_INVALID');
+        if (input.connectionGeneration !== undefined && (!Number.isSafeInteger(input.connectionGeneration) || input.connectionGeneration < 1)) fail('X_PUSH_IDENTITY_INVALID');
         validReason(reasonCode);
         if (reasonCode === null || !Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > 86400000) fail('X_PUSH_RETRY_INVALID');
         return locked(input, async (query, subscription, receiver) => {
@@ -492,6 +572,12 @@ function createXPushStore(db, options = {}) {
             // turn a subscription requiring explicit reenrollment into a retry.
             if (receiver?.state === 'requires_reenrollment' || receiver?.lease_token && Number(receiver.lease_expires_at_ms) > now())
                 return { recorded: false, ...previous };
+            if (input.connectionGeneration !== undefined && Number(receiver?.connection_generation) !== input.connectionGeneration)
+                return { recorded: false, ...previous };
+            // An older caller without a generation cannot prove it belongs to
+            // the connection preceding an active processing-only owner.
+            if (receiver?.processing_lease_token && Number(receiver.processing_lease_expires_at_ms) > now() && input.connectionGeneration === undefined)
+                return { recorded: false, ...previous };
             const retryAttempt = Math.min(64, (Number(receiver?.subscription_revision) === input.revision ? previous.retryAttempt : 0) + 1);
             const retryAtMs = Math.max(now() + delayMs, previous.retryAtMs || 0);
             await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,subscription_revision,retry_at_ms,retry_attempt,updated_at_ms)
@@ -500,15 +586,16 @@ function createXPushStore(db, options = {}) {
             return { recorded: true, retryAtMs, retryAttempt };
         });
     }
-    async function resetRetry(lease) {
+    /** @param {any} lease @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function resetRetry(lease, { authorize, signal } = {}) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             await query('UPDATE automation_x_push_receivers SET retry_at_ms=NULL,retry_attempt=0 WHERE subscription_id=?', [lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { retryAtMs: null, retryAttempt: 0 };
-        });
+        }, { authorize, signal });
     }
-    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
+    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsRecoveryFrame, recordMcsControl, recordMcsRecoveryControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }

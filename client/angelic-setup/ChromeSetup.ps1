@@ -21,7 +21,7 @@ $script:AppId = 'x-notification-setup'
 $script:UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
 $script:SystemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
 $script:PackageRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$script:PackageVersion = '0.1.0-chrome-preview.4'
+$script:PackageVersion = '0.1.0-chrome-preview.9'
 
 function Fail-Safely([string]$Code,[string]$Message) { throw ($Code + ': ' + $Message) }
 function Get-PathAttributes([string]$Path) {

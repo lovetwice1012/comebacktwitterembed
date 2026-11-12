@@ -1,0 +1,101 @@
+name: macOS Chrome disposable database integration
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-chrome-db-fixture.yml
+      - scripts/native-test/chrome-mac-*.cjs
+      - scripts/test/chrome-mac-synthetic-db.test.js
+      - scripts/test/automation-chrome-mcs-sql.test.js
+      - scripts/test/automation-chrome-mcs-gateway-sql.test.js
+      - scripts/test/automation-x-recovery-fence-sql.test.js
+      - scripts/test/automation-x-push-admission-race-sql.test.js
+      - scripts/test/automation-x-push-authority.test.js
+      - scripts/test/automation-edge-authority-race.test.js
+      - scripts/test/automation-x-push-authority-sql.test.js
+      - scripts/test/automation-x-push-monitor-race-sql.test.js
+      - scripts/test/automation-x-push-monitor-hello-sql.test.js
+      - scripts/test/automation-x-push-checkin-race-sql.test.js
+      - scripts/test/automation-x-push-runtime-retry.test.js
+      - scripts/test/automation-x-push-capacity.test.js
+      - scripts/test/automation-x-offline-lease-sql.test.js
+      - scripts/test/automation-x-offline-runtime-sql.test.js
+      - scripts/test/chrome-packaged-cadence.test.js
+      - scripts/test/chrome-packaged-cadence-sql.test.js
+      - experiments/chrome-push/packaged-cadence-fixture.cjs
+      - src/automation/chrome-mac-*.js
+      - src/automation/chrome-mcs-*.js
+      - src/automation/chrome-checkin-runner.js
+      - src/automation/edge-wns-gateway.js
+      - src/automation/x-push-store.js
+      - src/automation/x-push-gateway.js
+      - src/automation/x-push-runtime.js
+      - src/automation/x-push-offline-*.js
+      - src/automation/x-event-router.js
+      - src/automation/queue.js
+      - src/automation/x-setup*.js
+      - scripts/lib/automation-test-db.js
+      - migrations/20261112_add_x_push_processing_lease.sql
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: macos-15
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install locked test dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Install MariaDB for the disposable runner
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install mariadb@11.8
+      - name: Prepare isolated browser fixture
+        run: |
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+          sudo xattr -cr '/Applications/Google Chrome.app'
+          keychain="$RUNNER_TEMP/cbte-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
+      - name: Run against a disposable loopback database
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+          CBTE_MAC_DB_FIXTURE: '1'
+          CBTE_MAC_REAL_ROUTE_FIXTURE: '1'
+          AUTOMATION_TEST_DB_PORT: '33621'
+        run: |
+          set -eu
+          dbbase="$(brew --prefix mariadb@11.8)"
+          dbdir="$RUNNER_TEMP/cbte-mariadb-data"
+          mkdir -m 700 "$dbdir"
+          "$dbbase/bin/mariadb-install-db" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --auth-root-authentication-method=normal --skip-test-db > /dev/null
+          "$dbbase/bin/mariadbd" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --socket="$RUNNER_TEMP/cbte-mariadb.sock" --pid-file="$RUNNER_TEMP/cbte-mariadb.pid" --log-error="$RUNNER_TEMP/cbte-mariadb.log" --bind-address=127.0.0.1 --port=33621 --skip-name-resolve --skip-log-bin &
+          dbpid=$!
+          trap 'kill "$dbpid" 2>/dev/null || true; wait "$dbpid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if "$dbbase/bin/mariadb-admin" --no-defaults --protocol=tcp -h 127.0.0.1 -P 33621 -u root ping > /dev/null 2>&1; then ready=1; break; fi
+            if ! kill -0 "$dbpid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          node --test --test-concurrency=1 scripts/test/automation-chrome-mcs-sql.test.js scripts/test/automation-chrome-mcs-gateway-sql.test.js scripts/test/automation-x-recovery-fence-sql.test.js scripts/test/automation-x-push-admission-race-sql.test.js scripts/test/automation-x-push-authority.test.js scripts/test/automation-edge-authority-race.test.js scripts/test/automation-x-push-authority-sql.test.js scripts/test/automation-x-push-monitor-race-sql.test.js scripts/test/automation-x-push-monitor-hello-sql.test.js scripts/test/automation-x-push-checkin-race-sql.test.js scripts/test/automation-x-push-runtime-retry.test.js scripts/test/automation-x-push-capacity.test.js scripts/test/automation-x-offline-lease-sql.test.js scripts/test/automation-x-offline-runtime-sql.test.js scripts/test/chrome-packaged-cadence.test.js scripts/test/chrome-packaged-cadence-sql.test.js
+          CBTE_MAC_REAL_ROUTE_FIXTURE=0 node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
+          node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs

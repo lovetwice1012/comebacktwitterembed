@@ -1,0 +1,54 @@
+name: macOS Chrome fresh subscription timing comparison
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-chrome-fcm-paired.yml
+      - scripts/native-test/chrome-mac-410-paired.cjs
+      - scripts/native-test/chrome-mac-410-paired-hosted.test.cjs
+      - scripts/test/chrome-mac-410-paired.test.js
+      - scripts/native-test/chrome-mac-push-error.cjs
+      - src/automation/chrome-mac-profile.js
+      - src/automation/chrome-mac-broker.js
+      - src/automation/chrome-mac-process-group.js
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  paired:
+    name: ${{ matrix.os }} / trial ${{ matrix.trial }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+        trial: [1, 2]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare disposable hosted keychain
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo xattr -cr '/Applications/Google Chrome.app'
+          keychain="$RUNNER_TEMP/cbte-paired-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
+      - name: Compare two fresh synthetic subscriptions
+        env:
+          CBTE_MAC_410_PAIRED: '1'
+        run: node --test --test-concurrency=1 scripts/test/chrome-mac-410-paired.test.js scripts/native-test/chrome-mac-410-paired-hosted.test.cjs

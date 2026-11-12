@@ -50,6 +50,48 @@ function braveFixture() {
     file.push.productCategory = 'com.brave.windows';
     return file;
 }
+test('Mac Brave intake is separately gated and encrypted without affecting Windows Brave', async t => setup(t, async db => {
+    const file = braveFixture(); file.push.productCategory = 'com.brave.macosx';
+    const macSealer = createTransferPublicSealer({ ...vaultConfig, allowBraveMac: true });
+    for (const flags of [
+        { chromeEnabled: true, braveEnabled: true, braveMacEnabled: false, receiverEnabled: true },
+        { chromeEnabled: true, braveEnabled: false, braveMacEnabled: true, receiverEnabled: true },
+        { chromeEnabled: false, braveEnabled: true, braveMacEnabled: true, receiverEnabled: true },
+    ]) {
+        const disabled = createXSetup(db, { sealer: macSealer, ...flags });
+        const rejected = await payload(disabled, A, file);
+        await assert.rejects(disabled.validate(A, { sessionId: rejected.sessionId, fileText: rejected.fileText }), code('X_SETUP_INVALID_FILE'));
+        await assert.rejects(disabled.importFile(A, rejected), code('X_SETUP_INVALID_FILE'));
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 0);
+    }
+    const service = createXSetup(db, { sealer: macSealer, chromeEnabled: true, braveEnabled: true, braveMacEnabled: true, receiverEnabled: true });
+    const body = await payload(service, A, file);
+    assert.equal((await service.validate(A, { sessionId: body.sessionId, fileText: body.fileText })).browserKind, 'brave');
+    const saved = await service.importFile(A, body);
+    const row = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    assert(!JSON.stringify(row).includes(file.push.securityToken));
+    const worker = createTransferPrivateWorkerVault({ activeKeyId: 'fixture1', privateKeys: { fixture1: privateKey }, allowBraveMac: true });
+    assert.deepEqual(worker.open(JSON.parse(row.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), file);
+    await assert.rejects(service.importFile(B, await payload(service, B, file)), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+    const repeated = await service.importFile(A, await payload(service, A, file));
+    assert.equal(repeated.duplicate, true); assert.equal(repeated.subscription.id, saved.subscription.id);
+}));
+test('Mac Chrome intake is separately gated and the enabled transfer stays owner-bound', async t => setup(t, async db => {
+    const file = chromeFixture(); file.push.productCategory = 'com.chrome.macosx';
+    const disabled = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: false, receiverEnabled: true });
+    const rejected = await payload(disabled, A, file);
+    await assert.rejects(disabled.validate(A, { sessionId: rejected.sessionId, fileText: rejected.fileText }), code('X_SETUP_CHROME_MAC_NOT_READY'));
+    await assert.rejects(disabled.importFile(A, rejected), code('X_SETUP_CHROME_MAC_NOT_READY'));
+    assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 0);
+    const enabled = createXSetup(db, { sealer, chromeEnabled: true, chromeMacEnabled: true, receiverEnabled: true });
+    const body = await payload(enabled, A, file);
+    assert.equal((await enabled.validate(A, { sessionId: body.sessionId, fileText: body.fileText })).formatVersion, 2);
+    const saved = await enabled.importFile(A, body);
+    const row = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture1', privateKeys: { fixture1: privateKey } });
+    assert.deepEqual(vault.open(JSON.parse(row.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), file);
+    await assert.rejects(enabled.importFile(B, await payload(enabled, B, file)), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+}));
 test('Brave intake is gated, owner-bound and retains distinct browser and engine versions', async t => setup(t, async db => {
     const file = braveFixture(), disabled = createXSetup(db, { sealer, chromeEnabled: false, receiverEnabled: true });
     const rejected = await payload(disabled, A, file);
@@ -211,6 +253,29 @@ test('concurrent same-session, same-owner and cross-owner imports cannot duplica
     assert.equal(crossed.filter(row => row.status === 'fulfilled').length, 1);
     assert.equal(crossed.find(row => row.status === 'rejected').reason.code, 'X_SETUP_SUBSCRIPTION_CONFLICT');
     assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 2);
+}));
+
+test('scheduled Chrome reconnect is shown only for an active, current owner subscription', async t => setup(t, async db => {
+    let clock = 1000000;
+    const service = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: true, rolloutMode: 'public', now: () => clock });
+    const file = chromeFixture(), saved = (await service.importFile(A, await payload(service, A, file))).subscription;
+    await db.queryDatabase("INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,subscription_revision,retry_at_ms,retry_attempt,updated_at_ms) VALUES (?,'error','X_PUSH_CHROME_LOGIN_FAILED',1,?,1,?)", [saved.id, clock + 5000, clock]);
+    const get = async () => (await service.status(A)).subscriptions[0];
+    assert.equal((await get()).receiverRetryPending, undefined, 'a missing active monitor is not retryable');
+    const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','synthetic','fixture',1,'ready','free',?,'bound',1,?,?)",
+        [A.userId, JSON.stringify({ subscriptionId: saved.id }), clock, clock]);
+    const pending = await get(); assert.equal(pending.receiverRetryPending, true);
+    assert(!JSON.stringify(pending).includes('X_PUSH_CHROME_LOGIN_FAILED'));
+    assert.equal((await service.status(B)).subscriptions.length, 0);
+    await db.queryDatabase('UPDATE automation_x_monitors SET enabled=0 WHERE id=?', [monitor.insertId]);
+    assert.equal((await get()).receiverRetryPending, undefined);
+    await db.queryDatabase('UPDATE automation_x_monitors SET enabled=1 WHERE id=?', [monitor.insertId]);
+    await db.queryDatabase('UPDATE automation_x_push_receivers SET subscription_revision=2 WHERE subscription_id=?', [saved.id]);
+    assert.equal((await get()).receiverRetryPending, undefined);
+    await db.queryDatabase('UPDATE automation_x_push_receivers SET subscription_revision=1 WHERE subscription_id=?', [saved.id]);
+    clock += 5000; assert.equal((await get()).receiverRetryPending, undefined);
+    const disabled = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: false, rolloutMode: 'public', now: () => clock - 1 });
+    assert.equal((await disabled.status(A)).subscriptions[0].receiverRetryPending, undefined);
 }));
 
 test('receipt status counts stay scoped to each owned subscription and expose no encrypted material', async t => setup(t, async db => {

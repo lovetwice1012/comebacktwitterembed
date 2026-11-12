@@ -1,0 +1,36 @@
+name: macOS Safari APNs service state
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-safari-apsd-diagnostic.yml
+      - scripts/native-test/safari-hosted-push-subscribe.test.cjs
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Inspect read-only hosted service state
+        env:
+          CBTE_SAFARI_PUSH_HOSTED: '1'
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          node --test --test-name-pattern='hosted macOS records apsd state without changing it' scripts/native-test/safari-hosted-push-subscribe.test.cjs

@@ -26,7 +26,7 @@ function base64url(value, size) {
     if (result.length !== size || result.toString('base64url') !== value) throw INVALID();
     return result;
 }
-function normalizeChromeTransfer(file) {
+function normalizeChromeTransfer(file, { allowMac = true, allowBraveMac = false } = {}) {
     try {
         object(file, ['format', 'version', 'provenance', 'push']);
         if (file.format !== 'x-notification-subscription' || file.version !== 2) throw INVALID();
@@ -44,7 +44,8 @@ function normalizeChromeTransfer(file) {
         const push = file.push;
         decimal(push.deviceId); decimal(push.securityToken);
         if (typeof push.appId !== 'string' || !APP_ID.test(push.appId)
-            || push.productCategory !== (isBrave ? 'com.brave.windows' : 'com.chrome.windows') || push.scope !== 'https://x.com/'
+            || !(isBrave ? push.productCategory === 'com.brave.windows' || allowMac === true && allowBraveMac === true && push.productCategory === 'com.brave.macosx'
+                : push.productCategory === 'com.chrome.windows' || allowMac === true && push.productCategory === 'com.chrome.macosx') || push.scope !== 'https://x.com/'
             || typeof push.authorizedEntity !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(push.authorizedEntity)) throw INVALID();
         const publicKey = base64url(push.p256dhPublicKey, 65);
         base64url(push.authenticationSecret, 16);
@@ -64,8 +65,8 @@ function normalizeChromeTransfer(file) {
                 p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y, d: jwk.d } } };
     } catch { throw INVALID(); }
 }
-function identifyChromeTransfer(file) {
-    const normalized = normalizeChromeTransfer(file), hash = data => createHash('sha256').update(data).digest('hex');
+function identifyChromeTransfer(file, options) {
+    const normalized = normalizeChromeTransfer(file, options), hash = data => createHash('sha256').update(data).digest('hex');
     return { deviceHash: hash('chrome-device\0' + normalized.push.deviceId),
         // Browser upgrades change provenance, not the Push subscription. Bind
         // idempotency to all device, routing and cryptographic material.

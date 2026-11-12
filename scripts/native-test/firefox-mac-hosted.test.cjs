@@ -1,0 +1,266 @@
+'use strict';
+// Only a fresh test directory and the preinstalled signed Firefox are used.
+// No existing Firefox profile, account, subscription or network data is read.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const { spawn, spawnSync } = require('node:child_process');
+const http = require('node:http');
+const vm = require('node:vm');
+const { createRequire } = require('node:module');
+const { randomBytes, createHash } = require('node:crypto');
+const { verifyInstalledMacFirefox } = require('../../src/automation/firefox-mac-browser');
+const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
+const { encodeMacFirefoxReaderInput } = require('../../src/automation/firefox-mac-reader-protocol');
+const { createMacFirefoxProfile } = require('../../src/automation/chrome-mac-profile');
+const { exportExperimentalMacFirefoxNotifications } = require('../../src/automation/firefox-mac-export-flow');
+const { runExperimentalMacFirefoxReader } = require('../../src/automation/firefox-mac-reader-supervisor');
+
+test('signed macOS Firefox reads a synthetic Push database with XPCShell',
+    { skip: process.platform !== 'darwin', timeout: 720000 }, async t => {
+        const temp = await fs.realpath(os.tmpdir()), token = randomBytes(16).toString('hex');
+        const parent = path.join(temp, `cbte-通知-${token}`), root = path.join(parent, `cbte-xpcshell-isolated-${token}`);
+        await fs.mkdir(parent, { mode: 0o700 }); await fs.mkdir(root, { mode: 0o700 });
+        let preserveRoot = false;
+        t.after(async () => {
+            // If the process group cannot be proven empty, leave only this
+            // synthetic root for the disposable hosted VM to clean up.
+            if (preserveRoot) return;
+            const real = await fs.realpath(root), realParent = await fs.realpath(parent);
+            assert.equal(path.dirname(realParent), temp); assert.match(path.basename(realParent), /^cbte-通知-[0-9a-f]{32}$/);
+            assert.equal(path.dirname(real), realParent); assert.match(path.basename(real), /^cbte-xpcshell-isolated-[0-9a-f]{32}$/);
+            await fs.rm(realParent, { recursive: true });
+        });
+        const browser = await verifyInstalledMacFirefox();
+        assert.equal(browser.executable, '/Applications/Firefox.app/Contents/MacOS/firefox');
+        assert.match(browser.version, /^[0-9A-Za-z._+-]{1,64}$/);
+        const script = 'print("CBTE_SYNTHETIC_STDIN_OK"); quit(0);\n';
+        const useSandbox = process.env.CBTE_MAC_SYNTHETIC_SANDBOX === '1';
+        const command = (args, sandbox = useSandbox) => sandbox
+            ? ['/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)(deny process-fork)(deny network*)', browser.executable, ...args]]
+            : [browser.executable, args];
+        const options = { cwd: root, input: script, encoding: 'utf8', timeout: 30000,
+            env: { HOME: root, TMPDIR: root, PATH: '/usr/bin:/bin', MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } };
+        async function runSynthetic(source, env, resultReady, sandbox = useSandbox, privateInput = undefined) {
+            const [executable, args] = command(['-xpcshell', '-e', source], sandbox);
+            const child = spawn(executable, args,
+                { cwd: root, env, detached: true, stdio: [privateInput ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+            let stdout = '', stderr = '', settled = false, timer, polling = false, stopForResult = false;
+            child.stdout.on('data', chunk => { if (stdout.length < 2000) stdout += chunk.toString('utf8').slice(0, 2000 - stdout.length); });
+            child.stderr.on('data', chunk => { if (stderr.length < 2000) stderr += chunk.toString('utf8').slice(0, 2000 - stderr.length); });
+            if (privateInput) {
+                child.stdin.on('error', () => { privateInput.fill(0); });
+                child.stdin.end(privateInput, () => { privateInput.fill(0); });
+            }
+            const exited = new Promise(resolve => {
+                child.once('error', error => { if (!settled) { settled = true; resolve({ error: error.code || 'ERROR' }); } });
+                child.once('exit', (code, signal) => { if (!settled) { settled = true; resolve({ code, signal }); } });
+            });
+            const poll = setInterval(() => {
+                if (polling || settled || stopForResult) return;
+                polling = true;
+                void Promise.resolve().then(resultReady).then(ready => {
+                    if (ready && !settled && !stopForResult) { stopForResult = true; child.kill('SIGTERM'); }
+                }).catch(() => {}).finally(() => { polling = false; });
+            }, 100);
+            let status;
+            try {
+                status = await Promise.race([exited, new Promise(resolve => { timer = setTimeout(() => resolve({ timeout: true }), 30000); })]);
+                if (status.timeout) {
+                    child.kill('SIGTERM');
+                    status = { timeout: true, result: await Promise.race([exited, new Promise(resolve => setTimeout(() => resolve(null), 3000))]) };
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+                let groupAlive = false;
+                if (child.pid) {
+                    try { process.kill(-child.pid, 0); groupAlive = true; }
+                    catch (error) { if (error.code !== 'ESRCH') groupAlive = true; }
+                }
+                if (groupAlive || !settled) preserveRoot = true;
+                return { status, stdout, stderr, groupAlive, stopForResult };
+            } finally { clearInterval(poll); clearTimeout(timer); child.stdin?.destroy(); privateInput?.fill(0); child.stdout.destroy(); child.stderr.destroy(); }
+        }
+        const execute = (args, opts) => { const [executable, actualArgs] = command(args); return spawnSync(executable, actualArgs, opts); };
+        const child = execute(['-xpcshell', '-f', '-'], options);
+        const viaDevice = execute(['-xpcshell', '-f', '/dev/stdin'], options);
+        const inline = execute(['-xpcshell', '-e', script], { ...options, input: '' });
+        for (const [name, value] of [['pipe', child], ['device', viaDevice], ['inline', inline]]) {
+            t.diagnostic(`${name}: status=${value.status} error=${value.error?.code || 'none'} stderr=${(value.stderr || '').slice(0, 1000)}`);
+        }
+        assert.equal(inline.error, undefined); assert.equal(inline.status, 0); assert.match(inline.stdout, /CBTE_SYNTHETIC_STDIN_OK/);
+        // readline() consumes a private, bounded ASCII JSON line even though
+        // using stdin as an entire -f script is unsupported on these Macs.
+        const privateInput = JSON.stringify({ tag: 'synthetic-only', path: '日本語/通知' })
+            .replace(/[\u007f-\uffff]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+        assert(Buffer.byteLength(privateInput) < 4095);
+        const stdinScript = 'const v=JSON.parse(readline());if(v.tag==="synthetic-only"&&v.path==="\\u65e5\\u672c\\u8a9e/\\u901a\\u77e5")print("CBTE_PRIVATE_PIPE_OK");else quit(9);quit(0);';
+        const privatePipe = execute(['-xpcshell', '-e', stdinScript], { ...options, input: `${privateInput}\n` });
+        assert.equal(Boolean(privatePipe.error), false); assert.equal(privatePipe.status, 0);
+        assert.match(privatePipe.stdout, /CBTE_PRIVATE_PIPE_OK/);
+        assert(!privatePipe.stdout.includes(privateInput)); assert(!(privatePipe.stderr || '').includes(privateInput));
+
+        if (useSandbox) {
+            const finish = `function finish(value) {
+              const f=Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile); f.initWithPath(Services.env.get('CBTE_CONTROL_RESULT'));
+              const s=Cc['@mozilla.org/network/file-output-stream;1'].createInstance(Ci.nsIFileOutputStream);
+              s.init(f,0x8a,0o600,0); s.write(value,value.length); s.close();
+            }`;
+            const forkScript = `${finish}
+              let result='denied'; try {
+                const f=Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile); f.initWithPath('/usr/bin/true');
+                const p=Cc['@mozilla.org/process/util;1'].createInstance(Ci.nsIProcess); p.init(f); p.run(true,[],0);
+                if(p.exitValue===0) result='allowed';
+              } catch {} finish(result); quit(0);`;
+            const server = http.createServer((_request, response) => { response.writeHead(204); response.end(); });
+            await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+            t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+            const networkScript = `${finish}
+              Cu.importGlobalProperties(['fetch']); let done=false;
+              fetch('http://127.0.0.1:${server.address().port}/').then(() => { finish('allowed'); done=true; },
+                () => { finish('denied'); done=true; });
+              Services.tm.spinEventLoopUntil('cbte-network-probe',()=>done); quit(0);`;
+            for (const [name, source, sandbox, expected] of [
+                ['fork-open', forkScript, false, 'allowed'], ['fork-closed', forkScript, true, 'denied'],
+                ['network-open', networkScript, false, 'allowed'], ['network-closed', networkScript, true, 'denied'],
+            ]) {
+                const resultFile = path.join(root, `control-${name}`);
+                const probe = await runSynthetic(source, { ...options.env, CBTE_CONTROL_RESULT: resultFile }, async () => {
+                    try { return ['allowed', 'denied'].includes(await fs.readFile(resultFile, 'utf8')); }
+                    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+                }, sandbox);
+                t.diagnostic(`${name}: status=${JSON.stringify(probe.status)} groupAlive=${probe.groupAlive} stderr=${probe.stderr}`);
+                assert(probe.status.code === 0 || probe.stopForResult && probe.status.signal === 'SIGTERM', `${name} process failed`);
+                assert.equal(probe.groupAlive, false); assert.equal(await fs.readFile(resultFile, 'utf8'), expected);
+            }
+        }
+
+        const seed = path.join(root, 'seed'), snapshot = path.join(root, `firefox-snapshot-${token}`);
+        await fs.mkdir(seed); await fs.mkdir(snapshot);
+        const fixturePath = path.resolve(__dirname, 'firefox-xpcshell-fixture.js');
+        const readerPath = path.resolve(__dirname, '../../client/angelic-setup/Read-PushSubscription.js');
+        const bootstrapPath = path.resolve(__dirname, '../../client/angelic-setup/mac/FirefoxXPCShellReader.js');
+        const seedSource = await fs.readFile(fixturePath, 'utf8'), bootstrap = await fs.readFile(bootstrapPath, 'utf8');
+        // Fixed, synthetic-only progress labels identify where this headless
+        // host stalls; they never include subscription data or paths.
+        const seedScript = seedSource
+            .replace("load(Services.env.get('CBTE_SYNTHETIC_READER'));", "dump('CBTE_STAGE_READER_LOADED\\n'); load(Services.env.get('CBTE_SYNTHETIC_READER')); dump('CBTE_STAGE_READER_READY\\n');")
+            .replace('const pair = await crypto.subtle.generateKey', "dump('CBTE_STAGE_KEY_START\\n'); const pair = await crypto.subtle.generateKey")
+            .replace('const publicKey = new Uint8Array', "dump('CBTE_STAGE_KEY_READY\\n'); const publicKey = new Uint8Array")
+            .replace("const request = indexedDB.openForPrincipal", "dump('CBTE_STAGE_DB_OPEN\\n'); const request = indexedDB.openForPrincipal")
+            .replace('tx.oncomplete = () => { db.close(); resolve(); };', "tx.oncomplete = () => { dump('CBTE_STAGE_DB_DONE\\n'); db.close(); resolve(); };")
+            .replace("report('CBTE_SYNTHETIC_SEED_OK'); done = true; return;", "dump('CBTE_STAGE_REPORT_START\\n'); report('CBTE_SYNTHETIC_SEED_OK'); dump('CBTE_STAGE_REPORT_DONE\\n'); done = true; return;")
+            .replace('quit(0);', "dump('CBTE_STAGE_QUIT\\n'); quit(0);");
+        assert.notEqual(seedScript, seedSource);
+        const readerHash = createHash('sha256').update(await fs.readFile(readerPath)).digest('hex');
+        const baseEnv = { ...options.env, CBTE_SYNTHETIC_PROFILE: seed, CBTE_SYNTHETIC_MODE: 'seed',
+            CBTE_SYNTHETIC_READER: readerPath, CBTE_SYNTHETIC_RESULT: path.join(root, 'result-seed.txt') };
+        const seeded = await runSynthetic(seedScript, baseEnv, async () => {
+            try { return await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8') === 'CBTE_SYNTHETIC_SEED_OK'; }
+            catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+        });
+        t.diagnostic(`seed: status=${JSON.stringify(seeded.status)} groupAlive=${seeded.groupAlive} stdout=${seeded.stdout} stderr=${seeded.stderr}`);
+        let seedFile = 'missing';
+        try { seedFile = await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8') === 'CBTE_SYNTHETIC_SEED_OK' ? 'valid' : 'unexpected'; }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        t.diagnostic(`seed-result-file: ${seedFile}`);
+        assert(seeded.status.code === 0 || seeded.stopForResult && seeded.status.signal === 'SIGTERM', 'synthetic seed process failed');
+        assert.equal(seeded.groupAlive, false);
+        assert.equal(await fs.readFile(path.join(root, 'result-seed.txt'), 'utf8'), 'CBTE_SYNTHETIC_SEED_OK');
+        const source = path.join(seed, 'storage/permanent/chrome/idb'), target = path.join(snapshot, 'storage/permanent/chrome/idb');
+        await fs.mkdir(target, { recursive: true });
+        const stem = '2918063365piupsah'; let copied = false;
+        for (const suffix of ['.sqlite', '.sqlite-wal', '.sqlite-shm', '.sqlite-journal']) {
+            try { await fs.copyFile(path.join(source, stem + suffix), path.join(target, stem + suffix)); if (suffix === '.sqlite') copied = true; }
+            catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
+        assert.equal(copied, true);
+        try { await fs.cp(path.join(source, `${stem}.files`), path.join(target, `${stem}.files`), { recursive: true, errorOnExist: true, force: false }); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        const resultPath = path.join(root, `firefox-result-${token}.json`);
+        const readerEnv = { ...options.env, CBTE_GECKO_INPUT: 'stdin-v1' };
+        const resultNonce = randomBytes(32).toString('hex');
+        const readerInput = encodeMacFirefoxReaderInput({ snapshotPath: snapshot, resultPath, readerPath,
+            readerSha256: readerHash, uaid: '22222222-2222-4222-8222-222222222222', browserVersion: browser.version, resultNonce });
+        const read = await runSynthetic(bootstrap, readerEnv, async () => {
+            try { const value = JSON.parse(await fs.readFile(resultPath, 'utf8')); return value.ok === true && value.proof === resultNonce && value.export?.push?.scope === 'https://x.com/'; }
+            catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error; }
+        }, useSandbox, readerInput);
+        t.diagnostic(`reader: status=${JSON.stringify(read.status)} groupAlive=${read.groupAlive} stderr=${read.stderr}`);
+        assert(read.status.code === 0 || read.stopForResult && read.status.signal === 'SIGTERM', 'synthetic reader process failed');
+        assert.equal(read.groupAlive, false);
+        const result = JSON.parse(await fs.readFile(resultPath, 'utf8'));
+        assert.equal(result.ok, true); assert.equal(result.otherSubscriptionCount, 0); assert.equal(result.proof, resultNonce);
+        assert.equal(result.export.push.scope, 'https://x.com/'); assert.equal(result.export.provenance.browserVersion, browser.version);
+        const normalized = parseTransferFile(JSON.stringify(result.export));
+        assert.equal(normalized.push.uaid, '22222222-2222-4222-8222-222222222222');
+        assert.equal(normalized.push.scope, 'https://x.com/');
+        const after = await verifyInstalledMacFirefox(); assert.deepEqual(after, browser);
+        // Exercise the experimental composition with the actual signed reader,
+        // an isolated synthetic profile, and no automatic upload.
+        const helper = process.env.MAC_LOCK_HELPER; assert.equal(typeof helper, 'string');
+        const profile = await createMacFirefoxProfile(root), profileIdb = path.join(profile.profilePath, 'storage/permanent/chrome/idb');
+        await fs.mkdir(path.dirname(profileIdb), { recursive: true });
+        await fs.cp(source, profileIdb, { recursive: true, errorOnExist: true, force: false });
+        await fs.writeFile(path.join(profile.profilePath, '.parentlock'), '');
+        await fs.writeFile(path.join(profile.profilePath, 'prefs.js'), 'user_pref("dom.push.userAgentID", "22222222-2222-4222-8222-222222222222");\n');
+        const hashFile = async filename => createHash('sha256').update(await fs.readFile(filename)).digest('hex');
+        const output = path.join(root, 'composed-output.json');
+        let composed;
+        try { composed = await exportExperimentalMacFirefoxNotifications({ rootPath: profile.rootPath, profileId: profile.profileId,
+            helperPath: helper, expectedSha256: await hashFile(helper), bootstrapPath, bootstrapSha256: await hashFile(bootstrapPath),
+            readerPath, readerSha256: readerHash, experimental: true,
+            runReader: input => runExperimentalMacFirefoxReader({ ...input, experimental: true }),
+            confirmSave: async info => {
+                assert.equal(info.otherSubscriptionCount, 0); assert.equal(info.otherNotificationsMayReachServer, false);
+                return { confirmed: true, directory: root, filename: 'composed-output.json', otherSitesConsent: false };
+            } }); } catch (error) { preserveRoot = true; throw error; }
+        assert.equal(composed.state, 'saved'); assert.equal(composed.uploaded, false);
+        assert.deepEqual(parseTransferFile(await fs.readFile(output, 'utf8')), normalized);
+        assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-') || name.startsWith('firefox-result-')));
+        // Connect the real setup session, launcher and export flow. Only the
+        // destination and headless/offline switches are changed by the fixture.
+        const launcherPath = path.resolve(__dirname, '../../src/automation/firefox-mac-setup-browser.js');
+        const launcherSource = await fs.readFile(launcherPath, 'utf8'), launcherRequire = createRequire(launcherPath), launcher = { exports: {} };
+        let setupChild;
+        vm.runInNewContext(launcherSource, { module: launcher, exports: launcher.exports, process, require(name) {
+            if (name !== 'node:child_process') return launcherRequire(name);
+            return { spawn(executable, args, options) {
+                assert.equal(executable, browser.executable);
+                assert.deepEqual(Array.from(args), ['-no-remote', '-profile', profile.profilePath, 'https://x.com/']);
+                setupChild = spawn(executable, ['-headless', '-offline', ...args.slice(0, -1), 'about:blank'],
+                    { ...options, env: { ...options.env, MOZ_HEADLESS: '1', MOZ_DISABLE_NONLOCAL_CONNECTIONS: '1' } });
+                return setupChild;
+            } };
+        } });
+        const sessionPath = path.resolve(__dirname, '../../src/automation/firefox-mac-setup-session.js');
+        const sessionSource = await fs.readFile(sessionPath, 'utf8'), sessionRequire = createRequire(sessionPath), session = { exports: {} };
+        vm.runInNewContext(sessionSource, { module: session, exports: session.exports, process, AbortSignal, setTimeout, clearTimeout, require(name) {
+            return name === './firefox-mac-setup-browser' ? launcher.exports : sessionRequire(name);
+        } });
+        let setupResult;
+        try {
+            setupResult = await session.exports.runExperimentalMacFirefoxSetup({ rootPath: profile.rootPath, profileId: profile.profileId,
+                helperPath: helper, expectedSha256: await hashFile(helper), bootstrapPath, bootstrapSha256: await hashFile(bootstrapPath),
+                readerPath, readerSha256: readerHash, experimental: true, ui: {
+                    confirmOpen: async () => true,
+                    confirmClosed: async () => {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        assert(setupChild && setupChild.exitCode === null && setupChild.signalCode === null);
+                        assert.equal(setupChild.kill('SIGTERM'), true); return true;
+                    },
+                    confirmSave: async info => {
+                        assert.equal(info.otherSubscriptionCount, 0);
+                        return { confirmed: true, directory: root, filename: 'setup-output.json', otherSitesConsent: false };
+                    },
+                } });
+        } catch (error) {
+            preserveRoot = true;
+            if (setupChild && setupChild.exitCode === null && setupChild.signalCode === null) try { setupChild.kill('SIGTERM'); } catch {}
+            throw error;
+        }
+        assert.equal(setupResult.state, 'saved'); assert.equal(setupResult.uploaded, false);
+        assert.deepEqual(parseTransferFile(await fs.readFile(path.join(root, 'setup-output.json'), 'utf8')), normalized);
+        assert(!(await fs.readdir(profile.rootPath)).some(name => name.startsWith('firefox-snapshot-') || name.startsWith('firefox-reader-cwd-') || name.startsWith('firefox-result-')));
+    });

@@ -20,7 +20,10 @@ function createChromeCheckinRunner({ lease, credentials, store, authorize, onFai
         timer = setTimer(() => {
             if (stopped) return;
             if (now() < target) { schedule(target); return; }
-            work = execute().catch(error => { if (!stopped) onFailure(error); });
+            // Failure handling may need a fenced database state update before
+            // deciding whether reenrollment is required. Keep it in work so
+            // stop() waits for that decision instead of releasing the lease.
+            work = execute().catch(error => { if (!stopped) return onFailure(error); });
         }, Math.max(1, Math.min(MAX_TIMER, at - now())));
     }
     async function execute() {

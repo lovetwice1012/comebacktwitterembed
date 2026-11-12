@@ -13,6 +13,10 @@ function reconnectDelay(attempt, reasonCode, jitter = randomInt) {
     return base + jitter(0, Math.floor(base / 5) + 1);
 }
 
+function pruneExpiredCooldowns(cooldowns, now) {
+    for (const [id, until] of cooldowns) if (until <= now) cooldowns.delete(id);
+}
+
 // This supervisor does not import a browser or any X HTTP client. Connections
 // belong to the explicitly enabled Firefox or Chrome Push gateway.
 function createXPushRuntime(db, queue, options = {}) {
@@ -29,12 +33,18 @@ function createXPushRuntime(db, queue, options = {}) {
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
     const sessions = new Map(), sessionControls = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
     const refreshPending = new Map();
+    // Eligibility failures are transient and fail closed. Retain a bounded
+    // retry hint so a failure near the start of a large scan does not wait
+    // for the complete cursor to wrap. The database remains authoritative.
+    const policyRetries = new Map(), maxPolicyRetries = Math.max(maxConnections, pageSize) * 2;
     // Recovered/processed states are durable; this bounded cache merely avoids
     // retrying still-unknown formats on every tick during the same process.
     const quarantineCursors = new Map(), realtimeCursors = new Map();
     const controller = new AbortController(), workerId = `node-${randomUUID()}`;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
-    let timer, ticking = null, stopped = false, cursor = '';
+    // The next source to inspect after an eligibility check: refreshed
+    // subscriptions, eligibility retries, or the ordinary cursor page.
+    let timer, ticking = null, stopped = false, cursor = '', candidateTurn = 0;
     const assertAllowed = options.assertAllowed || (() => { throw new Error('X_PUSH_AUTHORITY_UNAVAILABLE'); });
     const listCandidates = options.listCandidates || (async afterId => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision,s.updated_at_ms FROM automation_x_subscriptions s
         LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id
@@ -68,27 +78,29 @@ function createXPushRuntime(db, queue, options = {}) {
         } finally { clearTimeout(deadline); }
     }
 
-    async function recoverQuarantined(lease) {
+    async function recoverQuarantined(lease, recoveryOptions = {}) {
+        const { signal } = recoveryOptions;
         if (typeof gateway.store.listQuarantinedInbox !== 'function' || typeof gateway.decryptQuarantinedInbox !== 'function'
             || typeof gateway.store.restoreQuarantinedInbox !== 'function') return;
         const key = `${lease.subscriptionId}:${lease.revision}`;
-        const rows = await gateway.store.listQuarantinedInbox(lease, { afterId: quarantineCursors.get(key) || '0', limit: Math.min(pageSize, 20) });
+        const rows = await gateway.store.listQuarantinedInbox(lease, { afterId: quarantineCursors.get(key) || '0', limit: Math.min(pageSize, 20), signal });
         for (const row of rows) {
-            if (stopped || controller.signal.aborted) return;
+            if (stopped || controller.signal.aborted || signal?.aborted) return;
             assertAllowed();
-            if (!require('./recovery-origin').inboxAllowed(row)) { await gateway.store.markRecoveryQuarantined(lease, row.id); continue; }
+            if (!require('./recovery-origin').inboxAllowed(row)) { await gateway.store.markRecoveryQuarantined(lease, row.id, recoveryOptions); continue; }
             try {
-                const payload = await gateway.decryptQuarantinedInbox(lease, row);
-                if (stopped || controller.signal.aborted) return;
+                const payload = await gateway.decryptQuarantinedInbox(lease, row, recoveryOptions);
+                if (stopped || controller.signal.aborted || signal?.aborted) return;
                 require('./x-event-router').normalizeXNotification(payload, { receivedAtMs: row.receivedAtMs });
                 assertAllowed();
-                await gateway.store.restoreQuarantinedInbox(lease, row.id, { authorize: async query => {
+                await gateway.store.restoreQuarantinedInbox(lease, row.id, { signal, authorize: async query => {
                     assertAllowed();
                     await requireXEnrollment(query, { userId: lease.ownerUserId }, rolloutOptions);
                 } });
             } catch (error) {
                 if (!/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || ''))) throw error;
             }
+            if (signal?.aborted) return;
             quarantineCursors.delete(key);
             quarantineCursors.set(key, row.id);
             while (quarantineCursors.size > maxConnections * 2) quarantineCursors.delete(quarantineCursors.keys().next().value);
@@ -112,12 +124,19 @@ function createXPushRuntime(db, queue, options = {}) {
     }
     async function drain(lease, trigger = {}) {
         if (!enabled || stopped || controller.signal.aborted || !cadenceConfigured) return { state: 'not_configured' };
+        if (trigger.recoverySignal !== undefined && !(trigger.recoverySignal instanceof AbortSignal)) throw new Error('X_PUSH_RECOVERY_SIGNAL_INVALID');
+        if (trigger.recoverySignal?.aborted) return { state: 'stopped' };
+        const sessionRecord = sessionControls.get(lease.subscriptionId);
+        const sessionSignal = sessionRecord?.controller.signal, routingSignal = sessionRecord?.routingController.signal;
+        const fenceSignal = trigger.recoverySignal || routingSignal;
+        const recoveryOptions = fenceSignal ? { signal: fenceSignal, authorize: async query => {
+            assertAllowed(); await requireXEnrollment(query, { userId: lease.ownerUserId }, rolloutOptions);
+        } } : {};
         enqueueReceipt(lease, trigger);
         if (draining.has(lease.subscriptionId)) return draining.get(lease.subscriptionId);
-        const sessionSignal = sessionControls.get(lease.subscriptionId)?.controller.signal;
         const work = (async () => {
             const processed = new Set();
-            const halted = () => stopped || controller.signal.aborted || sessionSignal?.aborted === true;
+            const halted = () => stopped || controller.signal.aborted || sessionSignal?.aborted === true || routingSignal?.aborted === true || trigger.recoverySignal?.aborted === true;
             async function permitted() {
                 if (halted()) return false;
                 assertAllowed();
@@ -125,28 +144,29 @@ function createXPushRuntime(db, queue, options = {}) {
                 return policy.eligible;
             }
             if (!await permitted()) return { state: halted() ? 'stopped' : 'pending' };
-            await gateway.store.assertLease(lease);
-            await recoverQuarantined(lease);
+            await gateway.store.assertLease(lease, recoveryOptions);
+            await recoverQuarantined(lease, recoveryOptions);
             if (halted()) return { state: 'stopped' };
             async function route(inbox, processingMode) {
                 if (halted() || inbox.status !== 'received') return;
-                assertAllowed(); await gateway.store.assertLease(lease);
+                assertAllowed(); await gateway.store.assertLease(lease, recoveryOptions);
                 // Restored ciphertext is retained for investigation. Its
                 // original receipt time is checked before any decryption or
                 // creation of a post-recovery run/job.
                 if (!require('./recovery-origin').inboxAllowed(inbox)) {
-                    await gateway.store.markRecoveryQuarantined(lease, inbox.id);
+                    await gateway.store.markRecoveryQuarantined(lease, inbox.id, recoveryOptions);
                     if (!halted()) processed.add(inbox.id);
                     return;
                 }
                 try {
-                    const payload = await gateway.decryptInbox(lease, inbox);
+                    const payload = await gateway.decryptInbox(lease, inbox, recoveryOptions);
                     if (halted()) return;
                     assertAllowed();
-                    const result = await router.routeReceived({ lease, inbox, payload, processingMode });
+                    const result = await router.routeReceived({ lease, inbox, payload, processingMode,
+                        ...(fenceSignal ? { recoveryGuard: { lease, signal: fenceSignal } } : {}) });
                     if (halted()) return;
                     if (result.state === 'routed') {
-                        const marked = await gateway.store.markRouted(lease, inbox.id);
+                        const marked = await gateway.store.markRouted(lease, inbox.id, recoveryOptions);
                         // Measurement must never change receipt state or cause a retry.
                         try {
                             const received = Number(inbox.receivedAtMs), lag = clock() - received;
@@ -154,12 +174,12 @@ function createXPushRuntime(db, queue, options = {}) {
                                 require('../adminSupport/databaseMetrics').xLatency[processingMode === 'realtime' ? 'realtime' : 'batch'].record(lag);
                         } catch { /* Best-effort, aggregate-only measurement. */ }
                     }
-                    else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id);
+                    else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id, recoveryOptions);
                 } catch (error) {
                     if (halted()) return;
                     assertAllowed();
                     if (/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || '')))
-                        await gateway.store.markUnsupported(lease, inbox.id);
+                        await gateway.store.markUnsupported(lease, inbox.id, recoveryOptions);
                     else throw error;
                 }
                 if (!halted()) processed.add(inbox.id);
@@ -187,8 +207,9 @@ function createXPushRuntime(db, queue, options = {}) {
                         for (const inbox of rows) {
                             if (halted()) return;
                             await route(inbox, 'realtime');
-                            rememberCursor(realtimeCursors, key, inbox.id);
+                            if (!halted()) rememberCursor(realtimeCursors, key, inbox.id);
                         }
+                        if (halted()) return;
                         if (rows.length < pageSize) { rememberCursor(realtimeCursors, key, '0'); break; }
                     }
                 } catch (error) {
@@ -210,7 +231,7 @@ function createXPushRuntime(db, queue, options = {}) {
                 const resolveProcessing = async query => ({ ...await inspectXProcessingSettings(query, lease.ownerUserId, clock(), {
                     useLegacyUserInterval: options.useLegacyUserInterval === true,
                 }), effectiveMode: 'batch' });
-                const window = await gateway.store.beginProcessing(lease, undefined, { resolveProcessing });
+                const window = await gateway.store.beginProcessing(lease, undefined, { resolveProcessing, ...recoveryOptions });
                 if (!window.ready) result = { state: 'pending', ...(window.code ? { code: window.code } : {}),
                     ...(window.dueAtMs === undefined ? {} : { dueAtMs: window.dueAtMs }) };
                 else {
@@ -221,10 +242,10 @@ function createXPushRuntime(db, queue, options = {}) {
                         if (inbox.receivedAtMs > window.windowAtMs) { reachedCutoff = true; break; }
                         await route(inbox, 'batch');
                         if (halted()) break;
-                        await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id });
+                        await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id }, recoveryOptions);
                     }
                     if (!halted() && (reachedCutoff || rows.length < pageSize))
-                        await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs });
+                        await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs }, recoveryOptions);
                 }
             }
             // New callbacks can arrive during any awaited DB/decryption/queue
@@ -240,6 +261,8 @@ function createXPushRuntime(db, queue, options = {}) {
             // drain retries; shutdown intentionally performs no later work.
         }
     }
+    // Offline scheduling is intentionally not wired into the runtime yet.
+    // Dedicated DB identity and fleet compatibility must first be proved.
     function remember({ lease }) { if (!stopped) { leases.set(lease.subscriptionId, lease); cooldowns.delete(lease.subscriptionId); } }
     async function tick() {
         if (!enabled || stopped || controller.signal.aborted) return { state: 'disabled' };
@@ -248,37 +271,119 @@ function createXPushRuntime(db, queue, options = {}) {
         const work = (async () => {
             if (!gateway || typeof gateway.run !== 'function') throw new Error('X_PUSH_GATEWAY_UNAVAILABLE');
             assertAllowed();
+            // Failed or deleted subscriptions may never reconnect. Expired
+            // entries no longer affect admission and must not grow forever.
+            pruneExpiredCooldowns(cooldowns, clock());
             await reconcileSessions();
             const page = await listCandidates(cursor);
             if (!Array.isArray(page)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
-            cursor = page.length === pageSize ? page.at(-1).id : '';
-            let refreshed = [];
-            if (refreshPending.size) {
-                refreshed = await listActiveSessions([...refreshPending.keys()]);
-                if (!Array.isArray(refreshed)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
-                const eligibleIds = new Set(refreshed.map(row => row.id));
+            if (!page.length) cursor = '';
+            let updates = [], retries = [];
+            const dueRetries = [...policyRetries].filter(([, retry]) => retry.until <= clock()).slice(0, pageSize).map(([id]) => id);
+            if (refreshPending.size || dueRetries.length) {
+                const active = await listActiveSessions([...new Set([...refreshPending.keys(), ...dueRetries])]);
+                if (!Array.isArray(active)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
+                const eligibleIds = new Set(active.map(row => row.id));
                 for (const id of refreshPending.keys()) if (!eligibleIds.has(id)) refreshPending.delete(id);
+                for (const id of dueRetries) if (!eligibleIds.has(id)) policyRetries.delete(id);
+                const activeById = new Map(active.map(row => [row.id, row]));
+                updates = [...refreshPending.keys()].map(id => activeById.get(id)).filter(Boolean);
+                retries = dueRetries.map(id => activeById.get(id)).filter(Boolean);
             }
-            for (const candidate of [...refreshed, ...page]) {
-                if (stopped || sessions.size >= maxConnections) break;
-                if (sessions.has(candidate.id)) continue;
-                if ((cooldowns.get(candidate.id) || 0) > clock()) continue;
-                const policy = await evaluateXRollout(db.queryDatabase, { userId: candidate.owner_user_id }, rolloutOptions);
-                if (!policy.eligible) continue;
+            // Refreshes can accumulate beyond one page when many settings
+            // change at once. Bound starts across both sources, not just the
+            // ordinary paginated query, so recovery cannot create a burst.
+            // One round-robin turn covers all three sources; independent
+            // alternating flags can phase-lock and starve one source.
+            function* candidates() {
+                const groups = [updates, retries, page], indices = [0, 0, 0], first = candidateTurn;
+                while (indices.some((index, group) => index < groups[group].length)) {
+                    for (let offset = 0; offset < groups.length; offset++) {
+                        const group = (first + offset) % groups.length, index = indices[group];
+                        if (index < groups[group].length) { indices[group]++; yield { row: groups[group][index], group, index }; }
+                    }
+                }
+            }
+            let started = 0, policyChecks = 0; const inspected = new Set();
+            for (const item of candidates()) {
+                if (stopped || sessions.size >= maxConnections || started >= pageSize) break;
+                const candidate = item.row;
+                // Advance only past ordinary candidates actually inspected.
+                // Refreshes may exhaust the start budget before the page is
+                // reached; skipping the entire page can starve registrations.
+                const advanceCursor = () => { if (item.group === 2) cursor = item.index === page.length - 1 && page.length < pageSize ? '' : candidate.id; };
+                if (inspected.has(candidate.id)) { advanceCursor(); continue; }
+                if (sessions.has(candidate.id)) { advanceCursor(); policyRetries.delete(candidate.id); continue; }
+                if ((cooldowns.get(candidate.id) || 0) > clock() || (policyRetries.get(candidate.id)?.until || 0) > clock()) { advanceCursor(); continue; }
+                // Failures and ineligible users also use DB capacity. Limit
+                // checks, not only successful connection starts, and leave an
+                // uninspected ordinary candidate at the cursor for next time.
+                if (policyChecks >= pageSize) break;
+                advanceCursor(); inspected.add(candidate.id); policyChecks++; candidateTurn = (item.group + 1) % 3;
+                let policy;
+                try { policy = await evaluateXRollout(db.queryDatabase, { userId: candidate.owner_user_id }, rolloutOptions); }
+                catch {
+                    if (stopped || controller.signal.aborted) break;
+                    const attempts = Math.min((policyRetries.get(candidate.id)?.attempts || 0) + 1, 7);
+                    const until = clock() + reconnectDelay(attempts, 'X_PUSH_ROLLOUT_CHECK_FAILED', options.jitter || randomInt);
+                    policyRetries.delete(candidate.id); policyRetries.set(candidate.id, { attempts, until });
+                    while (policyRetries.size > maxPolicyRetries) policyRetries.delete(policyRetries.keys().next().value);
+                    refreshPending.delete(candidate.id);
+                    continue;
+                }
+                if (stopped || controller.signal.aborted) break;
+                assertAllowed();
+                policyRetries.delete(candidate.id);
+                if (!policy.eligible) { refreshPending.delete(candidate.id); continue; }
                 let active = true;
                 const revision = Number(candidate.revision || 1);
-                const localController = new AbortController();
-                const record = { controller: localController, ownerUserId: candidate.owner_user_id, revision, updatedAtMs: Number(candidate.updated_at_ms || 0) };
+                const localController = new AbortController(), routingController = new AbortController();
+                localController.signal.addEventListener('abort', () => routingController.abort(), { once: true });
+                const record = { controller: localController, routingController, ownerUserId: candidate.owner_user_id, revision,
+                    updatedAtMs: Number(candidate.updated_at_ms || 0), connectionGeneration: /** @type {number|undefined} */ (undefined) };
                 sessionControls.set(candidate.id, record);
                 const rememberSession = value => { if (active && !localController.signal.aborted && sessions.get(candidate.id) === pending) remember(value); };
-                const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
-                    workerId, signal: localController.signal, onSession: rememberSession, onLease: rememberSession,
-                    onReceived: async ({ lease, inbox }) => { if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); } }))
-                    .catch(error => ({ state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' }))
+                const pending = Promise.resolve().then(() => {
+                    // stop() can run between registering this session and the
+                    // microtask that would otherwise open its connection.
+                    if (stopped || controller.signal.aborted || localController.signal.aborted) return { state: 'stopped' };
+                    try { assertAllowed(); } catch { return { state: 'authority_unavailable' }; }
+                    return gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
+                    assertAllowed, requireActiveMonitor: true,
+                    workerId, signal: localController.signal, onSession: rememberSession, onLease: rememberSession, onStopping: () => routingController.abort(),
+                    onClaim: ({ connectionGeneration }) => { if (Number.isSafeInteger(connectionGeneration) && connectionGeneration > 0) record.connectionGeneration = connectionGeneration; },
+                    onReceived: async ({ lease, inbox }) => { if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); },
+                    onRecovery: async ({ lease, signal }) => {
+                        if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped || signal.aborted) return;
+                        rememberSession({ lease });
+                        // A normal receipt drain may already be in progress.
+                        // Let it finish, then run a separate fenced recovery
+                        // pass so due batch work is not mistaken for an RT hint.
+                        for (;;) {
+                            const current = draining.get(candidate.id);
+                            if (!current || signal.aborted || !active || localController.signal.aborted || stopped) break;
+                            try { await current; } catch { /* Durable rows are retried below. */ }
+                            if (draining.get(candidate.id) === current) await new Promise(resolve => setImmediate(resolve));
+                        }
+                        // The transport recovery queue is bounded to 1040
+                        // frames. Continue full pages while the lease and
+                        // callback remain valid; a future scheduled drain can
+                        // still pick up work left by a deadline or cadence.
+                        const maxPasses = Math.ceil(1040 / pageSize) + 2;
+                        for (let pass = 0; pass < maxPasses && !signal.aborted && active && !localController.signal.aborted && !stopped; pass++) {
+                            const result = await drain(lease, { recoverySignal: signal });
+                            if (result.state !== 'processed' || Number(result.processed || 0) < pageSize) break;
+                        }
+                    } });
+                })
+                    .catch(error => ['X_ROLLOUT_DISABLED', 'X_ROLLOUT_SUPPORTERS_ONLY', 'X_PUSH_MONITOR_INACTIVE', 'X_PUSH_AUTHORITY_UNAVAILABLE'].includes(error?.code)
+                        ? { state: 'ineligible' }
+                        : { state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' })
                     .then(async result => {
-                        if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;
+                        if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment', 'authority_unavailable', 'inactive', 'ineligible'].includes(result?.state)) return;
                         const lease = leases.get(candidate.id);
-                        const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision };
+                        const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision,
+                            ...(record.connectionGeneration === undefined ? {} : { connectionGeneration: record.connectionGeneration }) };
                         const status = await gateway.store.status(identity);
                         if (!status || status.revision !== identity.revision) return;
                         const delay = reconnectDelay((status?.retryAttempt || 0) + 1, result?.reasonCode, options.jitter || randomInt);
@@ -292,10 +397,12 @@ function createXPushRuntime(db, queue, options = {}) {
                     })
                     .finally(() => {
                         active = false;
+                        routingController.abort();
                         if (sessions.get(candidate.id) === pending) { sessions.delete(candidate.id); leases.delete(candidate.id); }
                         if (sessionControls.get(candidate.id) === record) sessionControls.delete(candidate.id);
                     });
                 sessions.set(candidate.id, pending);
+                started++;
                 refreshPending.delete(candidate.id);
             }
             // Thousands of live subscriptions must not all acquire database
@@ -327,14 +434,15 @@ function createXPushRuntime(db, queue, options = {}) {
         schedule();
     }
     async function stop() {
-        stopped = true; clearTimeout(timer); timer = null; controller.abort();
+        stopped = true; clearTimeout(timer); timer = null; controller.abort(); policyRetries.clear();
         for (const record of sessionControls.values()) record.controller.abort();
         let deadline;
         try { await Promise.race([Promise.allSettled([...sessions.values(), ...draining.values(), ...(ticking ? [ticking] : [])]),
             new Promise(resolve => { deadline = setTimeout(resolve, 5000); })]); }
         finally { clearTimeout(deadline); }
     }
-    return { start, stop, tick, drain, status: () => ({ enabled, processingConfigured: cadenceConfigured, processingPolicy: mode, sessions: sessions.size, stopped }) };
+    return { start, stop, tick, drain, status: () => ({ enabled, processingConfigured: cadenceConfigured, processingPolicy: mode,
+        sessions: sessions.size, pendingEligibilityRetries: policyRetries.size, stopped }) };
 }
 
 // Web intake deliberately never imports or calls this constructor. Only the
@@ -356,7 +464,11 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
             config = JSON.parse(bytes.subarray(0, length).toString('utf8'));
         } finally { fs.closeSync(handle); }
         if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['activeKeyId', 'privateKeys'].includes(key))) throw new Error();
-        const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault(config);
+        const braveMacEnabled = env.X_NOTIFICATION_CHROME_ENABLED === '1' && env.X_NOTIFICATION_BRAVE_ENABLED === '1'
+            && env.X_NOTIFICATION_BRAVE_MAC_ENABLED === '1';
+        const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault({ ...config, allowBraveMac: braveMacEnabled });
+        const edgeEnabled = env.X_NOTIFICATION_EDGE_ENABLED === '1';
+        const edgeTokenVault = edgeEnabled ? require('./x-setup-transfer').createWnsTokenWorkerVault(config) : undefined;
         const numberOption = (name, fallback, maximum) => {
             const value = env[name];
             if (value === undefined) return fallback;
@@ -368,16 +480,18 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         };
         const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
         const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
+        const assertAllowed = options.assertAllowed || require('../recoveryLease').assertAllowed;
         const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
-            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1' });
+            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', braveMacEnabled, edgeEnabled,
+            edgeConnectV2Enabled: env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1', edgeTokenVault, assertAllowed });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
             maxConnections, drainConcurrency,
             useLegacyUserInterval: env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
-            assertAllowed: options.assertAllowed || require('../recoveryLease').assertAllowed });
+            assertAllowed });
     } catch (error) {
         if (error?.code === 'X_PUSH_WORKER_CAPACITY_INVALID') throw error;
         throw Object.assign(new Error('X notification receiver configuration is unavailable'), { code: 'X_PUSH_WORKER_KEY_UNAVAILABLE' });
     }
 }
 
-module.exports = { createXPushRuntime, createXPushRuntimeFromEnvironment, reconnectDelay };
+module.exports = { createXPushRuntime, createXPushRuntimeFromEnvironment, reconnectDelay, pruneExpiredCooldowns };

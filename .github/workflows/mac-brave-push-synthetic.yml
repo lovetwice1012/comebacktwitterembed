@@ -1,0 +1,144 @@
+name: macOS Brave synthetic push validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-brave-push-synthetic.yml
+      - src/automation/brave-mac-*.js
+      - src/automation/chrome-mac-*.js
+      - scripts/native-test/brave-mac-push-hosted.test.cjs
+      - scripts/native-test/brave-mac-synthetic-transfer.cjs
+      - scripts/native-test/chrome-mac-synthetic-db.cjs
+      - scripts/native-test/chrome-mac-synthetic-http.cjs
+      - scripts/lib/automation-test-db.js
+      - scripts/test/brave-mac-server-transfer.test.js
+      - scripts/test/brave-mac-transfer-types.test.js
+      - src/automation/x-setup-transfer.d.ts
+      - scripts/test/chrome-mac-synthetic-db.test.js
+      - scripts/test/automation-x-setup-sql.test.js
+      - scripts/test/automation-chrome-mcs-gateway-sql.test.js
+      - src/automation/chrome-x-transfer.js
+      - src/automation/x-setup-transfer.js
+      - src/automation/x-setup.js
+      - src/automation/x-push-gateway.js
+      - src/automation/x-push-runtime.js
+      - scripts/test/brave-mac-synthetic-transfer.test.js
+      - scripts/native-test/brave-mac-install-diagnostic.cjs
+      - scripts/native-test/brave-mac-verifier-diagnostic.cjs
+      - scripts/test/brave-mac-install-diagnostic.test.js
+      - scripts/native-test/chrome-mac-push-error.cjs
+      - scripts/test/chrome-mac-push-error.test.js
+      - scripts/native-test/chrome-mac-push-probe.cjs
+      - scripts/test/chrome-mac-push-probe.test.js
+      - scripts/test/brave-mac-broker.test.js
+      - scripts/test/brave-mac-browser.test.js
+      - scripts/test/brave-mac-setup-session.test.js
+      - scripts/test/chrome-mac-dialogs.test.js
+      - scripts/test/chrome-mac-profile-registry.test.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  brave:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install pinned universal Brave on disposable hosted runner
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          app='/Applications/Brave Browser.app'
+          # Never replace a browser already present, even on a hosted runner.
+          test ! -e "$app" && test ! -L "$app"
+          image="$RUNNER_TEMP/cbte-brave-1.98.63-universal.dmg"
+          mountpoint="$(mktemp -d "$RUNNER_TEMP/cbte-brave-image.XXXXXX")"
+          attached=false
+          cleanup() {
+            if [ "$attached" = true ]; then hdiutil detach "$mountpoint" -quiet; fi
+            rmdir "$mountpoint"
+          }
+          trap cleanup EXIT
+          curl --fail --location --silent --show-error --retry 2 \
+            --output "$image" 'https://github.com/brave/brave-browser/releases/download/v1.98.63/Brave-Browser-universal.dmg'
+          printf '%s  %s\n' '79febd5289c61e113c17ebb0c54dc750f311d733d6698672cc001a9e8c136e97' "$image" | shasum -a 256 -c
+          hdiutil attach "$image" -readonly -nobrowse -mountpoint "$mountpoint" -quiet
+          attached=true
+          source_app="$mountpoint/Brave Browser.app"
+          test -d "$source_app" && test ! -L "$source_app"
+          # Finder metadata on the read-only image can fail strict codesign.
+          # Remove it only on a disposable runner-owned staging copy, then
+          # validate that copy before placing it at the test discovery path.
+          staging="$(mktemp -d "$RUNNER_TEMP/cbte-brave-stage.XXXXXX")"
+          staged_app="$staging/Brave Browser.app"
+          ditto "$source_app" "$staged_app"
+          xattr -cr "$staged_app"
+          codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.brave.Browser" and certificate leaf[subject.OU] = "KL8N8XSYF4"' "$staged_app"
+          archs="$(lipo -archs "$staged_app/Contents/MacOS/Brave Browser")"
+          [[ " $archs " == *' x86_64 '* && " $archs " == *' arm64 '* ]]
+          test ! -e "$app" && test ! -L "$app"
+          sudo ditto "$staged_app" "$app"
+          sudo xattr -cr '/Applications/Brave Browser.app'
+      - name: Install locked dependencies without lifecycle scripts
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Install isolated fixture database
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install mariadb@11.8
+      - name: Prepare isolated helper and synthetic keychain
+        run: |
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-brave-lock"
+          keychain="$RUNNER_TEMP/cbte-brave-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Brave -s 'Brave Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Brave Browser.app' "$keychain"
+      - name: Test actual Brave and isolated profile safety
+        env:
+          CBTE_MAC_BRAVE_HOSTED: '1'
+          CBTE_MAC_DB_FIXTURE: '1'
+          CBTE_MAC_REAL_ROUTE_FIXTURE: '1'
+          AUTOMATION_TEST_DB_PORT: '33621'
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-brave-lock
+        run: |
+          set -eu
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          dbbase="$(brew --prefix mariadb@11.8)"
+          dbdir="$RUNNER_TEMP/cbte-brave-mariadb-data"
+          mkdir -m 700 "$dbdir"
+          "$dbbase/bin/mariadb-install-db" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --auth-root-authentication-method=normal --skip-test-db > /dev/null
+          "$dbbase/bin/mariadbd" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --socket="$RUNNER_TEMP/cbte-brave-mariadb.sock" --pid-file="$RUNNER_TEMP/cbte-brave-mariadb.pid" --log-error="$RUNNER_TEMP/cbte-brave-mariadb.log" --bind-address=127.0.0.1 --port=33621 --skip-name-resolve --skip-log-bin &
+          dbpid=$!
+          trap 'kill "$dbpid" 2>/dev/null || true; wait "$dbpid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if "$dbbase/bin/mariadb-admin" --no-defaults --protocol=tcp -h 127.0.0.1 -P 33621 -u root ping > /dev/null 2>&1; then ready=1; break; fi
+            if ! kill -0 "$dbpid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          node --test --test-concurrency=1 scripts/test/brave-mac-server-transfer.test.js scripts/test/brave-mac-transfer-types.test.js scripts/test/automation-x-setup-sql.test.js scripts/test/automation-chrome-mcs-gateway-sql.test.js
+          CBTE_MAC_REAL_ROUTE_FIXTURE=0 node --test --test-concurrency=1 scripts/test/chrome-mac-synthetic-db.test.js
+          node --test --test-concurrency=1 --test-name-pattern 'synthetic Mac Brave HTTP intake' scripts/test/chrome-mac-synthetic-db.test.js
+          node --test --test-concurrency=1 scripts/native-test/brave-mac-push-hosted.test.cjs scripts/test/brave-mac-synthetic-transfer.test.js scripts/test/brave-mac-broker.test.js scripts/test/brave-mac-browser.test.js scripts/test/brave-mac-setup-session.test.js scripts/test/chrome-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/native-test/brave-mac-composed.test.cjs scripts/test/chrome-mac-push-probe.test.js scripts/test/chrome-mac-push-error.test.js scripts/test/brave-mac-install-diagnostic.test.js

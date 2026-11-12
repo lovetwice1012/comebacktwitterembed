@@ -43,6 +43,15 @@ function loadDiscordRuntime(options = {}) {
     if (typeof WebSocketConstructor !== 'function') {
         throw new TypeError('The ws compatibility module did not export a WebSocket constructor.');
     }
+    // Bun's ws implementation can throw synchronously while connecting. The
+    // Discord adapter historically ignored pre-open sends; keep that behavior
+    // scoped to Discord without changing Bun's global WebSocket or ws module.
+    class DiscordWebSocket extends WebSocketConstructor {
+        send(data, ...args) {
+            if (this.readyState === 0) return;
+            return super.send(data, ...args);
+        }
+    }
 
     const originalDescriptor = Object.getOwnPropertyDescriptor(target, 'WebSocket');
     let discord;
@@ -50,7 +59,7 @@ function loadDiscordRuntime(options = {}) {
         Object.defineProperty(target, 'WebSocket', {
             configurable: true,
             writable: true,
-            value: WebSocketConstructor,
+            value: DiscordWebSocket,
         });
         discord = loadDiscord();
     } finally {
@@ -66,6 +75,7 @@ function loadDiscordRuntime(options = {}) {
     return {
         discord,
         gatewayTransport: 'bun-ws-compat',
+        gatewayWebSocket: DiscordWebSocket,
         restOptions: {
             async makeRequest(url, init) {
                 const response = await fetch(url, init);

@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
+const { fork } = require('node:child_process');
 const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
 const { dispatch } = require('../../src/automation/api');
 const { createService } = require('../../src/automation/service');
@@ -17,6 +18,30 @@ const { createTransferPublicSealer } = require('../../src/automation/x-setup-tra
 const { fixture: firefoxTransfer } = require('../../scripts/test/helpers/x-push-fixture.cjs');
 const root = path.resolve(__dirname, '../..'), dashboard = path.join(root, 'dashboard');
 const localRequire = createRequire(path.join(dashboard, 'package.json'));
+async function captureCandidateTransfer() {
+    const archive = path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip');
+    const bytes = await fs.readFile(archive);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), '9276517742cebeb75a95b7ad4b535ff67ee050a858e280c9d84dd3a1059582e8');
+    const env = { ...process.env };
+    for (const name of Object.keys(env)) if (name.startsWith('CHROME_FIXTURE_') || name === 'CHROMIUM_PROBE_BROWSER') delete env[name];
+    env.CHROME_SETUP_ZIP = archive; env.CHROME_FIXTURE_SYNTHETIC_IPC = '1';
+    return new Promise((resolve, reject) => {
+        const child = fork(path.join(root, 'experiments/chrome-push/packaged-e2e.cjs'), [],
+            { env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
+        let captured, finished = false;
+        const timer = setTimeout(() => { child.kill(); finish(new Error('FIXTURE_CANDIDATE_TIMEOUT')); }, 120000);
+        function finish(error) {
+            if (finished) return; finished = true; clearTimeout(timer);
+            if (error) reject(error); else resolve(captured);
+        }
+        child.on('message', value => {
+            if (captured || value?.browser !== 'chrome' || value?.transfer?.version !== 2) { child.kill(); return finish(new Error('FIXTURE_CANDIDATE_INVALID')); }
+            captured = value.transfer;
+        });
+        child.once('error', () => finish(new Error('FIXTURE_CANDIDATE_FAILED')));
+        child.once('exit', code => finish(code === 0 && captured ? null : new Error('FIXTURE_CANDIDATE_FAILED')));
+    });
+}
 function loadTs(filename, dependencies, globals = {}) {
     const ts = require('typescript'), exports = {};
     const source = syncFs.readFileSync(path.join(root, filename), 'utf8');
@@ -141,6 +166,7 @@ async function main() {
         const anonymousDownload = await fetch(`${origin}/api/automation/x-setup/download-chrome`);
         assert.equal(anonymousDownload.status, 401);
         assert.match(anonymousDownload.headers.get('cache-control'), /no-store/);
+        const candidateTransfer = process.env.CBTE_CHROME_CANDIDATE_TRANSFER === '1' ? await captureCandidateTransfer() : null;
         const renderer = process.env.CBTE_FIXTURE_BROWSER || 'chrome';
         const executables = { chrome: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
             brave: 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe' };
@@ -149,7 +175,8 @@ async function main() {
         const output = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-intake-ui-'));
         for (const [kind, width] of [['firefox', 390], ['chrome', 1440], ['brave', 390]]) {
             console.log(`fixture-stage:${kind}`);
-            const file = transfer(kind), context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
+            const file = kind === 'chrome' && candidateTransfer ? candidateTransfer : transfer(kind);
+            const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: 'block' });
             await context.addCookies([{ name: 'fixture', value: token, url: origin, httpOnly: true }]);
             let external = 0, errors = 0;
             await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : (++external, route.abort()));
@@ -206,7 +233,8 @@ async function main() {
         const firefoxNativeWidth = process.env.CBTE_FIREFOX_FIXTURE === '1' ? await firefoxBrowserFixture(origin, token, output, db) : null;
         console.log(JSON.stringify({ renderer, firefoxMobile: true, chromeDesktop: true, braveMobile: true,
             firefoxNative: process.env.CBTE_FIREFOX_FIXTURE === '1', firefoxNativeWidth, realIntakeApi: true, pinnedDownload: true,
-            encryptedRecords: process.env.CBTE_FIREFOX_FIXTURE === '1' ? 4 : 3, chromiumExternalRequests: 0, chromiumPageErrors: 0, screenshots: output }));
+            encryptedRecords: process.env.CBTE_FIREFOX_FIXTURE === '1' ? 4 : 3, chromeCandidateTransfer: Boolean(candidateTransfer),
+            chromiumExternalRequests: 0, chromiumPageErrors: 0, screenshots: output }));
     } finally {
         if (browser) await browser.close();
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

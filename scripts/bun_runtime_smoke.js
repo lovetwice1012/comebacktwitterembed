@@ -14,8 +14,7 @@ async function main() {
     assert.equal(typeof runtime.restOptions.makeRequest, 'function');
     assert.equal(typeof runtime.discord.Client, 'function');
 
-    const webSocketModule = require('ws');
-    const WebSocketConstructor = webSocketModule.WebSocket ?? webSocketModule;
+    const WebSocketConstructor = runtime.gatewayWebSocket;
     const server = Bun.serve({
         port: 0,
         fetch(request, bunServer) {

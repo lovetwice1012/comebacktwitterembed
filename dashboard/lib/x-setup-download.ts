@@ -3,15 +3,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { requireBotModule } from "@/lib/bot-require";
 
-// This is the already-built, immutable preview.5 release. Updating source files
+// This is the already-built, immutable preview.6 release. Updating source files
 // alone must never silently replace a release offered to dashboard users.
-export const X_SETUP_DOWNLOAD = Object.freeze({
-  version: "0.1.0-preview.5",
-  filename: "x-notification-setup-0.1.0-preview.5.zip",
-  sha256: "4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98",
-  bytes: 68992,
-  href: "/api/automation/x-setup/download",
-});
+type SetupRelease = Readonly<{ version: string; filename: string; sha256: string; bytes: number; href: string }>;
+export const X_SETUP_DOWNLOAD = requireBotModule<{ X_SETUP_RELEASE: SetupRelease }>("src/automation/x-setup-release.js").X_SETUP_RELEASE;
 
 type PackageBuilder = {
   buildArchive: () => Promise<{ archive: Uint8Array; version: string }>;

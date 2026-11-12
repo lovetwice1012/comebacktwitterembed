@@ -1,0 +1,107 @@
+name: macOS Chromium synthetic validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-chromium-synthetic.yml
+      - src/automation/chrome-mac-*.js
+      - src/automation/brave-mac-*.js
+      - src/automation/edge-mac-*.js
+      - scripts/native-test/chrome-mac-leveldb-lock.test.cjs
+      - scripts/native-test/chrome-mac-hosted.test.cjs
+      - scripts/native-test/chrome-mac-group-diagnostic.cjs
+      - scripts/test/chrome-mac-group-diagnostic.test.js
+      - scripts/test/chrome-mac-process-group.test.js
+      - scripts/native-test/chrome-mac-install-diagnostic.cjs
+      - scripts/native-test/chrome-mac-verify-trace.cjs
+      - scripts/test/chrome-mac-verify-trace.test.js
+      - scripts/native-test/chrome-mac-push-hosted.test.cjs
+      - scripts/native-test/chrome-mac-push-error.cjs
+      - scripts/native-test/chrome-mac-push-probe.cjs
+      - scripts/native-test/chrome-mac-login-error.cjs
+      - scripts/test/chrome-mac-push-error.test.js
+      - scripts/test/chrome-mac-push-probe.test.js
+      - scripts/test/chrome-mac-login-error.test.js
+      - scripts/native-test/chrome-mac-synthetic-receive.cjs
+      - scripts/native-test/chrome-mac-synthetic-transfer.cjs
+      - scripts/native-test/chrome-mac-process-group.test.cjs
+      - scripts/native-test/chrome-mac-group-lifecycle.test.cjs
+      - scripts/native-test/brave-mac-composed.test.cjs
+      - scripts/test/chrome-mac-broker.test.js
+      - scripts/test/chrome-mac-setup-session.test.js
+      - scripts/test/edge-mac-broker.test.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the notification decryptor
+        run: |
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Build temporary lock helper
+        run: clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-test-lock-helper"
+      # Hosted runners are disposable. Some preinstalled Chrome images carry
+      # Finder/resource-fork attributes that fail strict codesign verification.
+      # Do not perform this operation on a user's installed application.
+      - name: Prepare hosted Chrome metadata
+        run: sudo xattr -cr '/Applications/Google Chrome.app'
+      # This keychain and password are synthetic and exist only on the hosted
+      # runner. They must never be used to change a user's normal keychain.
+      - name: Prepare synthetic hosted keychain
+        run: |
+          keychain="$RUNNER_TEMP/cbte-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Chrome -s 'Chrome Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Google Chrome.app' "$keychain"
+      - name: Run synthetic push reception on fresh runner
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 scripts/native-test/chrome-mac-push-hosted.test.cjs
+      - name: Run synthetic profile and LevelDB checks
+        if: ${{ !cancelled() }}
+        env:
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-test-lock-helper
+          CBTE_SYNTHETIC_HOSTED_KEYCHAIN: '1'
+        run: |
+          test "$(uname -s)" = Darwin
+          node --test --test-concurrency=1 \
+            scripts/native-test/chrome-mac-leveldb-lock.test.cjs \
+            scripts/native-test/chrome-mac-hosted.test.cjs \
+            scripts/native-test/chrome-mac-process-group.test.cjs \
+            scripts/native-test/chrome-mac-group-lifecycle.test.cjs \
+            scripts/test/chrome-mac-group-diagnostic.test.js \
+            scripts/test/chrome-mac-verify-trace.test.js \
+            scripts/test/chrome-mac-process-group.test.js \
+            scripts/test/chrome-mac-push-error.test.js \
+            scripts/test/chrome-mac-push-probe.test.js \
+            scripts/test/chrome-mac-login-error.test.js \
+            scripts/native-test/brave-mac-composed.test.cjs \
+            scripts/test/chrome-mac-broker.test.js \
+            scripts/test/edge-mac-broker.test.js \
+            scripts/test/chrome-mac-setup-session.test.js

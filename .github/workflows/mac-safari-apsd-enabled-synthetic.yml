@@ -1,0 +1,68 @@
+name: macOS Safari synthetic subscription with temporary APNs service
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-safari-apsd-enabled-synthetic.yml
+      - scripts/native-test/safari-apsd-ci-experiment.cjs
+      - scripts/native-test/safari-hosted-push-subscribe.test.cjs
+      - scripts/native-test/safari-hosted-ax-probe.swift
+      - scripts/test/safari-apsd-ci-experiment.test.js
+      - scripts/native-test/safari-synthetic-db-probe.cjs
+      - scripts/test/safari-synthetic-db-probe.test.js
+      - scripts/native-test/safari-synthetic-push-probe.cjs
+      - scripts/test/safari-synthetic-push-probe.test.js
+      - scripts/native-test/safari-synthetic-endpoint-get-probe.cjs
+      - scripts/test/safari-synthetic-endpoint-get-probe.test.js
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  safari-apsd:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Install locked test dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Compile isolated Safari permission helper
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          /usr/bin/swiftc -O scripts/native-test/safari-hosted-ax-probe.swift -o "$RUNNER_TEMP/cbte-safari-ax"
+          chmod 700 "$RUNNER_TEMP/cbte-safari-ax"
+          digest="$(/usr/bin/shasum -a 256 "$RUNNER_TEMP/cbte-safari-ax" | /usr/bin/awk '{print $1}')"
+          case "$digest" in (*[!a-f0-9]*|'') exit 1 ;; esac
+          test "${#digest}" -eq 64
+          printf 'CBTE_SAFARI_AX_SHA256=%s\n' "$digest" >> "$GITHUB_ENV"
+      - name: Enable Safari WebDriver on the disposable runner
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          sudo /usr/bin/safaridriver --enable
+      - name: Temporarily enable APNs for the synthetic subscription
+        env:
+          CBTE_SAFARI_APSD_EXPERIMENT: '1'
+          CBTE_SAFARI_AX_HELPER: ${{ runner.temp }}/cbte-safari-ax
+        run: |
+          node --test scripts/test/safari-apsd-ci-experiment.test.js
+          node --test scripts/test/safari-synthetic-db-probe.test.js
+          node --test scripts/test/safari-synthetic-push-probe.test.js
+          node --test scripts/test/safari-synthetic-endpoint-get-probe.test.js
+          node --test --test-name-pattern='compiled AX helper' scripts/native-test/safari-hosted-push-subscribe.test.cjs
+          node scripts/native-test/safari-apsd-ci-experiment.cjs

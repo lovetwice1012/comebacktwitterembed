@@ -56,6 +56,17 @@ async function fixture({ currentQuota = quota(), items = [row()], respond, opene
 }
 const writes = f => f.calls.filter(item => item.method !== 'GET');
 
+test('owned monitor shows a scheduled reconnect without internal error details', async () => {
+    const item = row({ notificationSettings: { ...row().notificationSettings, subscriptionId: SUBSCRIPTION_ID }, subscriptionState: 'bound' });
+    const f = await fixture({ compact: true, items: [item], respond: route => route === 'x-setup'
+        ? setup({ receiverEnabled: true, subscriptions: [subscription({ browserKind: 'chrome', receiverState: 'error', receiverRetryPending: true })] }) : undefined });
+    try {
+        assert.match(f.container.textContent, /再接続待ち/);
+        assert.doesNotMatch(f.container.textContent, /X_PUSH_CHROME_LOGIN_FAILED/);
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
 test('X owner controls load lazily, show actual plan/personal/supporter/free capacity, and default-off blocks new registration', async () => {
     const f = await fixture({ opened: false });
     try {

@@ -1,0 +1,114 @@
+name: macOS Edge isolated launch validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-edge-launch-synthetic.yml
+      - src/automation/edge-mac-broker.js
+      - src/automation/edge-private-broker.js
+      - src/automation/edge-cdp-pipe.js
+      - src/automation/chrome-mac-profile*.js
+      - src/automation/chrome-mac-process-group.js
+      - scripts/native-test/edge-mac-broker-hosted.test.cjs
+      - scripts/native-test/edge-mac-codesign-diagnostic*.cjs
+      - scripts/test/edge-mac-broker.test.js
+      - scripts/test/edge-mac-calibration.test.js
+      - scripts/test/edge-mac-calibration-runner.test.js
+      - scripts/native-test/edge-mac-calibration-hosted*.cjs
+      - scripts/native-test/edge-mac-workspace-hosted.test.cjs
+      - scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs
+      - scripts/native-test/edge-mac-session-lock-hosted.test.cjs
+      - scripts/native-test/edge-mac-session-research.cjs
+      - scripts/test/edge-mac-session-research.test.js
+      - scripts/native-test/edge-mac-store-classifier.cjs
+      - scripts/test/edge-mac-store-classifier.test.js
+      - scripts/native-test/edge-mac-fixture-error.cjs
+      - scripts/test/edge-mac-fixture-error.test.js
+      - scripts/native-test/edge-mac-version-diagnostic.cjs
+      - scripts/test/edge-mac-version-diagnostic.test.js
+      - scripts/test/edge-mac-calibration-workspace.test.js
+      - scripts/test/edge-calibration-cleanup-race.test.js
+      - scripts/native-test/edge-mac-synthetic-db.cjs
+      - src/automation/edge-mac-calibration.js
+      - src/automation/edge-mac-calibration-workspace.js
+      - src/automation/edge-mac-open.js
+      - src/automation/edge-mac-profile-rotation.js
+      - src/automation/edge-mac-peer.js
+      - src/automation/edge-calibration-*.js
+      - src/automation/edge-wns-*.js
+      - scripts/test/edge-wns-*.test.js
+      - client/angelic-setup/mac/edge-process-identity.c
+      - client/angelic-setup/mac/edge-socket-owner.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install signed Edge in disposable runner
+        run: |
+          if [ ! -x '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge' ]; then
+            brew install --cask --no-quarantine microsoft-edge
+          fi
+      # Disposable runner only: do not alter a person's installed application.
+      - name: Prepare hosted Edge metadata
+        run: sudo xattr -cr '/Applications/Microsoft Edge.app'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build notification decryptor
+        run: |
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Build isolated peer verification helpers
+        run: |
+          clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"
+          clang -O2 client/angelic-setup/mac/edge-socket-owner.c -o "$RUNNER_TEMP/MacEdgeSocketOwner"
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
+      - name: Install disposable database
+        if: matrix.os == 'macos-15'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install mariadb@11.8
+      - name: Test dedicated Edge launch
+        env:
+          CBTE_MAC_EDGE_HOSTED: '1'
+          MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
+          MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
+          MAC_LOCK_HELPER: ${{ runner.temp }}/MacStoreLock
+          CBTE_MAC_EDGE_DB_FIXTURE: ${{ matrix.os == 'macos-15' && '1' || '0' }}
+          AUTOMATION_TEST_DB_PORT: '33621'
+        run: |
+          set -eu
+          if [ "$CBTE_MAC_EDGE_DB_FIXTURE" = 1 ]; then
+            dbbase="$(brew --prefix mariadb@11.8)"
+            dbdir="$RUNNER_TEMP/cbte-edge-mariadb-data"
+            mkdir -m 700 "$dbdir"
+            "$dbbase/bin/mariadb-install-db" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --auth-root-authentication-method=normal --skip-test-db > /dev/null
+            "$dbbase/bin/mariadbd" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --socket="$RUNNER_TEMP/cbte-edge-mariadb.sock" --pid-file="$RUNNER_TEMP/cbte-edge-mariadb.pid" --log-error="$RUNNER_TEMP/cbte-edge-mariadb.log" --bind-address=127.0.0.1 --port=33621 --skip-name-resolve --skip-log-bin &
+            dbpid=$!
+            trap 'kill "$dbpid" 2>/dev/null || true; wait "$dbpid" 2>/dev/null || true' EXIT
+            ready=0
+            for i in $(seq 1 90); do
+              if "$dbbase/bin/mariadb-admin" --no-defaults --protocol=tcp -h 127.0.0.1 -P 33621 -u root ping > /dev/null 2>&1; then ready=1; break; fi
+              if ! kill -0 "$dbpid" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            test "$ready" = 1
+          fi
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-codesign-diagnostic.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/native-test/edge-mac-workspace-hosted.test.cjs scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs scripts/native-test/edge-mac-session-lock-hosted.test.cjs scripts/test/edge-mac-session-research.test.js scripts/test/edge-mac-fixture-error.test.js scripts/test/edge-mac-store-classifier.test.js scripts/test/edge-mac-version-diagnostic.test.js scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-calibration-cleanup-race.test.js scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js

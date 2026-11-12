@@ -29,7 +29,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $script:Title = 'X通知データの保存ツール'
 $script:AppId = 'x-notification-setup'
-$script:Version = '0.1.0-preview.5'
+$script:Version = '0.1.0-preview.6'
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 $script:PackageRoot = $PSScriptRoot
 $script:PackageCapabilities = $null

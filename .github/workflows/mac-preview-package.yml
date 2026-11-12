@@ -1,0 +1,101 @@
+name: macOS Chrome preview package validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-preview-package.yml
+      - scripts/build-mac-chrome-preview.cjs
+      - scripts/build-mac-chrome-release-candidate.cjs
+      - scripts/build-mac-brave-release-candidate.cjs
+      - scripts/build-mac-firefox-release-candidate.cjs
+      - scripts/build-mac-edge-release-candidate.cjs
+      - scripts/edge-mac-app-core.cjs
+      - scripts/edge-mac-release-app.cjs
+      - scripts/test/edge-mac-app-entry.test.js
+      - scripts/test/edge-mac-release-layout.test.js
+      - scripts/test/edge-mac-profile-rotation.test.js
+      - scripts/test/edge-mac-app-rotation.test.js
+      - scripts/test/edge-mac-open-boundary.test.js
+      - scripts/test/edge-mac-setup-session.test.js
+      - scripts/test/edge-mac-calibration-workspace.test.js
+      - scripts/test/edge-mac-dialogs.test.js
+      - scripts/test/chrome-mac-profile-registry.test.js
+      - src/automation/edge-mac-*.js
+      - client/angelic-setup/mac/Edge-候補用.txt
+      - client/angelic-setup/mac/edge-process-identity.c
+      - client/angelic-setup/mac/edge-socket-owner.c
+      - scripts/firefox-mac-app.cjs
+      - scripts/firefox-mac-app-core.cjs
+      - scripts/firefox-mac-release-app.cjs
+      - scripts/test/firefox-mac-app-entry.test.js
+      - src/automation/firefox-mac-*.js
+      - client/angelic-setup/mac/Firefox-候補用.txt
+      - scripts/brave-mac-release-app.cjs
+      - scripts/brave-mac-app.cjs
+      - scripts/brave-mac-app-core.cjs
+      - scripts/test/brave-mac-app-entry.test.js
+      - scripts/test/chrome-mac-build-bundle.test.js
+      - src/automation/brave-mac-*.js
+      - client/angelic-setup/mac/Brave-候補用.txt
+      - scripts/test/mac-chrome-release-candidate.test.js
+      - scripts/native-test/chrome-mac-candidate-adhoc.test.cjs
+      - scripts/build-mac-chrome-setup-bundle.cjs
+      - scripts/native-test/chrome-mac-preview-hosted.test.cjs
+      - scripts/native-test/chrome-mac-group-diagnostic.cjs
+      - scripts/test/chrome-mac-group-diagnostic.test.js
+      - scripts/test/chrome-mac-process-group.test.js
+      - scripts/test/chrome-mac-setup-session.test.js
+      - scripts/native-test/chrome-mac-open-hosted.test.cjs
+      - scripts/native-test/chrome-mac-launch-env.test.cjs
+      - scripts/native-test/chrome-mac-native-launcher.test.cjs
+      - scripts/native-test/chrome-mac-adhoc-package.test.cjs
+      - scripts/chrome-mac-app.cjs
+      - src/automation/chrome-mac-*.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - client/angelic-setup/mac/launch-native.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build isolated unsigned preview
+        run: |
+          case "$(uname -m)" in arm64) arch=arm64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
+          curl -fsSL --retry 2 --max-time 180 "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-$arch.tar.gz" -o "$RUNNER_TEMP/node.tar.gz"
+          mkdir "$RUNNER_TEMP/node-dist"
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP/node-dist" --strip-components=1
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/MacStoreLock"
+          printf '\0' > "$RUNNER_TEMP/restrict-section"
+          MACOSX_DEPLOYMENT_TARGET=13.5 clang -O2 client/angelic-setup/mac/launch-native.c -Wl,-sectcreate,__RESTRICT,__restrict,"$RUNNER_TEMP/restrict-section" -o "$RUNNER_TEMP/Launch"
+          codesign --force --sign - --options runtime "$RUNNER_TEMP/Launch"
+          node scripts/build-mac-chrome-preview.cjs "$arch" "$RUNNER_TEMP/node-dist/bin/node" "$RUNNER_TEMP/Launch" "$RUNNER_TEMP/MacStoreLock" "$RUNNER_TEMP/node-dist/LICENSE" "$RUNNER_TEMP/cbte-preview.zip"
+      - name: Load packaged runtime and native addon
+        env:
+          MAC_PREVIEW_ZIP: ${{ runner.temp }}/cbte-preview.zip
+        run: node --test --test-concurrency=1 scripts/native-test/chrome-mac-preview-hosted.test.cjs scripts/native-test/chrome-mac-open-hosted.test.cjs scripts/native-test/chrome-mac-launch-env.test.cjs scripts/native-test/chrome-mac-native-launcher.test.cjs scripts/native-test/chrome-mac-adhoc-package.test.cjs scripts/test/mac-chrome-release-candidate.test.js scripts/test/brave-mac-app-entry.test.js scripts/test/firefox-mac-app-entry.test.js scripts/test/firefox-mac-preview-layout.test.js scripts/test/edge-mac-app-entry.test.js scripts/test/edge-mac-release-layout.test.js scripts/test/edge-mac-setup-session.test.js scripts/test/edge-mac-profile-rotation.test.js scripts/test/edge-mac-app-rotation.test.js scripts/test/edge-mac-open-boundary.test.js scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/test/chrome-mac-build-bundle.test.js scripts/test/chrome-mac-group-diagnostic.test.js scripts/test/chrome-mac-process-group.test.js scripts/test/chrome-mac-setup-session.test.js
+      - name: Exercise candidate packaging with synthetic signatures and notary
+        env:
+          CBTE_MAC_CANDIDATE_FIXTURE: '1'
+          MAC_CANDIDATE_RUNTIME: ${{ runner.temp }}/node-dist/bin/node
+          MAC_CANDIDATE_LICENSE: ${{ runner.temp }}/node-dist/LICENSE
+        run: node --test --test-concurrency=1 scripts/native-test/chrome-mac-candidate-adhoc.test.cjs
