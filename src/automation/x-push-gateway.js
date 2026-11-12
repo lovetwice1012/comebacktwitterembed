@@ -147,6 +147,7 @@ function createXPushGateway(db, options = {}) {
         if (options.enabled !== true) throw fault('X_PUSH_RECEIVER_DISABLED');
         if (!privateWorkerVault || typeof privateWorkerVault.open !== 'function') throw fault('X_PUSH_WORKER_KEY_UNAVAILABLE');
     }
+    /** @param {any} lease @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function openSubscription(lease, { signal, authorize } = {}) {
         await deadline(store.assertLease(lease, { signal, authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         let file;
@@ -171,6 +172,7 @@ function createXPushGateway(db, options = {}) {
             });
         } catch { throw fault('X_PUSH_DECRYPTION_FAILED'); }
     }
+    /** @param {any} lease @param {any} row @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function decryptInbox(lease, row, { signal, authorize } = {}) {
         configured();
         if (!row || row.subscriptionId !== lease.subscriptionId || row.ownerUserId !== lease.ownerUserId || row.revision !== lease.revision
@@ -180,6 +182,7 @@ function createXPushGateway(db, options = {}) {
         return decrypt(crypto, file, row);
     }
     // Recovery reads existing ciphertext with the current worker's own lease.
+    /** @param {any} lease @param {any} row @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function decryptQuarantinedInbox(lease, row, { signal, authorize } = {}) {
         configured();
         if (!row || row.subscriptionId !== lease.subscriptionId || row.ownerUserId !== lease.ownerUserId || row.revision !== lease.revision

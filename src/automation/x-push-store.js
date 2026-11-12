@@ -167,6 +167,7 @@ function createXPushStore(db, options = {}) {
             return { ...lease, expiresAtMs };
         }, { postAuthorize: authorize });
     }
+    /** @param {any} lease @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function assertLease(lease, { authorize, signal } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver, { allowProcessing: true });
@@ -395,6 +396,7 @@ function createXPushStore(db, options = {}) {
             return Number(result.affectedRows);
         }, { postAuthorize: authorize });
     }
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function markRouted(lease, id, { signal, authorize } = {}) {
         if (!/^[0-9]{1,20}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -404,6 +406,7 @@ function createXPushStore(db, options = {}) {
             return result.affectedRows === 1;
         }, { signal, authorize });
     }
+    /** @param {any} lease @param {any} outcome @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function auditUse(lease, outcome, { signal, authorize } = {}) {
         if (!['opened', 'failed'].includes(outcome)) fail('X_PUSH_AUDIT_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -437,6 +440,7 @@ function createXPushStore(db, options = {}) {
             return rows.map(row => inboxDto(row, lease.ownerUserId));
         }, { signal: input.signal });
     }
+    /** @param {any} lease @param {any} inboxId @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function restoreQuarantinedInbox(lease, inboxId, { authorize, signal } = { authorize: undefined }) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -450,6 +454,7 @@ function createXPushStore(db, options = {}) {
             return Number(result.affectedRows) === 1;
         }, { signal });
     }
+    /** @param {any} lease @param {any} inboxId @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function markUnmatched(lease, inboxId, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -508,6 +513,7 @@ function createXPushStore(db, options = {}) {
             return { ready: true, windowAtMs, cursorId: '0', processingMode };
         }, { signal: options.signal, authorize: options.authorize });
     }
+    /** @param {any} lease @param {any} input @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function advanceProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0 || !/^[1-9]\d{0,19}$/.test(String(input.cursorId))) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -518,6 +524,7 @@ function createXPushStore(db, options = {}) {
             fence(lease, subscription, receiver, { allowProcessing: true });
         }, { signal, authorize });
     }
+    /** @param {any} lease @param {any} input @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function completeProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -529,6 +536,7 @@ function createXPushStore(db, options = {}) {
             fence(lease, subscription, receiver, { allowProcessing: true });
         }, { signal, authorize });
     }
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function markUnsupported(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
@@ -538,6 +546,7 @@ function createXPushStore(db, options = {}) {
             return result.affectedRows === 1;
         }, { signal, authorize });
     }
+    /** @param {any} lease @param {any} id @param {{signal?: AbortSignal, authorize?: any}} [options] */
     async function markRecoveryQuarantined(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {

@@ -3,6 +3,7 @@
 // Optional processing of durable receipts while the push socket is absent.
 // A caller must supply an enabled lease manager with verified fleet compatibility.
 // No browser connection is opened and network retry state is not modified.
+/** @param {{db:any, leaseManager:any, workerId:string, drain:any, authorize:any, assertAllowed:()=>void, signal:AbortSignal, clock?:()=>number, pageSize?:number, concurrency?:number, listCandidates?:any, isLocalSession?:(id:string)=>boolean, processingSnapshot?:any, maxCooldowns?:number, snapshotTimeoutMs?:number}} options */
 function createOfflineProcessingScheduler({ db, leaseManager, workerId, drain, authorize, assertAllowed,
     signal, clock = Date.now, pageSize = 100, concurrency = 16, listCandidates, isLocalSession = () => false,
     processingSnapshot, maxCooldowns = 2000, snapshotTimeoutMs = 1000 }) {

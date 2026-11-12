@@ -19,6 +19,7 @@ function validateLease(lease) {
         || !Number.isSafeInteger(lease.revision) || lease.revision < 1) fail('X_PUSH_LEASE_LOST');
 }
 
+/** @param {any} db @param {{enabled?: boolean, assertCompatible?: any, now?: () => number, leaseMs?: number}} [options] */
 function createOfflineLease(db, { enabled = false, assertCompatible, now = Date.now, leaseMs = 30000 } = {}) {
     if (!db || typeof db.withDatabaseTransaction !== 'function' || typeof now !== 'function'
         || typeof enabled !== 'boolean' || assertCompatible !== undefined && typeof assertCompatible !== 'function'
@@ -69,6 +70,7 @@ function createOfflineLease(db, { enabled = false, assertCompatible, now = Date.
         if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token) || expiry == null || !Number.isSafeInteger(Number(expiry))) fail('X_PUSH_OFFLINE_STATE_INVALID');
         return Number(expiry) > now();
     }
+    /** @param {any} input @param {{authorize?: any}} [options] */
     async function claim(input, { authorize } = {}) {
         validateIdentity(input);
         if (typeof input.workerId !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(input.workerId)
@@ -108,6 +110,7 @@ function createOfflineLease(db, { enabled = false, assertCompatible, now = Date.
                 connectionGeneration: generation, purpose: 'processing', sealedEnvelope };
         });
     }
+    /** @param {any} lease @param {{authorize?: any}} [options] */
     async function renew(lease, { authorize } = {}) {
         validateLease(lease); if (typeof authorize !== 'function') fail('X_PUSH_OFFLINE_CONFIG_INVALID');
         if (!await compatible()) fail('X_PUSH_OFFLINE_COMPATIBILITY_UNVERIFIED');

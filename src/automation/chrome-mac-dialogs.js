@@ -22,7 +22,7 @@ const SCRIPTS = Object.freeze({
 });
 // Both variants are derived only from fixed application-owned literals.
 // No user-controlled text is ever interpolated into AppleScript.
-const BRAVE_SCRIPTS = Object.freeze({ ...Object.fromEntries(Object.entries(SCRIPTS).map(([key, script]) => [key, script.replaceAll('Chrome', 'Brave')])),
+const BRAVE_SCRIPTS = Object.freeze({ .../** @type {Record<keyof typeof SCRIPTS, string>} */ (Object.fromEntries(Object.entries(SCRIPTS).map(([key, script]) => [key, script.replaceAll('Chrome', 'Brave')]))),
     open: `display dialog "専用のBraveでXにログインし、通知をオンにします。\n専用BraveではGoogleのプッシュ通知サービスを利用します。\n完了後、ファイルを保存して登録画面からアップロードしてください。" with title "X通知の準備" buttons {"やめる", "Braveを開く"} default button "Braveを開く" cancel button "やめる"\nreturn "yes"`,
     pushDisabled: `display dialog "設定用Braveの設定を開き、「プライバシーとセキュリティ」で「プッシュメッセージングにGoogleサービスを使用」をオンにしてください。\n設定後にBraveを閉じ、このツールをもう一度開いてください。" with title "Braveの通知をオンにする" buttons {"終了"} default button "終了"\nreturn "no"`,
     pushUnknown: `display dialog "設定用Braveの「プライバシーとセキュリティ」で「プッシュメッセージングにGoogleサービスを使用」がオンか確認してください。\n設定を変更した場合はBraveを閉じ、このツールをもう一度開いてください。" with title "Braveの通知を確認" buttons {"終了", "オンを確認"} default button "オンを確認" cancel button "終了"\nreturn "yes"` });
