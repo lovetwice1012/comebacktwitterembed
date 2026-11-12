@@ -21,7 +21,7 @@ const { buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-sn
 const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
-const { fixtureFailure, safeFixtureSend, sendCategory } = require('./edge-mac-suppression-errors.cjs');
+const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved } = require('./edge-mac-suppression-errors.cjs');
 const { withFixtureCdp } = require('./edge-mac-suppression-cdp.cjs');
 
 test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
@@ -29,7 +29,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-edge-suppress-'));
         const children = [], brokers = [], records = []; let server, session, transport, selected, rewritten, rotated;
-        let calibrationStarted = false, calibrationClean = false, dbClosed = true, stage = 'SETUP';
+        let calibrationStarted = false, calibrationClean = false, dbClosed = true, diagnosticCleanupUncertain = false, stage = 'SETUP';
         function track(child) {
             const item = { child, closed: false }; item.done = new Promise(resolve => { child.once('close', () => { item.closed = true; resolve(); }); child.once('error', resolve); });
             children.push(item); return child;
@@ -40,7 +40,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         }
         t.after(async () => {
             try {
-            let safe = (!calibrationStarted || calibrationClean) && dbClosed;
+            let safe = (!calibrationStarted || calibrationClean) && dbClosed && !diagnosticCleanupUncertain;
             try { session?.close(); } catch { safe = false; }
             try { transport?.close(); } catch { safe = false; }
             for (const broker of brokers) {
@@ -178,14 +178,46 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         assert.ok(observed.has(ping) && pingCounts?.pong > 0, 'fixture worker round trip unavailable');
         stage = 'BASELINE_SEND';
         const baselineEventsBefore = pushEvents;
+        const baselineSendStarted = Date.now();
         const baselineSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
         t.diagnostic(`synthetic baseline send=${baselineSend}`);
         stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
+        const baselineObserved = freezeObserved(observed, control);
         t.diagnostic(`synthetic baseline push-event=${pushEvents > baselineEventsBefore ? 'observed' : 'not_observed'}`);
         const counts = await fixtureCounts();
         const clientObservation = counts ? counts.push > 0 ? 'observed' : 'not_observed' : 'unavailable';
-        t.diagnostic(`synthetic baseline push-client=${clientObservation}`);
-        assert.equal(observed.has(control), true, 'fixture browser did not receive control');
+        t.diagnostic(`synthetic baseline push-client-after-window=${clientObservation}`);
+        if (!baselineObserved) {
+            let recovery = 'STOP_FAILED', recoveryStarted = 0;
+            try {
+                await stop(baseline); recoveryStarted = Date.now(); recovery = 'CONNECT_FAILED';
+                let saved; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+                const store = { async assertLease(_lease, { authorize }) { await authorize(); }, async recordFrame(_lease, frame, { authorize }) {
+                    await authorize(); saved = frame; return { ...lease, ...frame, id: '1', duplicate: false }; } };
+                await withEdgeWnsCredentials(file, async credentials => {
+                    transport = createEdgeWnsTransport({ timeoutMs: 15000 });
+                    session = createEdgeWnsSession({ ...credentials, transport, store, lease, authorize: async () => {}, saveRotatedToken: async value => { rotated = Buffer.from(value); } });
+                    assert.equal((await session.start()).state, 'ready'); recovery = 'NOT_OBSERVED';
+                    const limit = Date.now() + 25000;
+                    while (Date.now() < limit && !saved) await session.next(Math.min(3000, Math.max(1, limit - Date.now())));
+                    if (saved) {
+                        recovery = 'DECRYPT_FAILED';
+                        const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                        const keys = { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')], private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] };
+                        try { recovery = decryptNotification(saved.data, saved.headers, keys)?.raw === control ? 'MATCHED' : 'OTHER_FRAME'; }
+                        finally { Object.values(keys).forEach(value => value.fill(0)); }
+                    }
+                });
+            } catch { /* Keep the fixed stage and never expose external error values. */ }
+            finally {
+                try { session?.close(); } catch { diagnosticCleanupUncertain = true; }
+                try { transport?.close(); } catch { diagnosticCleanupUncertain = true; }
+                session = null; transport = null; rotated?.fill(0); rotated = null;
+            }
+            const elapsed = recoveryStarted ? Math.min(999, Math.max(0, Math.floor((recoveryStarted - baselineSendStarted) / 1000))) : -1;
+            t.diagnostic(`synthetic baseline recovery=${recovery} ttlSeconds=60 ageAtConnectSeconds=${elapsed < 0 ? 'unavailable' : elapsed}`);
+        }
+        assert.equal(baselineObserved, true, 'fixture browser did not receive control');
         stage = 'BASELINE_STOP'; await stop(baseline);
         let stored; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
         const store = { async assertLease(_lease, { authorize }) { await authorize(); }, async recordFrame(_lease, frame, { authorize }) {

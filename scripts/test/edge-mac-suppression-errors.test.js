@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixtureFailure, safeFixtureSend, sendCategory } = require('../native-test/edge-mac-suppression-errors.cjs');
+const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved } = require('../native-test/edge-mac-suppression-errors.cjs');
 test('fixture send and stages never expose external error fields', async () => {
     const error = Object.assign(new Error('SECRET_MESSAGE'), { endpoint: 'SECRET_ENDPOINT', body: 'SECRET_BODY', headers: { authorization: 'SECRET_HEADER' } });
     try { await safeFixtureSend(async () => { throw error; }); assert.fail('expected failure'); }
@@ -21,4 +21,8 @@ test('fixture send and stages never expose external error fields', async () => {
         authorization: 'SECRET_HEADER' }, body: 'SECRET_BODY' };
     assert.equal(await safeFixtureSend(async () => response), 'H201-DDISCONNECTED-WRECEIVED');
     assert.equal(await safeFixtureSend(async () => Object.defineProperty({}, 'headers', { get() { throw new Error('SECRET_GETTER'); } })), 'HUNKNOWN-DOTHER-WOTHER');
+});
+test('late observer arrival cannot change the frozen baseline result', () => {
+    const seen = new Set(), result = freezeObserved(seen, 'synthetic');
+    seen.add('synthetic'); assert.equal(result, false); assert.equal(freezeObserved(seen, 'synthetic'), true);
 });

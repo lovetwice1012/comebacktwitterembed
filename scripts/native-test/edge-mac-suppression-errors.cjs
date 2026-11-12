@@ -5,6 +5,7 @@ const CATEGORIES = new Set(['HTTP_400', 'HTTP_401', 'HTTP_403', 'HTTP_404', 'HTT
 const { classifySendResponse, formatSendResponses } = require('../../experiments/chrome-push/edge-fixture-send-status.cjs');
 function fixtureFailure(stage) { return new Error(`FIXTURE_SUPPRESSION_${STAGES.has(stage) ? stage : 'UNKNOWN'}_FAILED`); }
 function sendCategory(error) { try { const value = error?.category; return CATEGORIES.has(value) ? value : 'OTHER'; } catch { return 'OTHER'; } }
+function freezeObserved(observed, marker) { return observed.has(marker) === true; }
 async function safeFixtureSend(send) {
     try {
         const response = await send();
@@ -16,4 +17,4 @@ async function safeFixtureSend(send) {
         throw result;
     }
 }
-module.exports = { fixtureFailure, safeFixtureSend, sendCategory };
+module.exports = { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved };
