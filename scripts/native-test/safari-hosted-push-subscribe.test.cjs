@@ -100,11 +100,11 @@ function launchdApsdState() {
 
 function parseApsdDisabledState(output) {
   // launchctl's diagnostic output is not a stable API. Only the exact system
-  // service label and one explicit boolean are accepted. Absence, unexpected
+  // service label and one explicit disabled/enabled state are accepted. Absence, unexpected
   // syntax, and duplicate entries do not establish whether the service runs.
   if (typeof output !== 'string' || output.length > 262144) return 'unknown';
-  const matches = [...output.matchAll(/^[\t ]*"com\.apple\.apsd"[\t ]*=>[\t ]*(true|false)[\t ]*$/gm)];
-  return matches.length === 1 ? matches[0][1] === 'true' : 'unknown';
+  const matches = [...output.matchAll(/^[\t ]*"com\.apple\.apsd"[\t ]*=>[\t ]*(true|false|disabled|enabled)[\t ]*$/gm)];
+  return matches.length === 1 ? ['true', 'disabled'].includes(matches[0][1]) : 'unknown';
 }
 
 function launchdApsdDisabled() {
@@ -322,6 +322,8 @@ test('apsd diagnostics reject ambiguous service output and match exact process b
   assert.equal(parsePsApsdPresence(''), 'unknown');
   assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => true\n}\n'), true);
   assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => false\n}\n'), false);
+  assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => disabled\n}\n'), true);
+  assert.equal(parseApsdDisabledState('disabled services = {\n\t"com.apple.apsd" => enabled\n}\n'), false);
   assert.equal(parseApsdDisabledState('disabled services = {}'), 'unknown');
   assert.equal(parseApsdDisabledState('"com.apple.apsd" => true\n"com.apple.apsd" => false'), 'unknown');
   assert.equal(parseApsdDisabledState('"com.apple.apsd.other" => true'), 'unknown');
