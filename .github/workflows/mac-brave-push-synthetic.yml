@@ -67,10 +67,18 @@ jobs:
           attached=true
           source_app="$mountpoint/Brave Browser.app"
           test -d "$source_app" && test ! -L "$source_app"
-          codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.brave.Browser" and certificate leaf[subject.OU] = "KL8N8XSYF4"' "$source_app"
-          archs="$(lipo -archs "$source_app/Contents/MacOS/Brave Browser")"
+          # Finder metadata on the read-only image can fail strict codesign.
+          # Remove it only on a disposable runner-owned staging copy, then
+          # validate that copy before placing it at the test discovery path.
+          staging="$(mktemp -d "$RUNNER_TEMP/cbte-brave-stage.XXXXXX")"
+          staged_app="$staging/Brave Browser.app"
+          ditto "$source_app" "$staged_app"
+          xattr -cr "$staged_app"
+          codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.brave.Browser" and certificate leaf[subject.OU] = "KL8N8XSYF4"' "$staged_app"
+          archs="$(lipo -archs "$staged_app/Contents/MacOS/Brave Browser")"
           [[ " $archs " == *' x86_64 '* && " $archs " == *' arm64 '* ]]
-          sudo ditto "$source_app" "$app"
+          test ! -e "$app" && test ! -L "$app"
+          sudo ditto "$staged_app" "$app"
           sudo xattr -cr '/Applications/Brave Browser.app'
       - name: Install locked dependencies without lifecycle scripts
         run: |
