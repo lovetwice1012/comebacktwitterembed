@@ -8,6 +8,13 @@ on:
       - scripts/build-mac-chrome-preview.cjs
       - scripts/build-mac-chrome-release-candidate.cjs
       - scripts/build-mac-brave-release-candidate.cjs
+      - scripts/build-mac-firefox-release-candidate.cjs
+      - scripts/firefox-mac-app.cjs
+      - scripts/firefox-mac-app-core.cjs
+      - scripts/firefox-mac-release-app.cjs
+      - scripts/test/firefox-mac-app-entry.test.js
+      - src/automation/firefox-mac-*.js
+      - client/angelic-setup/mac/Firefox-候補用.txt
       - scripts/brave-mac-release-app.cjs
       - scripts/brave-mac-app.cjs
       - scripts/brave-mac-app-core.cjs
@@ -69,7 +76,7 @@ jobs:
       - name: Load packaged runtime and native addon
         env:
           MAC_PREVIEW_ZIP: ${{ runner.temp }}/cbte-preview.zip
-        run: node --test --test-concurrency=1 scripts/native-test/chrome-mac-preview-hosted.test.cjs scripts/native-test/chrome-mac-open-hosted.test.cjs scripts/native-test/chrome-mac-launch-env.test.cjs scripts/native-test/chrome-mac-native-launcher.test.cjs scripts/native-test/chrome-mac-adhoc-package.test.cjs scripts/test/mac-chrome-release-candidate.test.js scripts/test/brave-mac-app-entry.test.js scripts/test/chrome-mac-build-bundle.test.js scripts/test/chrome-mac-group-diagnostic.test.js scripts/test/chrome-mac-process-group.test.js scripts/test/chrome-mac-setup-session.test.js
+        run: node --test --test-concurrency=1 scripts/native-test/chrome-mac-preview-hosted.test.cjs scripts/native-test/chrome-mac-open-hosted.test.cjs scripts/native-test/chrome-mac-launch-env.test.cjs scripts/native-test/chrome-mac-native-launcher.test.cjs scripts/native-test/chrome-mac-adhoc-package.test.cjs scripts/test/mac-chrome-release-candidate.test.js scripts/test/brave-mac-app-entry.test.js scripts/test/firefox-mac-app-entry.test.js scripts/test/firefox-mac-preview-layout.test.js scripts/test/chrome-mac-build-bundle.test.js scripts/test/chrome-mac-group-diagnostic.test.js scripts/test/chrome-mac-process-group.test.js scripts/test/chrome-mac-setup-session.test.js
       - name: Exercise candidate packaging with synthetic signatures and notary
         env:
           CBTE_MAC_CANDIDATE_FIXTURE: '1'

@@ -6,7 +6,7 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { zipSync } = require('fflate');
-const { buildMacChromeBundle, buildMacBraveBundle, buildMacBraveReleaseBundle, buildMacFirefoxBundle } = require('./build-mac-chrome-setup-bundle.cjs');
+const { buildMacChromeBundle, buildMacBraveBundle, buildMacBraveReleaseBundle, buildMacFirefoxBundle, buildMacFirefoxReleaseBundle } = require('./build-mac-chrome-setup-bundle.cjs');
 const { isMacExecutable: isMachOExecutable, isRestrictedMacExecutable } = require('./lib/mac-macho.cjs');
 const VERSION = '0.1.0-mac-preview.1';
 const BRAVE_VERSION = '0.1.0-mac-brave-preview.2';
@@ -51,12 +51,12 @@ async function buildMacPreview({ arch, runtime, launcher, helper, license, brows
         || hash(runtime) !== RUNTIME_HASH[arch] || hash(license) !== LICENSE_HASH
         || !isMachOExecutable(runtime, arch) || !isRestrictedMacExecutable(launcher, arch) || !isMachOExecutable(helper, arch)) throw new Error('Mac preview input verification failed');
     if (!['chrome', 'brave', 'firefox'].includes(browser) || typeof releaseCandidate !== 'boolean'
-        || releaseCandidate && browser !== 'brave') throw new Error('Unsupported Mac preview');
+        || releaseCandidate && !['brave', 'firefox'].includes(browser)) throw new Error('Unsupported Mac preview');
     const [bundle, projectLicense, guide, firefoxBootstrap, firefoxReader] = await Promise.all([
-        browser === 'brave' ? (releaseCandidate ? buildMacBraveReleaseBundle() : buildMacBraveBundle()) : browser === 'firefox' ? buildMacFirefoxBundle() : buildMacChromeBundle(),
+        browser === 'brave' ? (releaseCandidate ? buildMacBraveReleaseBundle() : buildMacBraveBundle()) : browser === 'firefox' ? (releaseCandidate ? buildMacFirefoxReleaseBundle() : buildMacFirefoxBundle()) : buildMacChromeBundle(),
         readInput(path.resolve(__dirname, '../client/angelic-setup/LICENSE'), 1024 * 1024),
         readInput(path.resolve(__dirname, browser === 'brave' ? (releaseCandidate ? '../client/angelic-setup/mac/Brave-候補用.txt' : '../client/angelic-setup/mac/Brave-試験用.txt')
-            : browser === 'firefox' ? '../client/angelic-setup/mac/Firefox-試験用.txt' : '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024),
+            : browser === 'firefox' ? (releaseCandidate ? '../client/angelic-setup/mac/Firefox-候補用.txt' : '../client/angelic-setup/mac/Firefox-試験用.txt') : '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024),
         browser === 'firefox' ? readInput(path.resolve(__dirname, '../client/angelic-setup/mac/FirefoxXPCShellReader.js'), 1024 * 1024) : null,
         browser === 'firefox' ? readInput(path.resolve(__dirname, '../client/angelic-setup/Read-PushSubscription.js'), 1024 * 1024) : null]);
     const archive = assembleMacApp({ bundle, runtime, launcher, helper, license, projectLicense, guide, browser, firefoxBootstrap, firefoxReader });
@@ -66,6 +66,7 @@ const buildMacChromePreview = options => buildMacPreview({ ...options, browser: 
 const buildMacBravePreview = options => buildMacPreview({ ...options, browser: 'brave', releaseCandidate: false });
 const buildMacBraveReleasePreview = options => buildMacPreview({ ...options, browser: 'brave', releaseCandidate: true });
 const buildMacFirefoxPreview = options => buildMacPreview({ ...options, browser: 'firefox', releaseCandidate: false });
+const buildMacFirefoxReleasePreview = options => buildMacPreview({ ...options, browser: 'firefox', releaseCandidate: true });
 async function readInput(filename, max) {
     if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error('Input must be absolute');
     const stat = await fs.lstat(filename);
@@ -91,4 +92,4 @@ async function main(args) {
     process.stdout.write(JSON.stringify({ path: outputPath, sha256: result.sha256, arch, version: VERSION, signed: false }) + '\n');
 }
 if (require.main === module) main(process.argv.slice(2)).catch(() => { process.stderr.write('Mac preview build failed. No release was published.\n'); process.exitCode = 1; });
-module.exports = { assembleMacApp, buildMacChromePreview, buildMacBravePreview, buildMacBraveReleasePreview, buildMacFirefoxPreview, readInput, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };
+module.exports = { assembleMacApp, buildMacChromePreview, buildMacBravePreview, buildMacBraveReleasePreview, buildMacFirefoxPreview, buildMacFirefoxReleasePreview, readInput, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };

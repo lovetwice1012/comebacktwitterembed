@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { createHash } = require('node:crypto');
-const { buildCandidate, buildBraveCandidate, validateOptions, publishCandidate, releaseEnvironment } = require('../build-mac-chrome-release-candidate.cjs');
+const { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, validateOptions, publishCandidate, releaseEnvironment } = require('../build-mac-chrome-release-candidate.cjs');
 const hash = b => createHash('sha256').update(b).digest('hex');
 const baseInput = (root, browser = 'chrome') => ({ arch: 'arm64', version: '1.2.3', teamId: 'ABCDEFGHIJ', identity: 'Developer ID Application: Fixture', profile: 'fixture',
     runtime: path.join(root, 'node'), license: path.join(root, 'license'), output: path.join(root, `${browser}-mac-arm64-1.2.3.zip`) });
@@ -37,7 +37,13 @@ async function fixture(t, mode, browser = 'chrome') {
             const helper = path.join(path.dirname(dest), 'MacStoreLock'), launcher = path.join(path.dirname(dest), 'Launch');
             await fs.copyFile(helper, path.join(bin, 'MacStoreLock')); await fs.copyFile(launcher, path.join(bin, 'Launch'));
             await fs.writeFile(path.join(bin, 'MacNode'), 'runtime', { mode: 0o755 }); await fs.writeFile(path.join(bin, 'MacLevelDB.node'), 'addon');
-            await fs.writeFile(path.join(res, 'MacSetup-manifest.json'), JSON.stringify(browser === 'brave'
+            if (browser === 'firefox') {
+                await fs.writeFile(path.join(res, 'FirefoxXPCShellReader.js'), 'bootstrap');
+                await fs.writeFile(path.join(res, 'Read-PushSubscription.js'), 'reader');
+            }
+            await fs.writeFile(path.join(res, 'MacSetup-manifest.json'), JSON.stringify(browser === 'firefox'
+                ? { packageId: 'x-notification-mac-firefox-setup', version: '0.1.0-mac-firefox-preview.1', lockSha256: hash(await fs.readFile(helper)), bootstrapSha256: hash('bootstrap'), readerSha256: hash('reader') }
+                : browser === 'brave'
                 ? { packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.2', lockSha256: hash(await fs.readFile(helper)) }
                 : { packageId: 'x-notification-mac-chrome-setup', version: '0.1.0-mac-preview.1', lockSha256: hash(await fs.readFile(helper)) }));
             await fs.writeFile(path.join(app, 'Contents', 'Info.plist'), '<key>CFBundleShortVersionString</key><string>0.1.0</string>'); return {};
@@ -52,6 +58,10 @@ async function fixture(t, mode, browser = 'chrome') {
             manifest.packageId = 'x-notification-mac-chrome-setup';
             await fs.writeFile(filename, JSON.stringify(manifest));
         }
+        if (path.basename(cmd) === 'stapler' && args[0] === 'staple' && mode === 'tamper-firefox-reader')
+            await fs.appendFile(path.join(args.at(-1), 'Contents', 'Resources', 'Read-PushSubscription.js'), 'tampered');
+        if (path.basename(cmd) === 'stapler' && args[0] === 'staple' && mode === 'tamper-firefox-bootstrap')
+            await fs.appendFile(path.join(args.at(-1), 'Contents', 'Resources', 'FirefoxXPCShellReader.js'), 'tampered');
         return {};
     };
     const buildPreview = async ({ helper, launcher, runtime, license }) => {
@@ -100,6 +110,18 @@ test('Brave builder rejects Chrome metadata before submitting to Apple', async t
 test('Brave builder rejects changed package identity after stapling', async t => {
     const f = await fixture(t, 'tamper-kind', 'brave');
     await assert.rejects(buildBraveCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview }), { code: 'MAC_RELEASE_MANIFEST_INVALID' });
+    await assert.rejects(fs.access(f.input.output), { code: 'ENOENT' });
+});
+test('Firefox candidate verifies its own identity and both reader hashes', async t => {
+    const f = await fixture(t, undefined, 'firefox');
+    assert.throws(() => validateOptions(f.input, 'darwin', 'chrome'), { code: 'MAC_RELEASE_INPUT_INVALID' });
+    const result = await buildFirefoxCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview });
+    assert.equal(result.filename, 'firefox-mac-arm64-1.2.3.zip'); assert.equal(result.published, false);
+    assert.equal(result.sha256, hash(await fs.readFile(f.input.output)));
+});
+for (const mode of ['tamper-firefox-reader', 'tamper-firefox-bootstrap']) test(`Firefox candidate rejects ${mode} after notarization`, async t => {
+    const f = await fixture(t, mode, 'firefox');
+    await assert.rejects(buildFirefoxCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview }), { code: 'MAC_RELEASE_MANIFEST_INVALID' });
     await assert.rejects(fs.access(f.input.output), { code: 'ENOENT' });
 });
 for (const mode of ['reject', 'staple-fail', 'tamper']) test(`${mode} never creates a candidate output`, async t => {

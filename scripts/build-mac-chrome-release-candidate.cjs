@@ -8,7 +8,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { buildMacChromePreview, buildMacBraveReleasePreview, readInput } = require('./build-mac-chrome-preview.cjs');
+const { buildMacChromePreview, buildMacBraveReleasePreview, buildMacFirefoxReleasePreview, readInput } = require('./build-mac-chrome-preview.cjs');
 const exec = promisify(execFile);
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -40,7 +40,17 @@ async function publishCandidate(output, bytes) {
 const CANDIDATE_KINDS = Object.freeze({
     chrome: Object.freeze({ prefix: 'chrome-mac', packageId: 'x-notification-mac-chrome-setup', manifestVersion: '0.1.0-mac-preview.1', buildPreview: buildMacChromePreview }),
     brave: Object.freeze({ prefix: 'brave-mac', packageId: 'x-notification-mac-brave-setup', manifestVersion: '0.1.0-mac-brave-preview.2', buildPreview: buildMacBraveReleasePreview }),
+    firefox: Object.freeze({ prefix: 'firefox-mac', packageId: 'x-notification-mac-firefox-setup', manifestVersion: '0.1.0-mac-firefox-preview.1', buildPreview: buildMacFirefoxReleasePreview }),
 });
+async function verifyManifest(kind, manifest, bin, res) {
+    if (!manifest || manifest.packageId !== kind.packageId || manifest.version !== kind.manifestVersion
+        || manifest.lockSha256 !== digest(await fs.readFile(path.join(bin, 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
+    if (kind.prefix === 'firefox-mac') {
+        for (const [field, filename] of [['bootstrapSha256', 'FirefoxXPCShellReader.js'], ['readerSha256', 'Read-PushSubscription.js']]) {
+            if (manifest[field] !== digest(await fs.readFile(path.join(res, filename)))) fail('MAC_RELEASE_MANIFEST_INVALID');
+        }
+    }
+}
 function validateOptions(input, platform = process.platform, browser = 'chrome') {
     if (platform !== 'darwin') fail('MAC_RELEASE_PLATFORM_REQUIRED');
     const kind = Object.hasOwn(CANDIDATE_KINDS, browser) ? CANDIDATE_KINDS[browser] : null;
@@ -111,8 +121,7 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
         // The current entry point requires this exact internal format version.
         // Keep it unchanged; the separately supplied version is the bundle's
         // release version, not a replacement for the internal protocol marker.
-        if (manifest.packageId !== kind.packageId || manifest.version !== kind.manifestVersion
-            || manifest.lockSha256 !== digest(await fs.readFile(path.join(bin, 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
+        await verifyManifest(kind, manifest, bin, res);
         const plistPath = path.join(app, 'Contents', 'Info.plist');
         const plist = await fs.readFile(plistPath, 'utf8');
         if (!plist.includes('<key>CFBundleShortVersionString</key><string>0.1.0</string>')) fail('MAC_RELEASE_MANIFEST_INVALID');
@@ -153,8 +162,7 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
         await verify(checkedApp); await command(stapler, ['validate', checkedApp]);
         await command('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', checkedApp]);
         const checkedManifest = JSON.parse(await fs.readFile(path.join(checkedApp, 'Contents', 'Resources', 'MacSetup-manifest.json'), 'utf8'));
-        if (checkedManifest.packageId !== kind.packageId || checkedManifest.version !== kind.manifestVersion
-            || checkedManifest.lockSha256 !== digest(await fs.readFile(path.join(checkedApp, 'Contents', 'MacOS', 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
+        await verifyManifest(kind, checkedManifest, checkedBin, path.join(checkedApp, 'Contents', 'Resources'));
         const bytes = await readInput(finalZip, 200 * 1024 * 1024);
         stage = 'save'; const saved = await publishCandidate(input.output, bytes); outputCreated = true;
         return Object.freeze({ version: input.version, arch: input.arch, filename: path.basename(input.output), bytes: bytes.length,
@@ -169,6 +177,7 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
 }
 const buildCandidate = (raw, dependencies) => buildForBrowser('chrome', raw, dependencies);
 const buildBraveCandidate = (raw, dependencies) => buildForBrowser('brave', raw, dependencies);
+const buildFirefoxCandidate = (raw, dependencies) => buildForBrowser('firefox', raw, dependencies);
 function parseArgs(args) {
     if (args.length !== 8) fail('MAC_RELEASE_INPUT_INVALID');
     const [arch, version, teamId, identity, profile, runtime, license, output] = args;
@@ -177,4 +186,4 @@ function parseArgs(args) {
 if (require.main === module) Promise.resolve().then(() => buildCandidate(parseArgs(process.argv.slice(2)))).then(result => process.stdout.write(JSON.stringify(result) + '\n'))
     .catch(error => { const stage = /^[a-z_]+$/.test(String(error?.stage || '')) ? ` stage=${error.stage}` : '';
         process.stderr.write(`${/^MAC_RELEASE_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'MAC_RELEASE_FAILED'}${stage}\n`); process.exitCode = 1; });
-module.exports = { buildCandidate, buildBraveCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };
+module.exports = { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };

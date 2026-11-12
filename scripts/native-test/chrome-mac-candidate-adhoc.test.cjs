@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
-const { buildCandidate, buildBraveCandidate } = require('../build-mac-chrome-release-candidate.cjs');
+const { buildCandidate, buildBraveCandidate, buildFirefoxCandidate } = require('../build-mac-chrome-release-candidate.cjs');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const exec = promisify(execFile);
 
@@ -22,7 +22,7 @@ test('selected notarization tools are Apple signed',
         }
     });
 
-for (const browser of ['chrome', 'brave']) test(`${browser} candidate assembles and launches with ad-hoc signatures and a fake notary`,
+for (const browser of ['chrome', 'brave', 'firefox']) test(`${browser} candidate assembles and launches with ad-hoc signatures and a fake notary`,
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_CANDIDATE_FIXTURE !== '1', timeout: 180000 }, async t => {
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-candidate-native-'));
@@ -51,7 +51,7 @@ for (const browser of ['chrome', 'brave']) test(`${browser} candidate assembles 
             }
             return exec(file, args, { timeout: options.timeout || 120000, maxBuffer: 1024 * 1024 });
         };
-        const build = browser === 'brave' ? buildBraveCandidate : buildCandidate;
+        const build = browser === 'brave' ? buildBraveCandidate : browser === 'firefox' ? buildFirefoxCandidate : buildCandidate;
         const candidate = await build({ arch, version: '1.2.3', teamId: 'ABCDEFGHIJ', identity: 'Developer ID Application: Fixture', profile: 'fixture', runtime, license, output }, { run });
         assert.equal(candidate.published, false); const extracted = path.join(root, 'extracted'); await fs.mkdir(extracted);
         await exec('/usr/bin/ditto', ['-x', '-k', output, extracted], { timeout: 30000 });
