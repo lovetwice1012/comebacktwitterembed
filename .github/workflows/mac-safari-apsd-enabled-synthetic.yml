@@ -14,6 +14,8 @@ on:
       - scripts/test/safari-synthetic-db-probe.test.js
       - scripts/native-test/safari-synthetic-push-probe.cjs
       - scripts/test/safari-synthetic-push-probe.test.js
+      - scripts/native-test/safari-synthetic-endpoint-get-probe.cjs
+      - scripts/test/safari-synthetic-endpoint-get-probe.test.js
       - package-lock.json
 
 permissions:
@@ -61,5 +63,6 @@ jobs:
           node --test scripts/test/safari-apsd-ci-experiment.test.js
           node --test scripts/test/safari-synthetic-db-probe.test.js
           node --test scripts/test/safari-synthetic-push-probe.test.js
+          node --test scripts/test/safari-synthetic-endpoint-get-probe.test.js
           node --test --test-name-pattern='compiled AX helper' scripts/native-test/safari-hosted-push-subscribe.test.cjs
           node scripts/native-test/safari-apsd-ci-experiment.cjs

@@ -795,7 +795,8 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     assert.equal(result, 'subscribed', `Synthetic push subscription did not succeed: ${result}`);
     console.log('Safari subscription fixture: subscription confirmed');
     let captured;
-    if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1' || process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1')
+    if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1' || process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1'
+        || process.env.CBTE_SAFARI_SYNTHETIC_GET_PROBE === '1')
       captured = await exec('return window.fixtureSubscription();', 'synthetic subscription inspection');
     if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1') {
       // Use only the newly-created synthetic subscription. WebDriver carries
@@ -809,6 +810,14 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
             || !comparison.authMatches || !comparison.vapidMatches)
           throw new Error('FIXTURE_SAFARI_DB_COMPARISON_FAILED');
       } finally { expected.publicKey.fill(0); expected.auth.fill(0); expected.vapid.fill(0); }
+    }
+    if (process.env.CBTE_SAFARI_SYNTHETIC_GET_PROBE === '1') {
+      const { probeHostedSyntheticEndpoint } = require('./safari-synthetic-endpoint-get-probe.cjs');
+      const vapidPublic = Buffer.from(publicKey), vapidPrivate = key.getPrivateKey();
+      try {
+        const evidence = await probeHostedSyntheticEndpoint({ subscription: captured, publicKey: vapidPublic, privateKey: vapidPrivate });
+        console.log(`Safari synthetic endpoint GET: ${JSON.stringify(evidence)}`);
+      } finally { vapidPublic.fill(0); vapidPrivate.fill(0); }
     }
     if (process.env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE === '1') {
       const { sendHostedSafariFixturePush } = require('./safari-synthetic-push-probe.cjs');
