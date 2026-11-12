@@ -14,6 +14,8 @@ on:
       - scripts/test/chrome-mac-group-diagnostic.test.js
       - scripts/test/chrome-mac-process-group.test.js
       - scripts/native-test/chrome-mac-install-diagnostic.cjs
+      - scripts/native-test/chrome-mac-verify-trace.cjs
+      - scripts/test/chrome-mac-verify-trace.test.js
       - scripts/native-test/chrome-mac-push-hosted.test.cjs
       - scripts/native-test/chrome-mac-push-error.cjs
       - scripts/native-test/chrome-mac-push-probe.cjs
@@ -94,6 +96,7 @@ jobs:
             scripts/native-test/chrome-mac-process-group.test.cjs \
             scripts/native-test/chrome-mac-group-lifecycle.test.cjs \
             scripts/test/chrome-mac-group-diagnostic.test.js \
+            scripts/test/chrome-mac-verify-trace.test.js \
             scripts/test/chrome-mac-process-group.test.js \
             scripts/test/chrome-mac-push-error.test.js \
             scripts/test/chrome-mac-push-probe.test.js \

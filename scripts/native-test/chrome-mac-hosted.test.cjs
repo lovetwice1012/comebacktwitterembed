@@ -13,6 +13,7 @@ const { createMacChromeProfile } = require('../../src/automation/chrome-mac-prof
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { describeInstalledChrome } = require('./chrome-mac-install-diagnostic.cjs');
+const { observeVerifyInstalledChrome } = require('./chrome-mac-verify-trace.cjs');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
 test('signed macOS Chrome opens a dedicated synthetic profile over its private pipe',
@@ -78,5 +79,12 @@ test('signed macOS Chrome opens a dedicated synthetic profile over its private p
             extraArgs: ['--headless=new', '--disable-background-networking', '--disable-sync', '--no-proxy-server'], spawnChrome: spawnOwned });
         assert.match(broker.engineVersion, /^\d+\.\d+\.\d+\.\d+$/);
         assert.equal(broker.chrome, child);
-        assert.equal(await verifyInstalledChrome(), executable);
+        // Observe this exact post-launch production verification; do not
+        // replace it with a later retry or weaken any verification condition.
+        const observed = await observeVerifyInstalledChrome();
+        if (observed.error) {
+            t.diagnostic(`post-launch verification diagnostic=${JSON.stringify(observed.diagnostic)}`);
+            throw observed.error;
+        }
+        assert.equal(observed.executable, executable);
     });
