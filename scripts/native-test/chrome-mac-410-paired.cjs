@@ -33,4 +33,11 @@ async function compareFreshSubscriptions({ subscribe, send, sleep, elapsedMs, re
     return Object.freeze({ firstResult, secondResult, retryResult,
         initialFailure: firstResult !== 'accepted' || secondResult !== 'accepted' });
 }
-module.exports = { compareFreshSubscriptions };
+// Avoid implying delivery for a request the provider did not accept. Results
+// come from the fixed classifier above; arbitrary response text is never used.
+function deliveryObservation(result, observed) {
+    if (result === 'not_attempted') return 'not_attempted';
+    if (result !== 'accepted') return 'not_accepted';
+    return observed === true ? 'observed' : 'not_observed';
+}
+module.exports = { compareFreshSubscriptions, deliveryObservation };

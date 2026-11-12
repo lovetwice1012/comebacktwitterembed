@@ -14,7 +14,7 @@ const webpush = require('web-push');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { verifyInstalledChrome } = require('../../src/automation/chrome-mac-broker');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
-const { compareFreshSubscriptions } = require('./chrome-mac-410-paired.cjs');
+const { compareFreshSubscriptions, deliveryObservation } = require('./chrome-mac-410-paired.cjs');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -98,9 +98,12 @@ test('paired synthetic subscriptions compare an immediate and a delayed first se
             sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), elapsedMs,
             report: event => t.diagnostic(`paired synthetic phase=${event.label} result=${event.result} sinceSubscriptionMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs}`),
         });
-        const expected = ['delayed', ...(result.firstResult === 'accepted' ? ['immediate'] : result.retryResult === 'accepted' ? ['retry'] : [])];
+        const expected = [...(result.secondResult === 'accepted' ? ['delayed'] : []),
+            ...(result.firstResult === 'accepted' ? ['immediate'] : result.retryResult === 'accepted' ? ['retry'] : [])];
         for (let i = 0; i < 100 && !expected.every(label => observed.has(label)); i++) await new Promise(resolve => setTimeout(resolve, 200));
-        t.diagnostic(`paired synthetic browserDelivery=${expected.every(label => observed.has(label)) ? 'observed' : 'not_observed'}`);
+        t.diagnostic(`paired synthetic browserDelivery immediate=${deliveryObservation(result.firstResult, observed.has('immediate'))}` +
+            ` delayed=${deliveryObservation(result.secondResult, observed.has('delayed'))}` +
+            ` retry=${deliveryObservation(result.retryResult, observed.has('retry'))}`);
         assert.equal(result.initialFailure, false, 'a first synthetic send failed; later acceptance is diagnostic only');
         assert.equal(expected.every(label => observed.has(label)), true, 'accepted synthetic messages did not both reach the browser');
     });
