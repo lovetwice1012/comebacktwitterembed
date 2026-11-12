@@ -14,6 +14,25 @@ const { acquireMacProfileLease } = require('../../src/automation/chrome-mac-prof
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const { snapshotBraveInstallation, diagnoseBraveInstallation } = require('./brave-mac-install-diagnostic.cjs');
 
+const STANDARD_RESOLVER = '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND';
+const FIXTURE_RESOLVER = '--host-resolver-rules=MAP * ^NOTFOUND, EXCLUDE 127.0.0.1';
+function useLoopbackResolver(args) {
+    const matches = args.filter(arg => typeof arg === 'string' && arg.startsWith('--host-resolver-rules='));
+    if (matches.length !== 1 || matches[0] !== STANDARD_RESOLVER) throw new Error('FIXTURE_RESOLVER_INVALID');
+    // The exception is a literal loopback address, so no external hostname
+    // becomes eligible for DNS resolution. All other hostnames remain mapped
+    // to NOTFOUND. This changes only the disposable fixture invocation.
+    return args.map(arg => arg === STANDARD_RESOLVER ? FIXTURE_RESOLVER : arg);
+}
+
+test('fixture resolver allows only literal loopback and rejects ambiguous flags', () => {
+    assert.deepEqual(useLoopbackResolver(['--headless=new', STANDARD_RESOLVER, 'http://127.0.0.1:1234/']),
+        ['--headless=new', FIXTURE_RESOLVER, 'http://127.0.0.1:1234/']);
+    assert.throws(() => useLoopbackResolver([]), /FIXTURE_RESOLVER_INVALID/);
+    assert.throws(() => useLoopbackResolver([STANDARD_RESOLVER, '--host-resolver-rules=MAP * localhost']), /FIXTURE_RESOLVER_INVALID/);
+    assert.throws(() => useLoopbackResolver(['--host-resolver-rules=MAP * localhost']), /FIXTURE_RESOLVER_INVALID/);
+});
+
 async function waitFor(value, timeoutMs) {
     let timer;
     try { return await Promise.race([value, new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); })]); }
@@ -73,11 +92,11 @@ test('signed Mac Brave broker holds its isolated profile until the process group
         const before = await snapshotBraveInstallation();
         try {
             privateModule.exports = { ...previousPrivate, startChromeBroker: options => previousPrivate.startChromeBroker({ ...options, origin,
-                extraArgs: ['--headless=new', '--disable-background-networking', '--no-proxy-server', '--host-resolver-rules=MAP * ~NOTFOUND'],
+                extraArgs: ['--headless=new', '--disable-background-networking', '--no-proxy-server'],
                 spawnChrome(executable, args, spawnOptions) {
                     assert.equal(executable, '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser');
                     assert(args.includes(`--user-data-dir=${profile.profilePath}`)); assert.equal(args.at(-1), `${origin}/`);
-                    child = options.spawnChrome(executable, args, spawnOptions);
+                    child = options.spawnChrome(executable, useLoopbackResolver(args), spawnOptions);
                     childClose = new Promise(resolve => child.once('close', () => { childClosed = true; resolve(); }));
                     return child;
                 } }) };
