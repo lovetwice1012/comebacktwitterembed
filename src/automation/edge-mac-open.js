@@ -21,9 +21,14 @@ async function openMacEdgeForSetup({ rootPath, profileId, helperPath, expectedSh
         if (contents.length) {
             // A nonempty profile must have an inspectable store. Missing or
             // malformed storage is not proof that there is no subscription.
-            const inspected = await withMacEdgeSnapshot({ rootPath, profileId, helperPath, expectedSha256, profileLease: lease,
+            let inspected;
+            try { inspected = await withMacEdgeSnapshot({ rootPath, profileId, helperPath, expectedSha256, profileLease: lease,
                 work: snapshot => inspectEdgeSnapshot({ ...snapshot, dbFactory: directory =>
-                    new ClassicLevel(directory, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) }) });
+                    new ClassicLevel(directory, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) }) }); }
+            catch (error) {
+                if (error?.code === 'X_EDGE_WNS_SNAPSHOT_INVALID') throw fail('X_EDGE_MAC_PROFILE_INSPECTION_REQUIRED');
+                throw error;
+            }
             if (!inspected || typeof inspected.hasXSubscription !== 'boolean') throw fail('X_EDGE_MAC_INSPECTION_INVALID');
             suppressReceive = inspected.hasXSubscription;
         }

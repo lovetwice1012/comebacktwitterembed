@@ -258,6 +258,12 @@ test('Mac snapshot copies only notification data under both locks and is removed
             error => error.code === code && error.message === code && !error.stack.includes('private synthetic detail'));
     }
     assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {
+        throw Object.assign(new Error('sensitive detail'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
+    } }), error => error.code === 'X_EDGE_WNS_SNAPSHOT_INVALID' && error.message === error.code);
+    await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {
+        throw Object.assign(new Error('sensitive detail'), { code: 'X_EDGE_WNS_UNKNOWN' });
+    } }), { code: 'X_CHROME_MAC_LOCK_FAILED' });
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
     await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('must not run'); } }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
     assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));

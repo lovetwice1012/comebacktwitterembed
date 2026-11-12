@@ -108,7 +108,7 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
         let second;
         try { second = await openModule.exports.openMacEdgeForSetup(args); }
         catch (error) {
-            const known = new Set(['X_CHROME_MAC_LOCK_FAILED', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_LOCK_INVALID',
+            const known = new Set(['X_EDGE_MAC_PROFILE_INSPECTION_REQUIRED', 'X_CHROME_MAC_LOCK_FAILED', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_LOCK_INVALID',
                 'X_CHROME_MAC_LOCK_LOST', 'X_CHROME_MAC_SNAPSHOT_INVALID', 'X_CHROME_MAC_SNAPSHOT_CLEANUP_FAILED',
                 'X_EDGE_MAC_BROKER_INVALID', 'X_EDGE_MAC_BROKER_BUSY', 'X_EDGE_MAC_BROKER_CLEANUP_PENDING']);
             const code = known.has(error?.code) ? error.code : 'OTHER';

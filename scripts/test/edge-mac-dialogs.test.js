@@ -43,3 +43,11 @@ test('the user is told that capture closes the setup browser and can confirm a d
     assert(h.calls[0].args[1].includes('設定用Edgeを閉じて'));
     assert(h.calls[1].args[1].includes('設定用Edgeを閉じて'));
 });
+test('manual recovery has an explicit cancel option and explains retained information', async () => {
+    const h = harness(['cancel', 'yes']);
+    assert.equal(await h.ui.confirmNewProfile(), false);
+    await h.ui.showError('X_EDGE_MAC_ROTATION_FAILED');
+    assert(h.calls[0].args[1].includes('以前の設定用Edgeの情報と登録済みの受信情報は残ります'));
+    assert(h.calls[0].args[1].includes('default button "やめる"'));
+    assert(h.calls[1].args[1].includes('サポートにご相談ください'));
+});
