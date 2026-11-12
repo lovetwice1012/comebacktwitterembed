@@ -227,6 +227,9 @@ function createXPushGateway(db, options = {}) {
         if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
         let lease = await deadline(store.claim(input), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         if (!lease) return { state: 'busy', reasonCode: 'X_PUSH_LEASE_UNAVAILABLE' };
+        // The supervisor records the claimed connection generation even if
+        // authentication fails before onSession. It contains no credential.
+        try { if (typeof input.onClaim === 'function') input.onClaim({ connectionGeneration: lease.connectionGeneration }); } catch { /* Receiver ownership remains authoritative in the database. */ }
         let transport, checkinRunner, renewal, renewalStart, expiryTimer, renewalFailure, renewing = false, finished = false, finalState = 'stopped', reasonCode = null;
         let renewalWork = Promise.resolve();
         const aborted = () => transport?.abort('X_PUSH_STOPPED');

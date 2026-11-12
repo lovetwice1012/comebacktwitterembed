@@ -321,12 +321,17 @@ function createQueue(db, evaluator, options = {}) {
         // owner -> subscription -> receiver order used by the inbox store.
         const subscription = (await query('SELECT revision FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE',
             [guard.subscriptionId, guard.ownerUserId]))[0];
-        const receiver = (await query('SELECT subscription_revision,lease_token,lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE',
-            [guard.subscriptionId]))[0];
+        const processing = guard.purpose === 'processing';
+        const receiver = (await query(processing
+            ? 'SELECT subscription_revision,processing_revision,processing_lease_token,processing_lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE'
+            : 'SELECT subscription_revision,lease_token,lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE',
+        [guard.subscriptionId]))[0];
+        const token = processing ? receiver?.processing_lease_token : receiver?.lease_token;
+        const expiry = processing ? receiver?.processing_lease_expires_at_ms : receiver?.lease_expires_at_ms;
         if (guard.signal.aborted || !subscription || !receiver || Number(subscription.revision) !== guard.revision
-            || Number(receiver.subscription_revision) !== guard.revision || receiver.lease_token !== guard.token
-            || !Number.isSafeInteger(Number(receiver.lease_expires_at_ms))) fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
-        const expiresAtMs = Number(receiver.lease_expires_at_ms);
+            || Number(receiver.subscription_revision) !== guard.revision || processing && Number(receiver.processing_revision) !== guard.revision
+            || token !== guard.token || expiry == null || !Number.isSafeInteger(Number(expiry))) fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
+        const expiresAtMs = Number(expiry);
         finishRecoveryFence(guard, expiresAtMs);
         return expiresAtMs;
     }
@@ -349,9 +354,10 @@ function createQueue(db, evaluator, options = {}) {
             const guard = input.recoveryGuard, lease = guard?.lease;
             if (!guard || !(guard.signal instanceof AbortSignal) || !lease || lease.subscriptionId !== input.subscriptionId
                 || lease.ownerUserId !== input.ownerUserId || !Number.isSafeInteger(lease.revision) || lease.revision < 1
+                || lease.purpose !== undefined && !['receive', 'processing'].includes(lease.purpose)
                 || typeof lease.token !== 'string' || !/^[0-9a-f]{64}$/.test(lease.token)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知は受信記録から処理してください。');
             recoveryGuard = Object.freeze({ subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
-                revision: lease.revision, token: lease.token, signal: guard.signal });
+                revision: lease.revision, token: lease.token, purpose: lease.purpose === 'processing' ? 'processing' : 'receive', signal: guard.signal });
         }
         const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
             subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification,

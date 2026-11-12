@@ -101,23 +101,52 @@ function createXPushStore(db, options = {}) {
             fail('X_PUSH_STORE_UNAVAILABLE');
         }
     }
-    function fence(lease, subscription, receiver) {
+    function fence(lease, subscription, receiver, { allowProcessing = false } = {}) {
         leaseIdentity(lease);
-        if (!receiver || Number(subscription.revision) !== lease.revision || Number(receiver.subscription_revision) !== lease.revision
-            || receiver.lease_token !== lease.token || Number(receiver.lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
+        const processing = lease.purpose === 'processing';
+        if (lease.purpose !== undefined && lease.purpose !== 'receive' && !processing || processing && !allowProcessing) fail('X_PUSH_LEASE_LOST');
+        if (!receiver || Number(subscription.revision) !== lease.revision || Number(receiver.subscription_revision) !== lease.revision) fail('X_PUSH_LEASE_LOST');
+        if (processing) {
+            if (Number(receiver.processing_revision) !== lease.revision || receiver.processing_lease_token !== lease.token
+                || !Number.isSafeInteger(Number(receiver.processing_lease_expires_at_ms)) || Number(receiver.processing_lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
+        } else if (receiver.lease_token !== lease.token || Number(receiver.lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
     }
     async function claim(input) {
         if (typeof input?.workerId !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(input.workerId)) fail('X_PUSH_WORKER_INVALID');
         return locked(input, async (query, subscription, receiver) => {
+            const processingParts = [receiver?.processing_lease_token, receiver?.processing_worker_id, receiver?.processing_lease_expires_at_ms, receiver?.processing_revision];
+            if (processingParts.some(value => value != null)) {
+                if (typeof receiver.processing_lease_token !== 'string' || !/^[0-9a-f]{64}$/.test(receiver.processing_lease_token)
+                    || typeof receiver.processing_worker_id !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(receiver.processing_worker_id)
+                    || receiver.processing_lease_expires_at_ms == null || !Number.isSafeInteger(Number(receiver.processing_lease_expires_at_ms))
+                    || receiver.processing_revision == null || !Number.isSafeInteger(Number(receiver.processing_revision))) fail('X_PUSH_OFFLINE_STATE_INVALID');
+            }
             if (receiver?.state === 'requires_reenrollment' || receiver?.lease_token && Number(receiver.lease_expires_at_ms) > now()
                 || Number(receiver?.retry_at_ms || 0) > now()) return null;
             const token = randomBytes(32).toString('hex'), expiresAtMs = now() + leaseMs, revision = Number(subscription.revision);
-            await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,lease_token,worker_id,subscription_revision,lease_expires_at_ms,updated_at_ms)
-                VALUES (?,'connecting',NULL,?,?,?,?,?) ON DUPLICATE KEY UPDATE state='connecting',reason_code=NULL,lease_token=VALUES(lease_token),worker_id=VALUES(worker_id),subscription_revision=VALUES(subscription_revision),lease_expires_at_ms=VALUES(lease_expires_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
-                [input.subscriptionId, token, input.workerId, revision, expiresAtMs, now()]);
+            let connectionGeneration;
+            if (receiver && Object.hasOwn(receiver, 'connection_generation')) {
+                if (['processing_lease_token', 'processing_worker_id', 'processing_lease_expires_at_ms', 'processing_revision']
+                    .some(name => !Object.hasOwn(receiver, name))) fail('X_PUSH_OFFLINE_MIGRATION_REQUIRED');
+                const previous = Number(receiver.connection_generation);
+                if (!Number.isSafeInteger(previous) || previous < 0 || previous >= Number.MAX_SAFE_INTEGER) fail('X_PUSH_OFFLINE_STATE_INVALID');
+                connectionGeneration = previous + 1;
+                // Network work takes precedence over offline drains. Both
+                // ownership changes happen under the receiver row lock;
+                // processing operations fence this token before writing.
+                await query(`UPDATE automation_x_push_receivers SET state='connecting',reason_code=NULL,lease_token=?,worker_id=?,subscription_revision=?,lease_expires_at_ms=?,connection_generation=?,processing_lease_token=NULL,processing_worker_id=NULL,processing_lease_expires_at_ms=NULL,processing_revision=NULL,updated_at_ms=? WHERE subscription_id=?`,
+                    [token, input.workerId, revision, expiresAtMs, connectionGeneration, now(), input.subscriptionId]);
+            } else {
+                // The additive migration is not required for the existing
+                // receiver path. Processing-only work cannot start on it.
+                await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,reason_code,lease_token,worker_id,subscription_revision,lease_expires_at_ms,updated_at_ms)
+                    VALUES (?,'connecting',NULL,?,?,?,?,?) ON DUPLICATE KEY UPDATE state='connecting',reason_code=NULL,lease_token=VALUES(lease_token),worker_id=VALUES(worker_id),subscription_revision=VALUES(subscription_revision),lease_expires_at_ms=VALUES(lease_expires_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
+                    [input.subscriptionId, token, input.workerId, revision, expiresAtMs, now()]);
+            }
             let sealedEnvelope;
             try { sealedEnvelope = JSON.parse(subscription.sealed_json); } catch { fail('X_PUSH_VAULT_INVALID'); }
-            return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope };
+            return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope,
+                ...(connectionGeneration === undefined ? {} : { connectionGeneration }) };
         }, { createReceiver: true });
     }
     async function renew(lease, { authorize } = { authorize: undefined }) {
@@ -136,9 +165,9 @@ function createXPushStore(db, options = {}) {
     }
     async function assertLease(lease, { authorize, signal } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (authorize) await authorize(query);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return true;
         }, { signal });
     }
@@ -364,17 +393,19 @@ function createXPushStore(db, options = {}) {
     async function markRouted(lease, id, { signal, authorize } = {}) {
         if (!/^[0-9]{1,20}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='routed',routed_at_ms=? WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [now(), String(id), lease.subscriptionId, lease.revision]);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return result.affectedRows === 1;
         }, { signal, authorize });
     }
     async function auditUse(lease, outcome, { signal, authorize } = {}) {
         if (!['opened', 'failed'].includes(outcome)) fail('X_PUSH_AUDIT_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.vault.open', JSON.stringify({ revision: lease.revision, outcome }), now()]);
+            fence(lease, subscription, receiver, { allowProcessing: true });
         }, { signal, authorize });
     }
     async function getInbox(input) {
@@ -394,35 +425,35 @@ function createXPushStore(db, options = {}) {
         const afterId = input.afterId || '0', limit = input.limit ?? 20;
         if (!/^[0-9]{1,20}$/.test(String(afterId)) || !Number.isInteger(limit) || limit < 1 || limit > 20) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const rows = await query("SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND subscription_revision=? AND id>? AND status='unsupported' AND ack_code=100 ORDER BY id LIMIT ?",
                 [lease.subscriptionId, lease.revision, String(afterId), limit]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return rows.map(row => inboxDto(row, lease.ownerUserId));
         }, { signal: input.signal });
     }
     async function restoreQuarantinedInbox(lease, inboxId, { authorize, signal } = { authorize: undefined }) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (authorize) await authorize(query);
             const result = await query("UPDATE automation_x_push_inbox SET status='received' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='unsupported' AND ack_code=100",
                 [String(inboxId), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.adapter.recovered', JSON.stringify({ inboxId: String(inboxId), adapterVersion: 1 }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
         }, { signal });
     }
     async function markUnmatched(lease, inboxId, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='unmatched' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'",
                 [String(inboxId), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.target.unmatched', JSON.stringify({ inboxId: String(inboxId) }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
         }, { signal, authorize });
     }
@@ -443,7 +474,7 @@ function createXPushStore(db, options = {}) {
             || options.resolveProcessing && options.resolveInterval) fail('X_PUSH_PROCESSING_INVALID');
         if (!options.resolveInterval && !options.resolveProcessing && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080)) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             // Recheck the owner's persisted choice and the current contract's
             // explicit permission under the same owner lock as plan changes.
             // A zero delay is available only through this trusted resolver.
@@ -451,7 +482,7 @@ function createXPushStore(db, options = {}) {
             const processingMode = processing ? processing.effectiveMode : 'batch';
             const selectedInterval = processingMode === 'realtime' ? 0
                 : processing ? processing.intervalMinutes : options.resolveInterval ? await options.resolveInterval(query) : intervalMinutes;
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (!['batch', 'realtime'].includes(processingMode) || !Number.isSafeInteger(selectedInterval)
                 || selectedInterval < (processingMode === 'realtime' ? 0 : 1) || selectedInterval > 10080)
                 return { ready: false, code: 'X_MONITOR_NOT_CONFIGURED' };
@@ -468,55 +499,56 @@ function createXPushStore(db, options = {}) {
             if (dueAtMs > now()) return { ready: false, dueAtMs };
             const windowAtMs = now();
             await query('UPDATE automation_x_push_receivers SET process_window_at_ms=?,process_window_mode=?,process_cursor_id=0 WHERE subscription_id=?', [windowAtMs, processingMode, lease.subscriptionId]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return { ready: true, windowAtMs, cursorId: '0', processingMode };
         }, { signal: options.signal, authorize: options.authorize });
     }
     async function advanceProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0 || !/^[1-9]\d{0,19}$/.test(String(input.cursorId))) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (receiver.process_window_at_ms == null || Number(receiver.process_window_at_ms) !== input.windowAtMs
                 || BigInt(input.cursorId) < BigInt(receiver.process_cursor_id)) fail('X_PUSH_PROCESSING_INVALID');
             await query('UPDATE automation_x_push_receivers SET process_cursor_id=? WHERE subscription_id=?', [String(input.cursorId), lease.subscriptionId]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
         }, { signal, authorize });
     }
     async function completeProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             if (receiver.process_window_at_ms == null || Number(receiver.process_window_at_ms) !== input.windowAtMs) fail('X_PUSH_PROCESSING_INVALID');
             // Reset on every completed window: records which remained pending
             // are reconsidered next time, even when later records were routed.
             await query('UPDATE automation_x_push_receivers SET last_process_at_ms=?,process_window_at_ms=NULL,process_window_mode=NULL,process_cursor_id=0 WHERE subscription_id=?', [input.windowAtMs, lease.subscriptionId]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
         }, { signal, authorize });
     }
     async function markUnsupported(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const result = await query("UPDATE automation_x_push_inbox SET status='unsupported' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [String(id), lease.subscriptionId, lease.revision]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return result.affectedRows === 1;
         }, { signal, authorize });
     }
     async function markRecoveryQuarantined(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             const row = (await query('SELECT id,received_at_ms FROM automation_x_push_inbox WHERE id=? AND subscription_id=? AND subscription_revision=? FOR UPDATE', [String(id), lease.subscriptionId, lease.revision]))[0];
             if (!row || require('./recovery-origin').inboxAllowed({ id: row.id, subscriptionId: lease.subscriptionId, revision: lease.revision, receivedAtMs: Number(row.received_at_ms) })) return false;
             const result = await query("UPDATE automation_x_push_inbox SET status='recovery_quarantined' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status IN ('received','unsupported')", [String(id), lease.subscriptionId, lease.revision]);
             if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.recovery.quarantine', JSON.stringify({ inboxId: String(id), revision: lease.revision }), now()]);
-            fence(lease, subscription, receiver);
+            fence(lease, subscription, receiver, { allowProcessing: true });
             return Number(result.affectedRows) === 1;
         }, { signal, authorize });
     }
     async function recordRetry(input, reasonCode, delayMs) {
         if (!Number.isSafeInteger(input?.revision) || input.revision < 1) fail('X_PUSH_IDENTITY_INVALID');
+        if (input.connectionGeneration !== undefined && (!Number.isSafeInteger(input.connectionGeneration) || input.connectionGeneration < 1)) fail('X_PUSH_IDENTITY_INVALID');
         validReason(reasonCode);
         if (reasonCode === null || !Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > 86400000) fail('X_PUSH_RETRY_INVALID');
         return locked(input, async (query, subscription, receiver) => {
@@ -525,6 +557,12 @@ function createXPushStore(db, options = {}) {
             // A late supervisor callback cannot change an active successor or
             // turn a subscription requiring explicit reenrollment into a retry.
             if (receiver?.state === 'requires_reenrollment' || receiver?.lease_token && Number(receiver.lease_expires_at_ms) > now())
+                return { recorded: false, ...previous };
+            if (input.connectionGeneration !== undefined && Number(receiver?.connection_generation) !== input.connectionGeneration)
+                return { recorded: false, ...previous };
+            // An older caller without a generation cannot prove it belongs to
+            // the connection preceding an active processing-only owner.
+            if (receiver?.processing_lease_token && Number(receiver.processing_lease_expires_at_ms) > now() && input.connectionGeneration === undefined)
                 return { recorded: false, ...previous };
             const retryAttempt = Math.min(64, (Number(receiver?.subscription_revision) === input.revision ? previous.retryAttempt : 0) + 1);
             const retryAtMs = Math.max(now() + delayMs, previous.retryAtMs || 0);

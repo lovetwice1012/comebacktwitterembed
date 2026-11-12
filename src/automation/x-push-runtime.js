@@ -255,6 +255,8 @@ function createXPushRuntime(db, queue, options = {}) {
             // drain retries; shutdown intentionally performs no later work.
         }
     }
+    // Offline scheduling is intentionally not wired into the runtime yet.
+    // Dedicated DB identity and fleet compatibility must first be proved.
     function remember({ lease }) { if (!stopped) { leases.set(lease.subscriptionId, lease); cooldowns.delete(lease.subscriptionId); } }
     async function tick() {
         if (!enabled || stopped || controller.signal.aborted) return { state: 'disabled' };
@@ -299,11 +301,13 @@ function createXPushRuntime(db, queue, options = {}) {
                 const revision = Number(candidate.revision || 1);
                 const localController = new AbortController(), routingController = new AbortController();
                 localController.signal.addEventListener('abort', () => routingController.abort(), { once: true });
-                const record = { controller: localController, routingController, ownerUserId: candidate.owner_user_id, revision, updatedAtMs: Number(candidate.updated_at_ms || 0) };
+                const record = { controller: localController, routingController, ownerUserId: candidate.owner_user_id, revision,
+                    updatedAtMs: Number(candidate.updated_at_ms || 0), connectionGeneration: /** @type {number|undefined} */ (undefined) };
                 sessionControls.set(candidate.id, record);
                 const rememberSession = value => { if (active && !localController.signal.aborted && sessions.get(candidate.id) === pending) remember(value); };
                 const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
                     workerId, signal: localController.signal, onSession: rememberSession, onLease: rememberSession, onStopping: () => routingController.abort(),
+                    onClaim: ({ connectionGeneration }) => { if (Number.isSafeInteger(connectionGeneration) && connectionGeneration > 0) record.connectionGeneration = connectionGeneration; },
                     onReceived: async ({ lease, inbox }) => { if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); },
                     onRecovery: async ({ lease, signal }) => {
                         if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped || signal.aborted) return;
@@ -331,7 +335,8 @@ function createXPushRuntime(db, queue, options = {}) {
                     .then(async result => {
                         if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;
                         const lease = leases.get(candidate.id);
-                        const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision };
+                        const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision,
+                            ...(record.connectionGeneration === undefined ? {} : { connectionGeneration: record.connectionGeneration }) };
                         const status = await gateway.store.status(identity);
                         if (!status || status.revision !== identity.revision) return;
                         const delay = reconnectDelay((status?.retryAttempt || 0) + 1, result?.reasonCode, options.jitter || randomInt);

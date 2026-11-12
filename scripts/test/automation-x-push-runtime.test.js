@@ -29,7 +29,7 @@ function fixture(t, options = {}) {
     let decryptGate = null, routeFailure = null, markFailure = null, stopped = false;
     const subscriptionId = randomUUID(), lease = { subscriptionId, ownerUserId: U, revision: 1, token: 'a'.repeat(64), expiresAtMs: Number.MAX_SAFE_INTEGER };
     const rows = [], routed = [], counters = { query: 0, candidates: 0, run: 0, begin: 0, complete: 0, advance: 0, decrypt: 0, assert: 0, mark: 0 };
-    const db = { queryDatabase: async sql => {
+    const db = { withDatabaseTransaction: async () => { throw new Error('unexpected unit transaction'); }, queryDatabase: async sql => {
         counters.query++;
         if (sql.startsWith('SELECT is_donor')) return [{ is_donor: options.donor ? 1 : 0 }];
         if (sql.startsWith('SELECT x_notification_processing_mode')) return [{ x_notification_processing_mode: requestedMode }];
@@ -377,4 +377,16 @@ test('batch receipt callbacks remain encrypted until the periodic batch window a
     await f.callbacks().onReceived({ lease: f.lease, inbox: f.rows[0] });
     assert.equal(f.rows[0].status, 'received'); assert.equal(f.counters.begin, 0);
     await f.runtime.tick(); assert.equal(f.rows[0].status, 'routed'); assert.equal(f.counters.begin, 1);
+});
+
+
+test('offline wiring stays closed until database identity is proven', async t => {
+    const resources = require('../../src/automation/x-push-offline-resources').createOfflineResources({
+        credentials: { host: '127.0.0.1', user: 'fixture', database: 'fixture' }, connectionLimit: 1,
+        gatewayOptions: {}, evaluator: {}, graphEnabled: true, rolloutMode: 'public' });
+    t.after(() => resources.close()); let scans = 0;
+    const f = fixture(t, { runtime: { offlineProcessing: { enabled: true, assertCompatible: () => true, resources,
+        listCandidates: async () => { scans++; return []; } } } });
+    await f.runtime.tick(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(scans, 0); assert.equal(f.counters.run, 1);
 });
