@@ -27,6 +27,8 @@ session lock は setup を実行する Node 本体内の Node-API addon が保�
 
 実験入口は、合成の registry／rotation を呼ぶ前に lock と操作 guard を取得し、操作が settle するまで保持します。応答しない作業に対して待機時間だけを理由に release しません。Mac の研究 workflow は addon を ad-hoc 署名してから hash を manifest に記録し、一致しないコピーを拒否します。正式な Developer ID 署名・Apple 公証の代わりにはなりません。署名／hash 検証と require の間の同一 UID による置換も残ります。
 
+[Actions run 43217735134](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43217735134) は Apple Silicon・Intel とも各 8 件が成功しました。ad-hoc 署名後の addon と manifest hash の照合・改変拒否、未接続 wrapper と合成 registry／rotation の競合を確認しました。実アプリの全操作が追跡されること、旧世代との排他、正式署名・公証、実 X の確認にはなりません。
+
 実験入口が待つのは渡された Promise です。呼び出し側が未追跡の非同期作業を開始して先に Promise を完了させると、その作業は lock 解放後にも動きます。製品に接続する前に、子プロセス、非同期 filesystem 操作、callback と終了処理がすべてこの Promise に含まれ、未追跡の操作が残らないことを実装と試験で確認する必要があります。
 
 実アプリでは broker の起動失敗時に、子の close 後の lease 解放が後で実行される場合があります。校正で cleanup の確認が時間切れになったときも、後から起動した listener の停止処理は継続します。これらは上位 Promise が失敗しても作業がすべて終了した証拠にはなりません。実験入口は実行エラー時に lock を保持しますが、プロセス終了時に lock が OS に解放された後の子や遅延作業の収束は未解決です。private broker の複数 stop が同じ listener 終了を待つよう修正しましたが、残る経路の完了証明には別途対応が必要です。
