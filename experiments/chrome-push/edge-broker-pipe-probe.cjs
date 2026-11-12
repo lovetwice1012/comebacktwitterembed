@@ -129,6 +129,7 @@ async function main() {
     const onlineBatch = process.env.EDGE_PROBE_BATCH_ONLINE === '1';
     const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
     const requestStatus = process.env.EDGE_PROBE_REQUEST_STATUS === '1';
+    const cachePolicy = process.env.EDGE_PROBE_CACHE_POLICY;
     const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
     const distinctTopics = process.env.EDGE_PROBE_DISTINCT_TOPICS === '1';
     const versionTwo = process.env.EDGE_PROBE_CONNECT_VERSION === '2';
@@ -140,6 +141,8 @@ async function main() {
     if (offlineMessage && !reimport) throw new Error('PROBE_MODE_INVALID');
     if (offlineBatch && !offlineMessage) throw new Error('PROBE_MODE_INVALID');
     if (requestStatus && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
+    if (cachePolicy !== undefined && (!['cache', 'no-cache'].includes(cachePolicy) || !requestStatus || !offlineBatch || onlineBatch))
+        throw new Error('PROBE_MODE_INVALID');
     if (onlineBatch && !offlineBatch) throw new Error('PROBE_MODE_INVALID');
     if (offlineSettle && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     if (overlap && (!takeover || reimport)) throw new Error('PROBE_MODE_INVALID');
@@ -543,7 +546,8 @@ async function main() {
                                 try {
                                     const response = await webpush.sendNotification(expected, JSON.stringify({ text }),
                                         { TTL: 300, ...(distinctTopics ? { topic: `synthetic${index + 1}` } : {}),
-                                            ...(requestStatus ? { headers: { 'X-WNS-RequestForStatus': 'true' } } : {}) });
+                                            ...(requestStatus ? { headers: { 'X-WNS-RequestForStatus': 'true',
+                                                ...(cachePolicy ? { 'X-WNS-Cache-Policy': cachePolicy } : {}) } } : {}) });
                                     syntheticSendStatuses.push(classifySendResponse(response));
                                 }
                                 catch (error) {

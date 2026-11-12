@@ -1,5 +1,5 @@
 #requires -Version 5.1
-param([ValidateSet('normal', 'online-batch', 'offline-batch', 'offline-status')][string] $Mode = 'normal')
+param([ValidateSet('normal', 'online-batch', 'offline-batch', 'offline-status', 'offline-cache', 'offline-no-cache')][string] $Mode = 'normal')
 <#
   Disposable GitHub-hosted Windows runner only. This downloads a hash-pinned
   MariaDB ZIP to RUNNER_TEMP, starts a private loopback database without

@@ -19,6 +19,8 @@ test('hosted mode flags select only the intended synthetic batch', { skip: proce
         ['online-batch', [...shared, 'EDGE_PROBE_BATCH_ONLINE=1']],
         ['offline-batch', [...shared, 'EDGE_PROBE_OFFLINE_SETTLE=1']],
         ['offline-status', [...shared, 'EDGE_PROBE_OFFLINE_SETTLE=1', 'EDGE_PROBE_REQUEST_STATUS=1']],
+        ['offline-cache', [...shared, 'EDGE_PROBE_OFFLINE_SETTLE=1', 'EDGE_PROBE_REQUEST_STATUS=1', 'EDGE_PROBE_CACHE_POLICY=cache']],
+        ['offline-no-cache', [...shared, 'EDGE_PROBE_OFFLINE_SETTLE=1', 'EDGE_PROBE_REQUEST_STATUS=1', 'EDGE_PROBE_CACHE_POLICY=no-cache']],
         ['ONLINE-BATCH', [...shared, 'EDGE_PROBE_BATCH_ONLINE=1']],
     ]) {
         const result = invoke(mode);
@@ -37,13 +39,13 @@ test('hosted batch success checks apply equally to uppercase modes', { skip: pro
     const good = { syntheticProfile: true, realWnsWorkerTested: true, databaseRecovery: true, packagedExport: true,
         packagedSnapshotCleaned: true, otherSiteConsentRequired: true, explicitConnectVersion: '2',
         takeoverResult: { receivedAfterForcedWorkerExit: true, batchPersistedOnce: true, receivedSentWhileOffline: true } };
-    for (const mode of ['normal', 'NORMAL', 'online-batch', 'ONLINE-BATCH', 'offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS']) {
+    for (const mode of ['normal', 'NORMAL', 'online-batch', 'ONLINE-BATCH', 'offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS', 'offline-cache', 'offline-no-cache']) {
         assert.equal(invoke(mode, good).status, 0);
     }
     const missingOffline = { ...good, takeoverResult: { ...good.takeoverResult, receivedSentWhileOffline: false } };
-    for (const mode of ['offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS']) assert.notEqual(invoke(mode, missingOffline).status, 0);
+    for (const mode of ['offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS', 'offline-cache', 'offline-no-cache']) assert.notEqual(invoke(mode, missingOffline).status, 0);
     const missingBatch = { ...good, takeoverResult: { ...good.takeoverResult, batchPersistedOnce: false } };
-    for (const mode of ['online-batch', 'ONLINE-BATCH', 'offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS']) assert.notEqual(invoke(mode, missingBatch).status, 0);
+    for (const mode of ['online-batch', 'ONLINE-BATCH', 'offline-batch', 'OFFLINE-BATCH', 'offline-status', 'OFFLINE-STATUS', 'offline-cache', 'offline-no-cache']) assert.notEqual(invoke(mode, missingBatch).status, 0);
     assert.notEqual(invoke('normal', { ...good, explicitConnectVersion: '1' }).status, 0);
 });
 

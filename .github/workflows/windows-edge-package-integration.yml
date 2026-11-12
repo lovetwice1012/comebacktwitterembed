@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [normal, online-batch, offline-batch, offline-status]
+        mode: [normal, online-batch, offline-batch, offline-status, offline-cache, offline-no-cache]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
