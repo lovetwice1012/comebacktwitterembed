@@ -17,6 +17,7 @@ on:
       - scripts/test/edge-mac-calibration-runner.test.js
       - scripts/native-test/edge-mac-calibration-hosted*.cjs
       - scripts/native-test/edge-mac-workspace-hosted.test.cjs
+      - scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs
       - scripts/test/edge-mac-calibration-workspace.test.js
       - scripts/test/edge-calibration-cleanup-race.test.js
       - scripts/native-test/edge-mac-synthetic-db.cjs
@@ -67,6 +68,7 @@ jobs:
         run: |
           clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"
           clang -O2 client/angelic-setup/mac/edge-socket-owner.c -o "$RUNNER_TEMP/MacEdgeSocketOwner"
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/MacStoreLock"
       - name: Install disposable database
         if: matrix.os == 'macos-15'
         env:
@@ -77,6 +79,7 @@ jobs:
           CBTE_MAC_EDGE_HOSTED: '1'
           MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
           MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
+          MAC_LOCK_HELPER: ${{ runner.temp }}/MacStoreLock
           CBTE_MAC_EDGE_DB_FIXTURE: ${{ matrix.os == 'macos-15' && '1' || '0' }}
           AUTOMATION_TEST_DB_PORT: '33621'
         run: |
@@ -97,4 +100,4 @@ jobs:
             done
             test "$ready" = 1
           fi
-          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-codesign-diagnostic.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/native-test/edge-mac-workspace-hosted.test.cjs scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-calibration-cleanup-race.test.js scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-codesign-diagnostic.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/native-test/edge-mac-workspace-hosted.test.cjs scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-calibration-cleanup-race.test.js scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js
