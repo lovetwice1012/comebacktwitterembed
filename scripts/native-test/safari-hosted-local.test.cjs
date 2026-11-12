@@ -2,7 +2,7 @@
 
 // This smoke test intentionally never opens a user profile, requests notification
 // permission, subscribes to push, or accesses any remote service. It exercises
-// only a WebDriver-created Safari session and a synthetic loopback page.
+// only a WebDriver-created Safari session and a synthetic loopback page/worker.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
@@ -60,12 +60,17 @@ test('WebDriver timeout identifies the operation without exposing its URL', asyn
   }
 });
 
-test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, timeout: 240000 }, async () => {
+test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, timeout: 360000 }, async () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
 
   const marker = randomBytes(16).toString('hex');
   const page = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/sw.js') {
+      res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' });
+      res.end("self.addEventListener('install', () => {});");
+      return;
+    }
     if (req.method !== 'GET' || req.url !== '/') {
       res.writeHead(404).end();
       return;
@@ -74,14 +79,31 @@ test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, time
     res.end(`<!doctype html><title>CBTE local fixture</title><main id="marker">${marker}</main>`);
   });
   let driver;
+  let driverPort;
   let sessionId;
   let pageListening = false;
+  let workerAttempted = false;
+  let workerCleared = false;
+  async function unregisterWorker() {
+    const result = await webdriver(driverPort, `/session/${sessionId}/execute/async`, 'POST', {
+      script: `const done = arguments[arguments.length - 1];
+        navigator.serviceWorker.getRegistration('/')
+          .then(async registration => {
+            if (registration && !(await registration.unregister())) return { removed: false };
+            return { removed: !(await navigator.serviceWorker.getRegistration('/')) };
+          })
+          .then(done, () => done({ removed: false }));`,
+      args: [],
+    }, { stage: 'worker cleanup', timeoutMs: 15000 });
+    assert.equal(result.status, 200, 'Could not inspect worker cleanup');
+    assert.equal(result.value?.removed, true, 'Could not unregister the synthetic worker');
+  }
   try {
     const pagePort = await listen(page);
     pageListening = true;
     // Reserve an ephemeral port only long enough to select it for safaridriver.
     const reservation = net.createServer();
-    const driverPort = await listen(reservation);
+    driverPort = await listen(reservation);
     await close(reservation);
     driver = spawn('/usr/bin/safaridriver', ['-p', String(driverPort)], { stdio: 'ignore' });
     let spawnError;
@@ -125,7 +147,39 @@ test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, time
     assert.equal(result.status, 200, 'Could not read the synthetic page');
     assert.deepEqual(result.value, { title: 'CBTE local fixture', origin: `http://127.0.0.1:${pagePort}`, marker });
 
-    console.log('Safari WebDriver: fixture verified; closing session');
+    console.log('Safari WebDriver: fixture verified; checking API availability');
+    const capabilities = await webdriver(driverPort, `/session/${sessionId}/execute/sync`, 'POST', {
+      script: `return { secureContext: isSecureContext, serviceWorker: 'serviceWorker' in navigator,
+        pushManager: 'PushManager' in window, notification: 'Notification' in window };`,
+      args: [],
+    }, { stage: 'API availability', timeoutMs: 30000 });
+    assert.equal(capabilities.status, 200, 'Could not check web API availability');
+    console.log(`Safari fixture API availability: ${JSON.stringify(capabilities.value)}`);
+    assert.equal(capabilities.value?.secureContext, true, 'Fixture is not a secure context');
+    assert.equal(capabilities.value?.serviceWorker, true, 'Service Worker API is unavailable');
+
+    console.log('Safari WebDriver: registering synthetic worker');
+    workerAttempted = true;
+    const registration = await webdriver(driverPort, `/session/${sessionId}/execute/async`, 'POST', {
+      script: `const done = arguments[arguments.length - 1];
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then(registration => done({ registered: true, scopeMatches: registration.scope === location.origin + '/',
+            state: registration.active ? 'active' : registration.waiting ? 'waiting' : registration.installing ? 'installing' : 'unknown' }),
+          () => done({ registered: false }));`,
+      args: [],
+    }, { stage: 'worker registration', timeoutMs: 30000 });
+    assert.equal(registration.status, 200, 'Could not inspect worker registration');
+    console.log(`Safari fixture worker registration: ${JSON.stringify(registration.value)}`);
+    assert.equal(registration.value?.registered, true, 'Synthetic worker registration failed');
+    assert.equal(registration.value?.scopeMatches, true, 'Synthetic worker scope does not match fixture');
+    assert.ok(['active', 'waiting', 'installing'].includes(registration.value?.state), 'Synthetic worker has no registration state');
+
+    console.log('Safari WebDriver: unregistering synthetic worker');
+    await unregisterWorker();
+    workerCleared = true;
+    assert.equal(capabilities.value?.pushManager, true, 'PushManager API is unavailable');
+    assert.equal(capabilities.value?.notification, true, 'Notification API is unavailable');
+    console.log('Safari WebDriver: worker unregistered; closing session');
     const deleted = await webdriver(driverPort, `/session/${sessionId}`, 'DELETE', undefined, {
       stage: 'session closure', timeoutMs: 15000,
     });
@@ -134,8 +188,12 @@ test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, time
     console.log('Safari WebDriver: session closed');
   } finally {
     if (sessionId && driver && driver.exitCode === null && driver.signalCode === null) {
+      if (workerAttempted && !workerCleared) {
+        // This can only address the synthetic origin in this automation window.
+        try { await unregisterWorker(); } catch { /* preserve the original test failure */ }
+      }
       // Limit cleanup to the automation session created by this test.
-      try { await webdriver(Number(driver.spawnargs.at(-1)), `/session/${sessionId}`, 'DELETE'); } catch { /* best effort */ }
+      try { await webdriver(driverPort, `/session/${sessionId}`, 'DELETE'); } catch { /* best effort */ }
     }
     if (driver && driver.exitCode === null && driver.signalCode === null) driver.kill('SIGTERM');
     if (pageListening) {
