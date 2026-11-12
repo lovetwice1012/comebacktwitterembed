@@ -11,4 +11,11 @@ function classifyPushError(error) {
     else if (/\bnot.found\b/i.test(body)) category = 'NOT_FOUND';
     return `${status}_${category}`;
 }
-module.exports = { classifyPushError };
+
+// Only fixed labels and bounded numeric values leave the synthetic fixture.
+// In particular, never interpolate the error, response body, or endpoint.
+function formatSuppressedPushFailure(error, sinceSubscriptionMs, durationMs) {
+    const elapsed = value => Number.isSafeInteger(value) && value >= 0 && value <= 3600000 ? value : 'unknown';
+    return `synthetic Brave send stage=suppressed result=${classifyPushError(error)} sinceSubscriptionMs=${elapsed(sinceSubscriptionMs)} durationMs=${elapsed(durationMs)}`;
+}
+module.exports = { classifyPushError, formatSuppressedPushFailure };

@@ -22,7 +22,7 @@ const { withMacBraveKeychainPassword } = require('../../src/automation/chrome-ma
 const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-mac-token-crypto');
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
-const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { classifyPushError, formatSuppressedPushFailure } = require('./chrome-mac-push-error.cjs');
 const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
 const { snapshotBraveInstallation, diagnoseBraveInstallation } = require('./brave-mac-install-diagnostic.cjs');
 const { createInstrumentedBraveVerifier } = require('./brave-mac-verifier-diagnostic.cjs');
@@ -203,8 +203,12 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         broker = await startChromeBroker({ chromePath: installed.executable, profilePath: profile.profilePath, origin,
             pipeTimeoutMs: 30000, extraArgs: ['--headless=new', '--no-proxy-server'], spawnChrome: spawnOwned });
         const before = browserDeliveries;
+        const suppressedSendTime = elapsedMs();
         try { await webpush.sendNotification(subscription, 'suppressed', { TTL: 60, timeout: 15000 }); }
-        catch { throw new Error('FIXTURE_SUPPRESSED_SEND_FAILED'); }
+        catch (error) {
+            t.diagnostic(formatSuppressedPushFailure(error, suppressedSendTime, elapsedMs() - suppressedSendTime));
+            throw new Error('FIXTURE_SUPPRESSED_SEND_FAILED');
+        }
         await new Promise(resolve => setTimeout(resolve, 10000));
         assert.equal(browserDeliveries, before, 'setup Brave consumed a synthetic push while suppression was enabled');
         await receiveSyntheticMacPush({ subscription, vapid, ...credentials, browserVersion: engineVersion });
