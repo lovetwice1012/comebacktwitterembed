@@ -44,11 +44,33 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
-      - name: Install Brave on disposable hosted runner
+      - name: Install pinned universal Brave on disposable hosted runner
         run: |
-          if [ ! -x '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser' ]; then
-            brew install --cask brave-browser
-          fi
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          app='/Applications/Brave Browser.app'
+          # Never replace a browser already present, even on a hosted runner.
+          test ! -e "$app" && test ! -L "$app"
+          image="$RUNNER_TEMP/cbte-brave-1.98.63-universal.dmg"
+          mountpoint="$(mktemp -d "$RUNNER_TEMP/cbte-brave-image.XXXXXX")"
+          attached=false
+          cleanup() {
+            if [ "$attached" = true ]; then hdiutil detach "$mountpoint" -quiet; fi
+            rmdir "$mountpoint"
+          }
+          trap cleanup EXIT
+          curl --fail --location --silent --show-error --retry 2 \
+            --output "$image" 'https://github.com/brave/brave-browser/releases/download/v1.98.63/Brave-Browser-universal.dmg'
+          printf '%s  %s\n' '79febd5289c61e113c17ebb0c54dc750f311d733d6698672cc001a9e8c136e97' "$image" | shasum -a 256 -c
+          hdiutil attach "$image" -readonly -nobrowse -mountpoint "$mountpoint" -quiet
+          attached=true
+          source_app="$mountpoint/Brave Browser.app"
+          test -d "$source_app" && test ! -L "$source_app"
+          codesign --verify --deep --strict -R '=anchor apple generic and identifier "com.brave.Browser" and certificate leaf[subject.OU] = "KL8N8XSYF4"' "$source_app"
+          archs="$(lipo -archs "$source_app/Contents/MacOS/Brave Browser")"
+          [[ " $archs " == *' x86_64 '* && " $archs " == *' arm64 '* ]]
+          sudo ditto "$source_app" "$app"
           sudo xattr -cr '/Applications/Brave Browser.app'
       - name: Install locked dependencies without lifecycle scripts
         run: |

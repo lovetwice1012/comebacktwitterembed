@@ -94,6 +94,7 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         const verifyInstalledMacBrave = await createInstrumentedBraveVerifier(t);
         try { installed = await verifyInstalledMacBrave(); }
         catch (error) { await diagnoseBraveInstallation(t, installationBefore); throw error; }
+        assert.equal(installed.browserVersion, '1.98.63.0', 'pinned synthetic Brave version mismatch');
         const vapid = webpush.generateVAPIDKeys();
         let browserDeliveries = 0;
         server = http.createServer((req, res) => {
@@ -110,6 +111,8 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
         const call = fixturePipe(child), version = await call('Browser.getVersion');
         assert.match(version.product, /^Chrome\/[0-9]+(?:\.[0-9]+){3}$/); const engineVersion = version.product.slice(7);
+        assert.equal(engineVersion, '156.0.8078.80', 'pinned synthetic Chromium version mismatch');
+        t.diagnostic('synthetic Brave version=1.98.63.0 Chromium=156.0.8078.80');
         await call('Browser.grantPermissions', { origin, permissions: ['notifications'] });
         const target = await call('Target.createTarget', { url: origin });
         const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
