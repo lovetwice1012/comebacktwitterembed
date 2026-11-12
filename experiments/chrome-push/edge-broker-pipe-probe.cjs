@@ -16,6 +16,7 @@ const { captureFromBroker } = require('../../src/automation/edge-broker-client')
 const { rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
 const { assertSuppressedTakeover } = require('./edge-fixture-assertions.cjs');
 const { batchTimeoutCode } = require('./edge-fixture-frame-count.cjs');
+const { classifySendResponse, formatSendResponses } = require('./edge-fixture-send-status.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -115,6 +116,8 @@ async function probeOverlappingWnsSessions({ file, lease, gateway, tokenVault, e
     } finally { state.token.fill(0); }
 }
 let stage = 'start';
+// Stores only fixed categories, never response headers, endpoints, or IDs.
+const syntheticSendStatuses = [];
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
     const realWns = process.env.EDGE_PROBE_REAL_WNS === '1';
@@ -125,6 +128,7 @@ async function main() {
     const offlineBatch = process.env.EDGE_PROBE_OFFLINE_BATCH === '1';
     const onlineBatch = process.env.EDGE_PROBE_BATCH_ONLINE === '1';
     const offlineSettle = process.env.EDGE_PROBE_OFFLINE_SETTLE === '1';
+    const requestStatus = process.env.EDGE_PROBE_REQUEST_STATUS === '1';
     const overlap = process.env.EDGE_PROBE_OVERLAP === '1';
     const distinctTopics = process.env.EDGE_PROBE_DISTINCT_TOPICS === '1';
     const versionTwo = process.env.EDGE_PROBE_CONNECT_VERSION === '2';
@@ -135,6 +139,7 @@ async function main() {
     if (reimport && (!takeover || process.env.EDGE_PROBE_BLOCK_WNS !== '1')) throw new Error('PROBE_MODE_INVALID');
     if (offlineMessage && !reimport) throw new Error('PROBE_MODE_INVALID');
     if (offlineBatch && !offlineMessage) throw new Error('PROBE_MODE_INVALID');
+    if (requestStatus && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     if (onlineBatch && !offlineBatch) throw new Error('PROBE_MODE_INVALID');
     if (offlineSettle && (!offlineBatch || onlineBatch)) throw new Error('PROBE_MODE_INVALID');
     if (overlap && (!takeover || reimport)) throw new Error('PROBE_MODE_INVALID');
@@ -535,9 +540,16 @@ async function main() {
                         if (offlineMessage && !onlineBatch) {
                             const messages = offlineBatch ? ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'] : ['synthetic-offline-queued'];
                             for (const [index, text] of messages.entries()) {
-                                try { await webpush.sendNotification(expected, JSON.stringify({ text }),
-                                    { TTL: 300, ...(distinctTopics ? { topic: `synthetic${index + 1}` } : {}) }); }
+                                try {
+                                    const response = await webpush.sendNotification(expected, JSON.stringify({ text }),
+                                        { TTL: 300, ...(distinctTopics ? { topic: `synthetic${index + 1}` } : {}),
+                                            ...(requestStatus ? { headers: { 'X-WNS-RequestForStatus': 'true' } } : {}) });
+                                    syntheticSendStatuses.push(classifySendResponse(response));
+                                }
                                 catch (error) {
+                                    syntheticSendStatuses.push(classifySendResponse(error));
+                                    if (requestStatus && Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500)
+                                        throw new Error('PROBE_STATUS_REQUEST_REJECTED');
                                     if (distinctTopics && Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500)
                                         throw new Error('PROBE_TOPIC_SEND_REJECTED');
                                     throw error;
@@ -572,6 +584,7 @@ async function main() {
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
             snapshotSelected: true, packagedExport: true, packagedSnapshotCleaned: true, otherSiteConsentRequired: true, ownerBoundVault: true, fixtureDecrypted: true,
             databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested, takeoverResult,
+            ...(syntheticSendStatuses.length ? { sendStatuses: formatSendResponses(syntheticSendStatuses) } : {}),
             ...(versionTwo ? { explicitConnectVersion } : {}) };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));
@@ -589,4 +602,5 @@ async function main() {
     }
 }
 main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7]_NFYS_(?:0|[1-9][0-9]{0,2})_WIRE_(?:INVALID|0|[1-9][0-9]{0,2}))$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
+    if (syntheticSendStatuses.length) console.error('PROBE_SEND_STATUS', formatSendResponses(syntheticSendStatuses));
     console.error('PROBE_STAGE', stage, code); process.exitCode = 1; });

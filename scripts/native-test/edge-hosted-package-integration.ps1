@@ -1,5 +1,5 @@
 #requires -Version 5.1
-param([ValidateSet('normal', 'online-batch', 'offline-batch')][string] $Mode = 'normal')
+param([ValidateSet('normal', 'online-batch', 'offline-batch', 'offline-status')][string] $Mode = 'normal')
 <#
   Disposable GitHub-hosted Windows runner only. This downloads a hash-pinned
   MariaDB ZIP to RUNNER_TEMP, starts a private loopback database without
@@ -87,11 +87,20 @@ try {
         if (-not $write.Wait(5000) -or -not $read.Wait(5000)) { throw 'SYNTHETIC_PROBE_FAILED' }
         $outputBytes = $read.GetAwaiter().GetResult(); $text = [Text.Encoding]::UTF8.GetString($outputBytes)
         if ($job.ExitCode -ne 0) {
+            if ($text -match '(?m)^PROBE_SEND_STATUS ([A-Z0-9;-]+)\r?$') {
+                $safeStatus = Get-XEdgeHostedSendStatus -Value $Matches[1]
+                if ($null -ne $safeStatus) { Write-Output ('Synthetic send statuses: ' + $safeStatus) }
+            }
             if ($text -match 'PROBE_STAGE ([a-z]+) ([A-Z0-9_]+)') { throw ('SYNTHETIC_PROBE_' + $Matches[1].ToUpperInvariant() + '_' + $Matches[2]) }
             throw 'SYNTHETIC_PROBE_FAILED'
         }
         $result = ConvertFrom-Json -InputObject $text
         Assert-XEdgeHostedProbeResult -Mode $Mode -Result $result
+        if ($null -ne $result.sendStatuses) {
+            $safeStatus = Get-XEdgeHostedSendStatus -Value $result.sendStatuses
+            if ($null -eq $safeStatus) { throw 'SYNTHETIC_STATUS_INVALID' }
+            Write-Output ('Synthetic send statuses: ' + $safeStatus)
+        }
         Write-Output ('Synthetic signed Edge, pinned preview.15, version 2, database and WNS validation passed: ' + $Mode)
     } finally {
         try { $job.Stop() } finally { $job.Dispose() }

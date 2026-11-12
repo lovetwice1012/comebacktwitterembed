@@ -12,7 +12,7 @@ test('hosted Edge integration refuses ordinary Windows environments before any s
             { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted' },
             { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: '' },
         ]) {
-            for (const mode of ['normal', 'online-batch', 'offline-batch']) {
+            for (const mode of ['normal', 'online-batch', 'offline-batch', 'offline-status']) {
                 const child = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', script, '-Mode', mode], {
                     env: { ...process.env, ...env }, encoding: 'utf8', windowsHide: true, timeout: 10000,
                 });
