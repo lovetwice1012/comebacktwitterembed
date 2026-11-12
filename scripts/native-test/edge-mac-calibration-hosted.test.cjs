@@ -24,11 +24,13 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
         const token = randomBytes(16).toString('hex'), rootPath = path.join(base, `edge-calibration-${token}`);
         await fs.mkdir(rootPath, { mode: 0o700 }); await fs.mkdir(path.join(rootPath, 'profile'), { mode: 0o700 });
         await fs.writeFile(path.join(rootPath, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token }), { mode: 0o600, flag: 'wx' });
-        let child, exited = false, groupGone = false;
+        let child, exited = false, groupGone = false, calibrationStopped = false;
         t.after(async () => {
             if (child && !exited) try { child.kill('SIGTERM'); } catch { /* Retain the fixture on uncertainty. */ }
             if (!groupGone && exited && child?.pid) groupGone = await waitForMacProcessGroupExit(child.pid);
-            if (groupGone) {
+            // The calibration browsers use their own process groups. The
+            // parent group's exit alone is insufficient if calibration failed.
+            if (groupGone && calibrationStopped) {
                 const actual = await fs.realpath(base); assert.equal(path.dirname(actual), temp);
                 assert.match(path.basename(actual), /^cbte-edge-calibration-hosted-/); await fs.rm(actual, { recursive: true });
             }
@@ -42,7 +44,7 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
             let response, timer = setTimeout(() => { try { child.kill('SIGTERM'); } catch {} reject(new Error('FIXTURE_TIMEOUT')); }, 480000);
             child.on('message', message => { if (response) return; response = message; });
             child.once('error', () => { clearTimeout(timer); reject(new Error('FIXTURE_CHILD_FAILED')); });
-            child.once('exit', code => { exited = true; clearTimeout(timer); if (code === 0 && response?.ok === true) resolve(response);
+            child.once('exit', code => { exited = true; clearTimeout(timer); if (code === 0 && response?.ok === true) { calibrationStopped = true; resolve(response); }
                 else reject(new Error(`FIXTURE_CALIBRATION_${/^[A-Z_]+$/.test(response?.code || '') ? response.code : 'FAILED'}`)); });
             child.send({ rootPath, token, identityPath, peerPath });
         });
