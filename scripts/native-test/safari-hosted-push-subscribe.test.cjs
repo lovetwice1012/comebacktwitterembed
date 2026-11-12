@@ -161,28 +161,45 @@ const webPushPrefixes = Object.freeze({
   any_decryption_error: 'Dropping incoming push due to decryption error for topic ',
 });
 
-function classifyWebPushLogs(output) {
+function isSyntheticFixtureScope(value) {
+  const match = typeof value === 'string' && /^https?:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})\/$/.exec(value);
+  return Boolean(match && Number(match[1]) <= 65535);
+}
+function classifyWebPushLogs(output, fixtureScope) {
   let entries;
   try { entries = JSON.parse(output); } catch { return { status: 'unknown' }; }
   if (!Array.isArray(entries) || entries.length > 1000) return { status: 'unknown' };
   const flags = Object.fromEntries([...Object.keys(webPushMessages), ...Object.keys(webPushPrefixes)].map(name => [name, false]));
+  let fixtureDecoded = isSyntheticFixtureScope(fixtureScope) ? 'unconfirmed' : 'unavailable';
   for (const entry of entries) {
     const value = entry?.eventMessage;
     const key = Object.keys(webPushMessages).find(name => webPushMessages[name] === value)
       || (typeof value === 'string' && Object.keys(webPushPrefixes).find(name => value.startsWith(webPushPrefixes[name])));
     if (!key) return { status: 'unknown' };
     flags[key] = true;
+    // WebKit's decoded message ends with its scope. On privacy-redacted or
+    // differently formatted systems, leave the fixture attribution unconfirmed.
+    if (key === 'any_decoded' && fixtureDecoded !== 'unavailable' && value.trimEnd().endsWith(` ${fixtureScope}`)) fixtureDecoded = 'observed';
   }
   // False only means no matching recorded event was returned; it does not rule
   // out an issue, because log availability, versions and persistence differ.
-  return { status: entries.length ? 'matched' : 'no_matches', ...flags };
+  return { status: entries.length ? 'matched' : 'no_matches', ...flags, fixtureDecoded };
 }
 
 function utcLogTime(milliseconds) {
   return new Date(milliseconds).toISOString().slice(0, 19).replace('T', ' ') + '+0000';
 }
 
-function recordWebPushLogs(startedAt, endedAt) {
+function readWebPushLogs(start, end, predicate, fixtureScope) {
+  const args = ['show', '--style', 'json', '--no-pager', '--info', '--start', utcLogTime(start),
+    '--end', utcLogTime(end), '--predicate', predicate];
+  const options = { timeout: 15000, encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'ignore'] };
+  let result = spawnSync('/usr/bin/log', args, options);
+  if (result.status !== 0) result = spawnSync('/usr/bin/sudo', ['-n', '/usr/bin/log', ...args], options);
+  return result.status === 0 && typeof result.stdout === 'string'
+    ? classifyWebPushLogs(result.stdout, fixtureScope) : { status: 'unknown' };
+}
+function recordWebPushLogs(startedAt, endedAt, fixtureScope, fixtureSendStartedAt) {
   try {
     // Round inwards so the query never includes time outside the synthetic run.
     const start = Math.ceil(startedAt / 1000) * 1000;
@@ -194,13 +211,19 @@ function recordWebPushLogs(startedAt, endedAt) {
     const matches = [...Object.values(webPushMessages).map(message => `eventMessage == "${message}"`),
       ...Object.values(webPushPrefixes).map(prefix => `eventMessage BEGINSWITH "${prefix}"`)].join(' OR ');
     const predicate = `process == "webpushd" AND (${matches})`;
-    const args = ['show', '--style', 'json', '--no-pager', '--info', '--start', utcLogTime(start),
-      '--end', utcLogTime(end), '--predicate', predicate];
-    const options = { timeout: 15000, encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'ignore'] };
-    let result = spawnSync('/usr/bin/log', args, options);
-    if (result.status !== 0) result = spawnSync('/usr/bin/sudo', ['-n', '/usr/bin/log', ...args], options);
-    const classified = result.status === 0 && typeof result.stdout === 'string'
-      ? classifyWebPushLogs(result.stdout) : { status: 'unknown' };
+    const classified = readWebPushLogs(start, end, predicate);
+    // Attribute a decoded record only when its exact synthetic scope is
+    // visible *after this fixture started its single send*. Rounding inward
+    // can miss an event, so no match is always merely unconfirmed.
+    if (classified.status !== 'unknown' && isSyntheticFixtureScope(fixtureScope)
+        && Number.isSafeInteger(fixtureSendStartedAt) && fixtureSendStartedAt >= startedAt && fixtureSendStartedAt < endedAt) {
+      const fixtureStart = Math.ceil(fixtureSendStartedAt / 1000) * 1000;
+      if (fixtureStart < end) {
+        const fixture = readWebPushLogs(fixtureStart, end,
+          `process == "webpushd" AND eventMessage BEGINSWITH "${webPushPrefixes.any_decoded}"`, fixtureScope);
+        classified.fixtureDecoded = fixture.status === 'unknown' ? 'unknown' : fixture.fixtureDecoded;
+      }
+    }
     // Never print the original records, process metadata, URLs, IDs or keys.
     console.log(`Safari hosted WebPush log evidence: ${JSON.stringify(classified)}`);
   } catch {
@@ -519,7 +542,7 @@ test('hosted macOS records apsd state without changing it', { skip: !enabled, ti
 test('WebPush logs classify only known messages and reject malformed output', () => {
   assert.deepEqual(classifyWebPushLogs('[]'), { status: 'no_matches', service_unavailable: false,
     database_error: false, known_public_token: false, public_token_changed: false,
-    any_decoded: false, any_unknown_topic: false, any_decryption_error: false });
+    any_decoded: false, any_unknown_topic: false, any_decryption_error: false, fixtureDecoded: 'unavailable' });
   const result = classifyWebPushLogs(JSON.stringify([{ eventMessage: webPushMessages.database_error,
     unrelatedSensitiveField: 'must not appear' }]));
   assert.equal(result.status, 'matched');
@@ -527,6 +550,12 @@ test('WebPush logs classify only known messages and reject malformed output', ()
   assert.equal(JSON.stringify(result).includes('must not appear'), false);
   const decoded = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decoded}private-scope` }]));
   assert.equal(decoded.any_decoded, true); assert.equal(JSON.stringify(decoded).includes('private-scope'), false);
+  const syntheticScope = 'https://127.0.0.1:4321/';
+  const ours = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decoded}com.apple.Safari ${syntheticScope}` }]), syntheticScope);
+  assert.equal(ours.fixtureDecoded, 'observed'); assert(!JSON.stringify(ours).includes(syntheticScope));
+  assert.equal(classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decoded}com.apple.Safari https://other.invalid/${syntheticScope}` }]), syntheticScope).fixtureDecoded, 'unconfirmed');
+  assert.equal(classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decoded}com.apple.Safari <private>` }]), syntheticScope).fixtureDecoded, 'unconfirmed');
+  assert.equal(classifyWebPushLogs('[]', 'https://x.com/').fixtureDecoded, 'unavailable');
   const dropped = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decryption_error}private-topic` }]));
   assert.equal(dropped.any_decryption_error, true); assert.equal(JSON.stringify(dropped).includes('private-topic'), false);
   const unknown = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_unknown_topic}private-topic` }]));
@@ -574,7 +603,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   assert.equal(baseline, 'clean', 'Could not confirm that no Safari was running on the hosted runner');
   await recordApnsDiagnostics('before');
   const syntheticRunStartedAt = Date.now();
-  let driver, driverPort, session, page, pageIPv6, certBase, certTemp, listening = false, listeningIPv6 = false, attempted = false, clean = false;
+  let driver, driverPort, session, page, pageIPv6, certBase, certTemp, fixtureScope, fixtureSendStartedAt, listening = false, listeningIPv6 = false, attempted = false, clean = false;
   const handler = (req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
       res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
@@ -677,6 +706,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       pageIPv6 = http.createServer(handler);
     }
     const pagePort = await listen(page); listening = true;
+    fixtureScope = `${fixtureScheme}://${fixtureHost}:${pagePort}/`;
     await listenIPv6Loopback(pageIPv6, pagePort); listeningIPv6 = true;
     if (fixtureScheme === 'https') {
       // Confirm that a normal TLS client rejects the fixture certificate.
@@ -793,6 +823,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       if (!stages.control) throw new Error('FIXTURE_SAFARI_PUSH_CONTROL_NOT_CONFIRMED');
       console.log('Safari synthetic push: worker client-message control confirmed');
       const vapidPublic = Buffer.from(publicKey), vapidPrivate = key.getPrivateKey();
+      fixtureSendStartedAt = Date.now();
       try { await sendHostedSafariFixturePush({ subscription: captured, publicKey: vapidPublic, privateKey: vapidPrivate, marker: pushMarker }); }
       finally { vapidPublic.fill(0); vapidPrivate.fill(0); }
       console.log('Safari synthetic push: provider accepted');
@@ -812,7 +843,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     console.log('Safari subscription fixture: subscription and worker removed');
     await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session closure'); session = undefined;
   } finally {
-    recordWebPushLogs(syntheticRunStartedAt, Date.now());
+    recordWebPushLogs(syntheticRunStartedAt, Date.now(), fixtureScope, fixtureSendStartedAt);
     // Collect while the synthetic session is still alive, even on timeout.
     await recordApnsDiagnostics('after');
     if (session && driver && driver.exitCode === null && driver.signalCode === null) {
