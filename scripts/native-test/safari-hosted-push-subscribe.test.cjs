@@ -6,7 +6,7 @@
 // stay in the page's memory and are never returned to the driver or logged.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { createECDH } = require('node:crypto');
 const http = require('node:http');
 const net = require('node:net');
@@ -67,6 +67,19 @@ test('subscription result categories do not turn pending or refusal into success
   assert.equal(outcome('error', 'default'), 'subscription_error');
 });
 
+test('hosted macOS checks UI inspection permissions without requesting them', { skip: !enabled, timeout: 90000 }, () => {
+  assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
+  assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
+  // Both APIs only report the current authorization state. No capture, prompt,
+  // accessibility action, or settings change is requested by this probe.
+  const script = 'import ApplicationServices\nimport CoreGraphics\nprint("AX_TRUSTED=\\(AXIsProcessTrusted())")\nprint("SCREEN_CAPTURE_TRUSTED=\\(CGPreflightScreenCaptureAccess())")';
+  const probe = spawnSync('/usr/bin/swift', ['-e', script], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
+  assert.equal(probe.status, 0, 'Could not check hosted macOS UI inspection permissions');
+  const match = /^AX_TRUSTED=(true|false)\r?\nSCREEN_CAPTURE_TRUSTED=(true|false)\r?\n?$/.exec(probe.stdout || '');
+  assert.ok(match, 'Permission probe returned an unexpected response');
+  console.log(`Safari hosted UI preflight: accessibility=${match[1]} screenCapture=${match[2]}`);
+});
+
 test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, timeout: 360000 }, async () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
@@ -82,13 +95,17 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       res.end(`<!doctype html><title>Push subscription fixture</title>
         <button id="subscribe" disabled>Subscribe</button><script>
         let registration, subscription, cancelled = false;
-        let state = 'loading';
-        window.fixtureStatus = () => ({state, permission: typeof Notification === 'undefined' ? 'unknown' : Notification.permission});
+        let state = 'loading', trustedClick = false, activationAvailable = false, activationActive = false;
+        window.fixtureStatus = () => ({state, permission: typeof Notification === 'undefined' ? 'unknown' : Notification.permission,
+          trustedClick, activationAvailable, activationActive});
         navigator.serviceWorker.register('/sw.js', {scope:'/'}).then(async r => {
           registration = r; await navigator.serviceWorker.ready;
           state = 'ready'; document.querySelector('#subscribe').disabled = false;
         }).catch(() => { state = 'error'; });
-        document.querySelector('#subscribe').addEventListener('click', () => {
+        document.querySelector('#subscribe').addEventListener('click', event => {
+          trustedClick = event.isTrusted === true;
+          activationAvailable = !!navigator.userActivation;
+          activationActive = navigator.userActivation?.isActive === true;
           if (state !== 'ready') { state = 'error'; return; }
           state = 'pending';
           try {
@@ -152,8 +169,14 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     attempted = true;
     await command(driverPort, 'POST', `/session/${session}/element/${elementId}/click`, {}, 'synthetic button click', 30000);
     const subscriptionDeadline = Date.now() + 45000;
+    let clickDiagnosticsReported = false;
     do {
       status = await exec('return window.fixtureStatus();', 'subscription status');
+      if (!clickDiagnosticsReported && typeof status?.trustedClick === 'boolean' &&
+          typeof status.activationAvailable === 'boolean' && typeof status.activationActive === 'boolean') {
+        console.log(`Safari synthetic click: trusted=${status.trustedClick} activationAvailable=${status.activationAvailable} activationActive=${status.activationActive}`);
+        clickDiagnosticsReported = true;
+      }
       if (status?.state !== 'pending') break;
       await delay(500);
     } while (Date.now() < subscriptionDeadline);
