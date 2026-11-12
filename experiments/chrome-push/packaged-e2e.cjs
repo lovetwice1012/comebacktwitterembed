@@ -395,7 +395,11 @@ async function main() {
                         recorded = Number(rows[0].n) > 0; if (!recorded) await pause(250);
                     }
                     if (!recorded) throw new Error('FIXTURE_RUNTIME_RECEIPT_FAILED');
-                    clock += 301000; let jobs = 0;
+                    // Model elapsed batch cadence using only the disposable
+                    // receiver's anchor. Advancing the queue clock by five
+                    // minutes would falsely expire the real receiver lease.
+                    clock = await require('./packaged-cadence-fixture.cjs').makeBatchDue(testDb, saved.subscription.id, Date.now());
+                    let jobs = 0;
                     for (let i = 0; i < 20 && !jobs; i++) {
                         await runtime.tick(); const rows = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_jobs');
                         jobs = Number(rows[0].n); if (!jobs) await pause(250);
@@ -406,9 +410,8 @@ async function main() {
                         // Artificially retain acknowledged IDs to reproduce an
                         // unusually delayed local confirmation, without changing
                         // production code or using real user credentials.
-                        // Earlier routing advanced the fixture clock by 5 minutes.
-                        // Restore it before disconnect so retry cooldown and the
-                        // reconnection loop use the same time basis.
+                        // Retry cooldown and the reconnection loop use the
+                        // same wall clock as the live receiver lease.
                         clock = Date.now();
                         const priorReceipts = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]))[0].n);
                         const priorPending = Number((await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [saved.subscription.id]))[0].n);
@@ -617,7 +620,7 @@ async function main() {
                         if (process.env.CHROME_FIXTURE_REOPEN_WAIT === '1') {
                             let last = '';
                             for (let i = 0; i < 20; i++) {
-                                clock += 1000; await runtime.tick();
+                                clock = Date.now(); await runtime.tick();
                                 const rows = await testDb.queryDatabase('SELECT state,reason_code,retry_attempt FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]);
                                 const state = JSON.stringify(rows[0]);
                                 if (state !== last) { console.log(JSON.stringify({ reopenTransition: rows[0] })); last = state; }
@@ -628,7 +631,7 @@ async function main() {
                             url: 'https://x.com/synthetic/status/1234567890123456790', author: { handle: 'synthetic', id: '12345' } }), { TTL: 120 });
                         let recovered = false;
                         for (let i = 0; i < 160 && !recovered; i++) {
-                            clock += 1000; await runtime.tick();
+                            clock = Date.now(); await runtime.tick();
                             const rows = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox');
                             recovered = Number(rows[0].n) > priorReceipts;
                             if (!recovered) await pause(250);
@@ -643,8 +646,7 @@ async function main() {
                         }
                         // Advance the disposable DB's last batch time to model
                         // five elapsed minutes without delaying the fixture.
-                        await testDb.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?', [Date.now() - 301000, saved.subscription.id]);
-                        clock += 301000;
+                        clock = await require('./packaged-cadence-fixture.cjs').makeBatchDue(testDb, saved.subscription.id, Date.now());
                         const expectedJobs = process.env.CHROME_FIXTURE_BLOCK_MCS === '1' ? 3 : 2;
                         for (let i = 0; i < 40 && jobs < expectedJobs; i++) {
                             await runtime.tick(); const rows = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_jobs');
