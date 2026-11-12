@@ -1,14 +1,15 @@
 'use strict';
 
 // Only for disposable GitHub-hosted macOS runners. The fixture creates its own
-// application server key, opens no external website, and sends no notification.
-// A real subscription may contact Apple's push service. Its endpoint and keys
-// stay in the page's memory and are never returned to the driver or logged.
+// application server key and opens no external website. The optional delivery
+// probe sends one synthetic push through Apple's service. The endpoint and
+// public/auth keys are held only in fixture memory and are never logged.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
-const { createECDH, randomBytes } = require('node:crypto');
+const { createECDH, createHash, randomBytes } = require('node:crypto');
 const { Resolver, lookup } = require('node:dns/promises');
+const syncFs = require('node:fs');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const https = require('node:https');
@@ -234,11 +235,61 @@ function classifyAxProbe(probe, mode) {
   if (mode === 'allow' && output === 'diagnostic=allow_pressed') return { value: 'allow_pressed', reason: 'ok' };
   return { value: 'unknown', reason: 'unexpected_output' };
 }
+function validCompiledAxHelper(info, actual, expected, uid, expectedSha, observedSha) {
+  return Boolean(info && info.isFile() && !info.isSymbolicLink() && info.uid === uid && info.nlink === 1
+    && !(info.mode & 0o022) && (info.mode & 0o100) && info.size >= 1 && info.size <= 10 * 1024 * 1024
+    && actual === expected && typeof expectedSha === 'string' && /^[a-f0-9]{64}$/.test(expectedSha)
+    && observedSha === expectedSha);
+}
+function sameAxIdentity(left, right) {
+  return Boolean(left && right && ['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs'].every(name => left[name] === right[name]));
+}
+function inspectCompiledAxHelper(filename, expected, expectedSha, uid) {
+  const info = syncFs.lstatSync(filename), actual = syncFs.realpathSync(filename);
+  let fd, bytes;
+  try {
+    if (!syncFs.constants.O_NOFOLLOW || !validCompiledAxHelper(info, actual, expected, uid, expectedSha, expectedSha)) throw new Error();
+    fd = syncFs.openSync(filename, syncFs.constants.O_RDONLY | syncFs.constants.O_NOFOLLOW);
+    const opened = syncFs.fstatSync(fd);
+    if (!sameAxIdentity(info, opened) || !opened.isFile() || opened.size < 1 || opened.size > 10 * 1024 * 1024) throw new Error();
+    bytes = Buffer.alloc(opened.size); let offset = 0;
+    while (offset < bytes.length) {
+      const count = syncFs.readSync(fd, bytes, offset, bytes.length - offset, offset);
+      if (!count) throw new Error();
+      offset += count;
+    }
+    const digest = createHash('sha256').update(bytes).digest('hex'), after = syncFs.fstatSync(fd);
+    if (!sameAxIdentity(opened, after) || bytes.length !== opened.size
+        || !validCompiledAxHelper(info, actual, expected, uid, expectedSha, digest)) throw new Error();
+    const final = syncFs.lstatSync(filename);
+    if (!sameAxIdentity(info, final) || syncFs.realpathSync(filename) !== expected) throw new Error();
+    return info;
+  } finally { bytes?.fill(0); if (fd !== undefined) syncFs.closeSync(fd); }
+}
 function axProbe(mode) {
-  const probe = spawnSync('/usr/bin/swift', [axProbePath, mode], {
+  let executable = '/usr/bin/swift', args = [axProbePath, mode], helperIdentity;
+  if (process.env.CBTE_SAFARI_AX_HELPER) {
+    try {
+      if (process.platform !== 'darwin' || process.env.GITHUB_ACTIONS !== 'true'
+          || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || typeof process.getuid !== 'function'
+          || typeof process.env.RUNNER_TEMP !== 'string' || !path.isAbsolute(process.env.RUNNER_TEMP)) throw new Error();
+      const directory = syncFs.realpathSync(process.env.RUNNER_TEMP);
+      const expected = path.join(directory, 'cbte-safari-ax');
+      const supplied = process.env.CBTE_SAFARI_AX_HELPER;
+      helperIdentity = inspectCompiledAxHelper(supplied, expected, process.env.CBTE_SAFARI_AX_SHA256, process.getuid());
+      executable = expected; args = [mode];
+    } catch { console.log('Safari synthetic AX inspection: helper_invalid'); return 'unknown'; }
+  }
+  const probe = spawnSync(executable, args, {
     // Fresh hosted VMs may need to initialise Swift compiler caches first.
     encoding: 'utf8', timeout: 45000, maxBuffer: 16384, stdio: ['ignore', 'pipe', 'ignore'],
   });
+  if (helperIdentity) {
+    try {
+      const current = inspectCompiledAxHelper(executable, executable, process.env.CBTE_SAFARI_AX_SHA256, process.getuid());
+      if (!sameAxIdentity(helperIdentity, current)) throw new Error();
+    } catch { console.log('Safari synthetic AX inspection: helper_changed'); return 'unknown'; }
+  }
   const result = classifyAxProbe(probe, mode);
   if (result.value === 'unknown') console.log(`Safari synthetic AX inspection: ${result.reason}`);
   return result.value;
@@ -335,6 +386,40 @@ test('AX helper classifies failures without exposing raw output', () => {
   assert.deepEqual(classifyAxProbe({ status: null, signal: 'SIGTERM' }, 'allow'), { value: 'unknown', reason: 'terminated' });
   assert.deepEqual(classifyAxProbe({ status: 1, stderr: 'private' }, 'allow'), { value: 'unknown', reason: 'execution_failed' });
   assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'private' }, 'baseline'), { value: 'unknown', reason: 'unexpected_output' });
+});
+
+test('compiled AX helper requires an owned bounded fixed executable', () => {
+  const info = { isFile: () => true, isSymbolicLink: () => false, uid: 501, nlink: 1, mode: 0o700, size: 1024 };
+  const hash = 'a'.repeat(64);
+  assert.equal(validCompiledAxHelper(info, '/tmp/cbte-safari-ax', '/tmp/cbte-safari-ax', 501, hash, hash), true);
+  for (const invalid of [{ ...info, uid: 502 }, { ...info, nlink: 2 }, { ...info, mode: 0o722 },
+    { ...info, mode: 0o600 }, { ...info, size: 0 }, { ...info, size: 10 * 1024 * 1024 + 1 },
+    { ...info, isSymbolicLink: () => true }, { ...info, isFile: () => false }])
+    assert.equal(validCompiledAxHelper(invalid, '/tmp/cbte-safari-ax', '/tmp/cbte-safari-ax', 501, hash, hash), false);
+  assert.equal(validCompiledAxHelper(info, '/tmp/other', '/tmp/cbte-safari-ax', 501, hash, hash), false);
+  assert.equal(validCompiledAxHelper(info, '/tmp/cbte-safari-ax', '/tmp/cbte-safari-ax', 501, hash, 'b'.repeat(64)), false);
+  assert.equal(validCompiledAxHelper(info, '/tmp/cbte-safari-ax', '/tmp/cbte-safari-ax', 501, '', hash), false);
+  const identity = { dev: 1, ino: 2, size: 1024, mtimeMs: 3, ctimeMs: 4 };
+  assert.equal(sameAxIdentity(identity, { ...identity }), true);
+  for (const name of Object.keys(identity)) assert.equal(sameAxIdentity(identity, { ...identity, [name]: identity[name] + 1 }), false);
+});
+
+test('compiled AX helper verifies actual bytes before and after tampering', { skip: process.platform !== 'darwin' || typeof process.getuid !== 'function' }, () => {
+  // Only a newly created temp file is used; no installed application or user
+  // data is read, and no recursive deletion is performed.
+  const temp = syncFs.realpathSync(os.tmpdir()), directory = syncFs.mkdtempSync(path.join(temp, 'cbte-safari-ax-test-'));
+  const filename = path.join(directory, 'cbte-safari-ax');
+  try {
+    syncFs.writeFileSync(filename, 'synthetic helper', { flag: 'wx', mode: 0o700 });
+    const digest = createHash('sha256').update('synthetic helper').digest('hex');
+    const first = inspectCompiledAxHelper(filename, filename, digest, process.getuid());
+    assert.equal(sameAxIdentity(first, inspectCompiledAxHelper(filename, filename, digest, process.getuid())), true);
+    syncFs.writeFileSync(filename, 'tampered helper');
+    assert.throws(() => inspectCompiledAxHelper(filename, filename, digest, process.getuid()));
+  } finally {
+    try { syncFs.unlinkSync(filename); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    syncFs.rmdirSync(directory);
+  }
 });
 
 test('click-timeout diagnostic only inspects and never converts a failure to success', () => {
