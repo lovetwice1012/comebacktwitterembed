@@ -8,6 +8,7 @@ const { encodeFrame } = require('../../src/automation/chrome-mcs-framing');
 function v(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
 function field(n, x) { const b = Buffer.isBuffer(x) ? x : Buffer.from(x); return Buffer.concat([v(n * 8 + 2), v(b.length), b]); }
 const pair = (k, x) => field(7, Buffer.concat([field(1, k), field(2, x)]));
+const syntheticCheckin = async () => ({ intervalSeconds: 172800 });
 
 test('Chrome gateway preserves owned queued receipts after disconnect without acknowledging them', { timeout: 5000 }, async () => {
     const old = fixture(), key = old.push.p256dhPrivateKey;
@@ -41,7 +42,7 @@ test('Chrome gateway preserves owned queued receipts after disconnect without ac
                 pair('subtype', subtype), pair('content-encoding', 'aes128gcm'), field(9, id), field(21, Buffer.from(encryptedFixture.data, 'base64url'))])); }
         }
         const gateway = createXPushGateway({ queryDatabase: async () => [] }, { store, enabled: true, chromeEnabled: true,
-            privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 2000, createChromeSocket: () => socket = new Socket() });
+            privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 2000, chromeCheckin: syntheticCheckin, createChromeSocket: () => socket = new Socket() });
         await assert.rejects(gateway.run({ ...lease, workerId: 'fixture', signal: new AbortController().signal,
             onSession: () => { const frames = mode === 'flood' ? Array.from({ length: 17 }, (_, i) => socket.deliver(`flood-${i}`))
                 : [socket.deliver('own-1'), socket.deliver('foreign', 'other'), ...(mode === 'ack_confirm' ? [encodeFrame(1, Buffer.from([16, 2]))] : []),
@@ -92,7 +93,7 @@ test('Chrome gateway continues a receipt burst while downstream routing is stall
         pause() {} resume() {} destroy() {}
     }
     const gateway = createXPushGateway({ queryDatabase: async () => [] }, { store, enabled: true, chromeEnabled: true,
-        privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 3000, createChromeSocket: () => socket = new Socket() });
+        privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 3000, chromeCheckin: syntheticCheckin, createChromeSocket: () => socket = new Socket() });
     const result = await gateway.run({ ...lease, workerId: 'fixture', signal: controller.signal, onSession: () => socket.deliver(1),
         onReceived: () => { wakeups++; return new Promise(() => {}); } });
     assert.deepEqual(result, { state: 'stopped', reasonCode: null });
@@ -131,7 +132,7 @@ test('one gateway handles simultaneous independent receivers without crossing re
         pause() {} resume() {} destroy() {}
     }
     const gateway = createXPushGateway({ queryDatabase: async () => [] }, { store, enabled: true, chromeEnabled: true,
-        privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 5000, createChromeSocket: () => new Socket() });
+        privateWorkerVault: { open: () => file }, rolloutMode: 'public', requestTimeoutMs: 5000, chromeCheckin: syntheticCheckin, createChromeSocket: () => new Socket() });
     let ready = 0;
     try {
         const runs = Array.from({ length: count }, (_, i) => {
