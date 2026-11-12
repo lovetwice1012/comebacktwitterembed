@@ -16,8 +16,10 @@ on:
       - scripts/native-test/chrome-mac-install-diagnostic.cjs
       - scripts/native-test/chrome-mac-push-hosted.test.cjs
       - scripts/native-test/chrome-mac-push-error.cjs
+      - scripts/native-test/chrome-mac-push-probe.cjs
       - scripts/native-test/chrome-mac-login-error.cjs
       - scripts/test/chrome-mac-push-error.test.js
+      - scripts/test/chrome-mac-push-probe.test.js
       - scripts/test/chrome-mac-login-error.test.js
       - scripts/native-test/chrome-mac-synthetic-receive.cjs
       - scripts/native-test/chrome-mac-synthetic-transfer.cjs
@@ -94,6 +96,7 @@ jobs:
             scripts/test/chrome-mac-group-diagnostic.test.js \
             scripts/test/chrome-mac-process-group.test.js \
             scripts/test/chrome-mac-push-error.test.js \
+            scripts/test/chrome-mac-push-probe.test.js \
             scripts/test/chrome-mac-login-error.test.js \
             scripts/native-test/brave-mac-composed.test.cjs \
             scripts/test/chrome-mac-broker.test.js \

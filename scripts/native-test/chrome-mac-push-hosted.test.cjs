@@ -27,6 +27,7 @@ const { checkin } = require('../../src/automation/chrome-checkin');
 const { verifySyntheticMacTransfer } = require('./chrome-mac-synthetic-transfer.cjs');
 const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
 const { describeSyntheticGroup } = require('./chrome-mac-group-diagnostic.cjs');
 
 function fixturePipe(child) {
@@ -132,14 +133,19 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         }
         const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId, 120000);
         if (response.exceptionDetails) throw new Error('FIXTURE_SUBSCRIBE_FAILED');
+        const subscriptionTime = performance.now();
+        const elapsedMs = () => Math.max(0, Math.round(performance.now() - subscriptionTime));
         value = response.result?.value;
         assert.equal(typeof value?.endpoint, 'string'); assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(value.endpoint), 'unexpected push provider');
         assert.equal(typeof value.keys?.p256dh, 'string'); assert.equal(typeof value.keys?.auth, 'string');
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
+        let originalRecheckAccepted = false, originalRecheckStop;
+        const initialSendTime = elapsedMs();
         try { await webpush.sendNotification(value, 'preflight', { TTL: 60, timeout: 15000 }); }
         catch (error) {
             const original = classifyPushError(error);
             t.diagnostic(`initial synthetic subscription send=${original}`);
+            t.diagnostic(`initial synthetic send timing sinceSubscriptionMs=${initialSendTime} durationMs=${elapsedMs() - initialSendTime}`);
             if (original.startsWith('410_')) {
                 try {
                     const current = await call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.toJSON():null})()`,
@@ -148,14 +154,19 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     t.diagnostic(`original synthetic subscription still present=${Boolean(currentValue)} unchanged=${Boolean(currentValue && currentValue.endpoint === value.endpoint)}`);
                     // Test the original subscription without creating another
                     // registration first; the latter could change provider state.
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                    try {
-                        await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
+                    const comparison = await probeAfterGone({
+                        send: () => webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 }),
+                        sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), elapsedMs,
+                        report: event => t.diagnostic(`original synthetic recheck attempt=${event.attempt} sinceSubscriptionMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs} result=${event.result}`),
+                    });
+                    originalRecheckAccepted = comparison.accepted;
+                    originalRecheckStop = comparison.stopped;
+                    if (originalRecheckAccepted) {
                         t.diagnostic('original synthetic subscription accepted before secondary registration');
                         for (let attempt = 0; attempt < 100 && !delivered.has('original-recheck'); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
                         t.diagnostic(`original synthetic early recheck delivered=${delivered.has('original-recheck')}`);
                         t.diagnostic(`original synthetic early recheck reached service worker=${workerDelivered.has('original-recheck')}`);
-                    } catch (retryError) { t.diagnostic(`original synthetic early recheck=${classifyPushError(retryError)}`); }
+                    } else t.diagnostic(`original synthetic early recheck stopped=${comparison.stopped}`);
                     const secondaryVapid = webpush.generateVAPIDKeys();
                     const probe = `(async()=>{const r=await navigator.serviceWorker.register('/sw.js',{scope:'/secondary/'});` +
                         `if(!r.active)await new Promise((resolve,reject)=>{const w=r.installing||r.waiting;if(!w)return reject(Error('worker'));` +
@@ -171,7 +182,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
                     // remains rejected after a short registration delay.
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
-                    if (!delivered.has('original-recheck')) {
+                    if (!originalRecheckAccepted && originalRecheckStop === 'all_410' && !delivered.has('original-recheck')) {
                         try {
                             await webpush.sendNotification(value, 'original-recheck', { TTL: 60, timeout: 15000 });
                             t.diagnostic('original synthetic subscription accepted on delayed recheck');
