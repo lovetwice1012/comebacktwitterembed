@@ -5,7 +5,7 @@ if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32' || typeof pr
 const mysql = require('mysql');
 const { createTransferPrivateWorkerVault, createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
-const { countNotifications, batchTimeoutState } = require('./edge-fixture-frame-count.cjs');
+const { countNotifications, createWireCounter, batchTimeoutState } = require('./edge-fixture-frame-count.cjs');
 
 process.once('message', async input => {
     let pool;
@@ -32,9 +32,14 @@ process.once('message', async input => {
         };
         const keyConfig = { activeKeyId: 'test', privateKeys: { test: input.privateKey } };
         let versionChecked = false;
-        let observedTransport;
+        let observedTransport; const wire = createWireCounter();
         const versionObserver = { createEdgeTransport: ({ signal }) => {
-            const transport = require('../../src/automation/edge-wns-transport').createEdgeWnsTransport({ signal });
+            const transport = require('../../src/automation/edge-wns-transport').createEdgeWnsTransport({ signal, socketFactory: () => {
+                const socket = require('node:tls').connect({ host: 'client.wns.windows.com', port: 443,
+                    servername: 'client.wns.windows.com', rejectUnauthorized: true });
+                socket.on('data', chunk => wire.feed(chunk));
+                return socket;
+            } });
             observedTransport = countNotifications(transport);
             return { ...observedTransport.transport, async send(frame) {
                 if (!versionChecked && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
@@ -49,7 +54,7 @@ process.once('message', async input => {
         const controller = new AbortController();
         let received = false, timer, checking = false, allSeenAt = 0, scanFailed = false, observedMask = 0;
         const deadline = setTimeout(() => {
-            if (input.batch) process.send({ state: batchTimeoutState(observedMask, observedTransport?.getCount() || 0) });
+            if (input.batch) process.send({ state: batchTimeoutState(observedMask, observedTransport?.getCount() || 0, wire.result()) });
             controller.abort();
         }, 30000);
         const batchTexts = ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'];

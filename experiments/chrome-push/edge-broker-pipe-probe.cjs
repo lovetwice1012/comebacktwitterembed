@@ -588,5 +588,5 @@ async function main() {
         await fs.rm(actual, { recursive: true });
     }
 }
-main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7]_NFYS_(?:0|[1-9][0-9]{0,2}))$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
+main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7]_NFYS_(?:0|[1-9][0-9]{0,2})_WIRE_(?:INVALID|0|[1-9][0-9]{0,2}))$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
     console.error('PROBE_STAGE', stage, code); process.exitCode = 1; });
