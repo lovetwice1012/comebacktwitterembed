@@ -1,0 +1,42 @@
+name: macOS Safari isolated local smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-safari-local-synthetic.yml
+      - scripts/native-test/safari-hosted-local.test.cjs
+
+permissions:
+  contents: read
+
+jobs:
+  safari-local:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      # Safari's automation setting is enabled only on this disposable hosted VM.
+      - name: Enable Safari WebDriver on hosted macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          test -x /usr/bin/safaridriver
+          sudo /usr/bin/safaridriver --enable
+      - name: Visit a synthetic loopback page
+        env:
+          CBTE_SAFARI_HOSTED: '1'
+        run: node --test scripts/native-test/safari-hosted-local.test.cjs
