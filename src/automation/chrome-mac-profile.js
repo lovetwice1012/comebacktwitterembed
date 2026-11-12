@@ -54,8 +54,8 @@ async function createMacBrowserProfile(parent, browser) {
     requirePosix();
     const selected = Object.hasOwn(BROWSERS, browser) ? BROWSERS[browser] : null;
     if (!selected || typeof parent !== 'string' || !path.isAbsolute(parent)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
-    let root, profile, marker, handle, rootStat, profileStat, markerStat;
-    let createdRoot = false, createdProfile = false, createdMarker = false;
+    let root, profile, marker, handle, rootStat, profileStat, markerStat, braveDefault, bravePrefs, braveDefaultStat, bravePrefsStat;
+    let createdRoot = false, createdProfile = false, createdMarker = false, createdBraveDefault = false, createdBravePrefs = false;
     async function removeCreated(name, expected, remove) {
         const current = await fs.lstat(name);
         if (!expected || current.dev !== expected.dev || current.ino !== expected.ino) throw new Error('created entry changed');
@@ -68,6 +68,16 @@ async function createMacBrowserProfile(parent, browser) {
         profile = path.join(root, selected.folder); marker = path.join(root, 'owner.json');
         await fs.mkdir(root, { mode: 0o700 }); createdRoot = true; rootStat = await fs.lstat(root);
         await fs.mkdir(profile, { mode: 0o700 }); createdProfile = true; profileStat = await fs.lstat(profile);
+        if (browser === 'brave') {
+            // Brave defaults its Google Push channel off. Set it only in the
+            // newly created dedicated profile, as the Windows setup already
+            // does; never change a profile returned from the existing index.
+            braveDefault = path.join(profile, 'Default'); bravePrefs = path.join(braveDefault, 'Preferences');
+            await fs.mkdir(braveDefault, { mode: 0o700 }); createdBraveDefault = true; braveDefaultStat = await fs.lstat(braveDefault);
+            handle = await fs.open(bravePrefs, 'wx', 0o600); createdBravePrefs = true; bravePrefsStat = await handle.stat();
+            await handle.writeFile(JSON.stringify({ brave: { gcm: { channel_status: true } } }));
+            await handle.sync(); await handle.close(); handle = null;
+        }
         handle = await fs.open(marker, 'wx', 0o600); createdMarker = true; markerStat = await handle.stat();
         const owner = { schemaVersion: 1, appId: APP_ID, profileId: randomUUID(), rootPath: root, profilePath: profile };
         await handle.writeFile(JSON.stringify(owner)); await handle.sync(); await handle.close(); handle = null;
@@ -78,6 +88,8 @@ async function createMacBrowserProfile(parent, browser) {
         // Remove only names created by this invocation; never recurse into an
         // existing or subsequently populated browser profile.
         if (createdMarker) try { await removeCreated(marker, markerStat, fs.unlink); } catch { cleanupFailed = true; }
+        if (createdBravePrefs) try { await removeCreated(bravePrefs, bravePrefsStat, fs.unlink); } catch { cleanupFailed = true; }
+        if (createdBraveDefault) try { await removeCreated(braveDefault, braveDefaultStat, fs.rmdir); } catch { cleanupFailed = true; }
         if (createdProfile) try { await removeCreated(profile, profileStat, fs.rmdir); } catch { cleanupFailed = true; }
         if (createdRoot) try { await removeCreated(root, rootStat, fs.rmdir); } catch { cleanupFailed = true; }
         throw fail(cleanupFailed ? 'X_CHROME_MAC_PROFILE_CLEANUP_FAILED' : 'X_CHROME_MAC_PROFILE_INVALID');

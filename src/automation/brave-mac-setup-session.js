@@ -23,6 +23,13 @@ async function runExperimentalMacBraveSetup({ rootPath, profileId, helperPath, e
     try {
         broker = await startMacBraveBroker({ rootPath, profileId });
         let subscription;
+        const pushChannelStatus = ['enabled', 'disabled'].includes(broker.pushChannelStatus) ? broker.pushChannelStatus : 'unknown';
+        if (pushChannelStatus === 'disabled') {
+            await ui.confirmNotifications({ pushChannelStatus });
+            return { state: 'cancelled' };
+        }
+        if (pushChannelStatus === 'unknown' && await ui.confirmNotifications({ pushChannelStatus }) !== true)
+            return { state: 'cancelled' };
         while (!subscription) {
             if (await ui.confirmNotifications() !== true) return { state: 'cancelled' };
             try { subscription = await captureFromBroker({ port: broker.port, token: broker.token }); }

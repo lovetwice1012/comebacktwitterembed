@@ -22,12 +22,20 @@ test('Brave dialogs name the chosen browser and preserve mixed-notification cons
     const selected = await h.ui.confirmSave({ otherSubscriptionCount: 1 });
     assert.equal(selected.directory, '/Users/test'); assert.equal(selected.filename, '通知.json'); assert.equal(selected.otherSitesConsent, true);
     await h.ui.showError('X_BRAVE_MAC_BROWSER_INVALID');
-    assert(h.calls[0].args[1].includes('Braveを開く')); assert(h.calls[1].args[1].includes('投稿通知'));
+    assert(h.calls[0].args[1].includes('Braveを開く')); assert(h.calls[0].args[1].includes('Googleのプッシュ通知サービス'));
+    assert(h.calls[0].args[1].includes('\nreturn "yes"')); assert(h.calls[1].args[1].includes('投稿通知'));
     assert(h.calls[2].args[1].includes('普段のBrave')); assert(h.calls[3].args[1].includes('サーバーに届く'));
     assert(h.calls[3].args[1].includes('破棄')); assert(h.calls.at(-1).args[1].includes('Braveを確認'));
     assert(h.calls.every(call => !call.args[1].includes('Chrome')));
     const cancelled = await harness(['cancel'], 'brave'); assert.equal(await cancelled.ui.confirmSave({ otherSubscriptionCount: 1 }), null);
     assert.equal(cancelled.calls.length, 1);
+    const disabled = await harness(['no'], 'brave');
+    assert.equal(await disabled.ui.confirmNotifications({ pushChannelStatus: 'disabled' }), false);
+    assert(disabled.calls[0].args[1].includes('プッシュメッセージングにGoogleサービスを使用'));
+    assert(disabled.calls[0].args[1].includes('ツールをもう一度開いて'));
+    const unknown = await harness(['yes'], 'brave');
+    assert.equal(await unknown.ui.confirmNotifications({ pushChannelStatus: 'unknown' }), true);
+    assert(unknown.calls[0].args[1].includes('オンか確認'));
 });
 test('dialogs guide setup, disclose other-site data and return only the chosen local path', async () => {
     const h = await harness(['yes', 'yes', 'yes', 'yes', '/Users/test/通知.json']);

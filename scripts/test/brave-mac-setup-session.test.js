@@ -5,13 +5,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness({ timeout = false, captureError = false, closeResult = true } = {}) {
+async function harness({ timeout = false, captureError = false, closeResult = true, pushStatus = 'enabled' } = {}) {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/brave-mac-setup-session.js'), 'utf8');
     const module = { exports: {} }, events = []; let finish, captures = 0;
     const released = new Promise(resolve => { finish = resolve; });
     const chrome = { exitCode: null, signalCode: null, kill(signal) { events.push(`kill:${signal}`); chrome.signalCode = signal; finish(true); } };
     const broker = { port: 12345, token: 'a'.repeat(64), chrome, browserVersion: '157.1.99.55', engineVersion: '157.0.8103.39',
-        releaseComplete: released, async stop() { events.push('stop'); } };
+        pushChannelStatus: pushStatus, releaseComplete: released, async stop() { events.push('stop'); } };
     const subscription = { scope: 'https://x.com/', private: 'synthetic-secret' };
     const mockedRequire = name => {
         if (name === './brave-mac-broker') return { startMacBraveBroker: async () => { events.push('open'); return broker; } };
@@ -58,6 +58,18 @@ test('setup cancellation stops only its own browser and never calls export', asy
     const fourth = await harness(); fourth.ui.retryCapture = async () => false;
     assert.equal((await fourth.run({ ui: fourth.ui, experimental: true })).state, 'cancelled');
     assert.deepEqual(fourth.events, ['open', 'capture', 'kill:SIGTERM', 'stop']);
+    const disabled = await harness({ pushStatus: 'disabled' });
+    disabled.ui.confirmNotifications = async options => { assert.equal(options.pushChannelStatus, 'disabled'); return false; };
+    assert.equal((await disabled.run({ ui: disabled.ui, experimental: true })).state, 'cancelled');
+    assert.deepEqual(disabled.events, ['open', 'kill:SIGTERM', 'stop']);
+    const unknown = await harness({ pushStatus: 'unknown' });
+    unknown.ui.confirmNotifications = async options => { assert.equal(options.pushChannelStatus, 'unknown'); return false; };
+    assert.equal((await unknown.run({ ui: unknown.ui, experimental: true })).state, 'cancelled');
+    assert.deepEqual(unknown.events, ['open', 'kill:SIGTERM', 'stop']);
+    const confirmed = await harness({ pushStatus: 'unknown' }), prompts = [];
+    confirmed.ui.confirmNotifications = async options => { prompts.push(options?.pushChannelStatus ?? 'normal'); return true; };
+    assert.equal((await confirmed.run({ ui: confirmed.ui, experimental: true })).state, 'saved');
+    assert.deepEqual(prompts, ['unknown', 'normal', 'normal']);
 });
 test('unexpected capture errors or missing browser close never start export', async () => {
     const failed = await harness({ captureError: true });

@@ -54,6 +54,14 @@ test('Firefox profile persists independently of Chrome and fails closed on repla
     assert.deepEqual(await getOrCreateMacFirefoxProfile(base), firefox);
     assert.deepEqual(await getOrCreateMacChromeProfile(base), chrome);
     assert.deepEqual(await getOrCreateMacBraveProfile(base), brave);
+    const bravePreferences = path.join(brave.profilePath, 'Default', 'Preferences');
+    assert.equal(JSON.parse(await fs.readFile(bravePreferences, 'utf8')).brave.gcm.channel_status, true);
+    assert.equal((await fs.stat(bravePreferences)).mode & 0o777, 0o600);
+    // Reusing an existing dedicated profile must not overwrite user choices.
+    await fs.writeFile(bravePreferences, JSON.stringify({ brave: { gcm: { channel_status: false } }, sentinel: 'preserve' }));
+    assert.deepEqual(await getOrCreateMacBraveProfile(base), brave);
+    assert.equal(JSON.parse(await fs.readFile(bravePreferences, 'utf8')).sentinel, 'preserve');
+    assert.equal(JSON.parse(await fs.readFile(bravePreferences, 'utf8')).brave.gcm.channel_status, false);
     const index = path.join(base, 'firefox-setup-profile.json');
     assert.equal((await fs.stat(index)).mode & 0o777, 0o600);
     await fs.writeFile(index, JSON.stringify({ rootPath: chrome.rootPath, profileId: chrome.profileId }));

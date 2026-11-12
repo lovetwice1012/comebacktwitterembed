@@ -1,0 +1,65 @@
+name: macOS Brave synthetic push validation
+
+on:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-brave-push-synthetic.yml
+      - src/automation/brave-mac-*.js
+      - src/automation/chrome-mac-*.js
+      - scripts/native-test/brave-mac-push-hosted.test.cjs
+      - scripts/test/brave-mac-broker.test.js
+      - scripts/test/brave-mac-setup-session.test.js
+      - scripts/test/chrome-mac-dialogs.test.js
+      - scripts/test/chrome-mac-profile-registry.test.js
+      - client/angelic-setup/mac/lock-notification-stores.c
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  brave:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install Brave on disposable hosted runner
+        run: |
+          if [ ! -x '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser' ]; then
+            brew install --cask --no-quarantine brave-browser
+          fi
+          sudo xattr -cr '/Applications/Brave Browser.app'
+      - name: Install locked dependencies without lifecycle scripts
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
+      - name: Prepare isolated helper and synthetic keychain
+        run: |
+          clang -O2 client/angelic-setup/mac/lock-notification-stores.c -o "$RUNNER_TEMP/cbte-brave-lock"
+          keychain="$RUNNER_TEMP/cbte-brave-synthetic.keychain-db"
+          security create-keychain -p 'cbte-synthetic-only' "$keychain"
+          security unlock-keychain -p 'cbte-synthetic-only' "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security add-generic-password -a Brave -s 'Brave Safe Storage' -w 'cbte-synthetic-only-key' -T /usr/bin/security -T '/Applications/Brave Browser.app' "$keychain"
+      - name: Test actual Brave and isolated profile safety
+        env:
+          CBTE_MAC_BRAVE_HOSTED: '1'
+          MAC_LOCK_HELPER: ${{ runner.temp }}/cbte-brave-lock
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          node --test --test-concurrency=1 scripts/native-test/brave-mac-push-hosted.test.cjs scripts/test/brave-mac-broker.test.js scripts/test/brave-mac-setup-session.test.js scripts/test/chrome-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/native-test/brave-mac-composed.test.cjs
