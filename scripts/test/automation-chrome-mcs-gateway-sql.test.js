@@ -87,7 +87,7 @@ test('Chrome worker fences ACK after a committed receipt if its lease is lost', 
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_mcs_pending')).length, 1);
     } finally { await db.close(); }
 });
-for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFixture]]) test(`${browser}: a successor worker recovers an encrypted receipt after its predecessor loses the ACK`, async () => {
+for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFixture]]) for (const failure of ['write-error', 'socket-close']) test(`${browser}: a successor recovers a receipt after ACK ${failure}`, async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {
         for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
@@ -106,14 +106,19 @@ for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFix
         let firstSocket, firstCallbacks = 0;
         class FailedAckSocket extends FakeSocket {
             write(wire, done) {
-                if (wire[0] === 7) { this.writes.push(wire); return done(new Error('synthetic ACK write failure')); }
+                if (wire[0] === 7) {
+                    this.writes.push(wire);
+                    if (failure === 'write-error') return done(new Error('synthetic ACK write failure'));
+                    // Model a closed socket that never invokes the write callback.
+                    queueMicrotask(() => this.emit('close')); return true;
+                }
                 return super.write(wire, done);
             }
         }
         const options = { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 3000 };
         const first = createXPushGateway(db, { ...options, createChromeSocket: () => firstSocket = new FailedAckSocket(db) });
         await assert.rejects(first.run({ ...subscription, workerId: 'first-worker',
-            onSession: () => firstSocket.emit('data', encodeFrame(8, message)), onReceived: () => firstCallbacks++ }), { code: 'X_PUSH_SOCKET_FAILED' });
+            onSession: () => firstSocket.emit('data', encodeFrame(8, message)), onReceived: () => firstCallbacks++ }), { code: failure === 'write-error' ? 'X_PUSH_SOCKET_FAILED' : 'X_PUSH_SOCKET_CLOSED' });
         assert.equal(firstCallbacks, 0);
         assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
         assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending')).map(row => row.persistent_id), ['recovery-id']);
