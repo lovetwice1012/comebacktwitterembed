@@ -18,6 +18,8 @@ on:
       - scripts/native-test/edge-mac-calibration-hosted*.cjs
       - scripts/native-test/edge-mac-workspace-hosted.test.cjs
       - scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs
+      - scripts/native-test/edge-mac-fixture-error.cjs
+      - scripts/test/edge-mac-fixture-error.test.js
       - scripts/test/edge-mac-calibration-workspace.test.js
       - scripts/test/edge-calibration-cleanup-race.test.js
       - scripts/native-test/edge-mac-synthetic-db.cjs
@@ -100,4 +102,4 @@ jobs:
             done
             test "$ready" = 1
           fi
-          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-codesign-diagnostic.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/native-test/edge-mac-workspace-hosted.test.cjs scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-calibration-cleanup-race.test.js scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-codesign-diagnostic.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/native-test/edge-mac-workspace-hosted.test.cjs scripts/native-test/edge-mac-cancel-reopen-hosted.test.cjs scripts/test/edge-mac-fixture-error.test.js scripts/test/edge-mac-calibration-workspace.test.js scripts/test/edge-calibration-cleanup-race.test.js scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js

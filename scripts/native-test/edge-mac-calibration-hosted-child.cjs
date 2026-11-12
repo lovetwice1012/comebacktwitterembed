@@ -8,6 +8,7 @@ if (process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1'
 const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const webpush = require('web-push');
+const { safeCalibrationError } = require('./edge-mac-fixture-error.cjs');
 // Capture only the local synthetic subscription over the existing private
 // DevTools pipe. This wrapper is loaded only in this isolated CI process.
 const pipeId = require.resolve('../../src/automation/edge-cdp-pipe'), original = require(pipeId);
@@ -37,7 +38,7 @@ process.once('message', async input => {
         process.send({ ok: true, connectVersion: result.connectVersion, browserVersion: result.browserVersion,
             agent: result.agent, client: result.client, subscription, vapid }, () => process.disconnect());
     } catch (error) {
-        const code = /^X_(?:EDGE_MAC|EDGE_CALIBRATION)_[A-Z_]+$/.test(error?.code || '') ? error.code : 'FIXTURE_FAILED';
+        const code = safeCalibrationError(error?.code);
         process.send({ ok: false, code }, () => { process.exitCode = 1; process.disconnect(); });
     }
 });

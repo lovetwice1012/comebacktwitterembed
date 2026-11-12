@@ -7,6 +7,8 @@ on:
       - .github/workflows/mac-edge-cross-profile.yml
       - scripts/native-test/edge-mac-cross-profile-hosted.test.cjs
       - scripts/native-test/edge-mac-calibration-hosted-child.cjs
+      - scripts/native-test/edge-mac-fixture-error.cjs
+      - scripts/test/edge-mac-fixture-error.test.js
       - experiments/chrome-push/edge-fixture-record.cjs
       - src/automation/edge-mac-*.js
       - src/automation/edge-calibration-*.js
@@ -55,4 +57,4 @@ jobs:
           CBTE_MAC_EDGE_HOSTED: '1'
           MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
           MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
-        run: node --test --test-concurrency=1 scripts/native-test/edge-mac-cross-profile-hosted.test.cjs
+        run: node --test --test-concurrency=1 scripts/test/edge-mac-fixture-error.test.js scripts/native-test/edge-mac-cross-profile-hosted.test.cjs

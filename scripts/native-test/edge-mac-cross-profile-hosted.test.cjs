@@ -19,6 +19,7 @@ const { selectSyntheticEdgeRecord, rewriteSyntheticOrigin } = require('../../exp
 const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
+const { safeCalibrationError } = require('./edge-mac-fixture-error.cjs');
 
 const enabled = process.platform === 'darwin' && process.env.CBTE_MAC_EDGE_HOSTED === '1'
     && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted';
@@ -40,7 +41,9 @@ test('calibration metadata from one synthetic Mac Edge profile receives another 
         });
         const identityPath = process.env.MAC_EDGE_IDENTITY_HELPER, peerPath = process.env.MAC_EDGE_SOCKET_HELPER;
         assert.ok(path.isAbsolute(identityPath || '') && path.isAbsolute(peerPath || ''));
-        async function createSyntheticProfile() {
+        async function createSyntheticProfile(label) {
+            if (!['A', 'B'].includes(label)) throw new Error('FIXTURE_CROSS_INPUT_INVALID');
+            t.diagnostic(`synthetic profile ${label} calibration started`);
             const token = randomBytes(16).toString('hex'), root = path.join(base, `edge-calibration-${token}`);
             await fs.mkdir(root, { mode: 0o700 }); await fs.mkdir(path.join(root, 'profile'), { mode: 0o700 });
             await fs.writeFile(path.join(root, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token }),
@@ -54,14 +57,18 @@ test('calibration metadata from one synthetic Mac Edge profile receives another 
                 child.once('error', () => { clearTimeout(timer); reject(new Error('FIXTURE_CROSS_CHILD_FAILED')); });
                 child.once('exit', code => { state.exited = true; clearTimeout(timer);
                     if (code === 0 && received?.ok === true) { state.confirmed = true; resolve(received); }
-                    else reject(new Error('FIXTURE_CROSS_CALIBRATION_FAILED')); });
+                    else {
+                        const code = safeCalibrationError(received?.code);
+                        reject(new Error(`FIXTURE_CROSS_CALIBRATION_${label}_${code}`));
+                    } });
                 child.send({ rootPath: root, token, identityPath, peerPath });
             });
             state.groupGone = await waitForMacProcessGroupExit(child.pid);
             assert.equal(state.groupGone, true, 'synthetic calibration process group did not stop');
+            t.diagnostic(`synthetic profile ${label} calibration completed`);
             return { root, response };
         }
-        const a = await createSyntheticProfile(), b = await createSyntheticProfile();
+        const a = await createSyntheticProfile('A'), b = await createSyntheticProfile('B');
         assert.equal(a.response.browserVersion, b.response.browserVersion, 'Edge changed between synthetic profiles');
         const captured = b.response.subscription;
         assert.ok(captured && /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(captured.scope), 'invalid synthetic subscription scope');

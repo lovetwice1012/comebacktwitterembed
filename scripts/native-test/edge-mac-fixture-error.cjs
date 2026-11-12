@@ -1,0 +1,12 @@
+'use strict';
+
+// Diagnostics only: never interpolate arbitrary error text or credentials.
+const CODES = new Set([
+    'X_EDGE_MAC_BROWSER_INVALID', 'X_EDGE_CALIBRATION_CONFIG_INVALID', 'X_EDGE_CALIBRATION_CONNECT_FAILED',
+    'X_EDGE_CALIBRATION_PROTOCOL_INVALID', 'X_EDGE_CALIBRATION_LISTEN_FAILED', 'X_EDGE_CALIBRATION_STOPPED',
+    'X_EDGE_CALIBRATION_TIMEOUT', 'X_EDGE_CALIBRATION_CLEANUP_FAILED', 'X_EDGE_CALIBRATION_BROWSER_FAILED',
+    'X_EDGE_CALIBRATION_BROWSER_CHANGED', 'X_EDGE_CALIBRATION_FAILED', 'X_EDGE_CALIBRATION_CERT_FAILED',
+    'X_EDGE_CALIBRATION_PEER_FAILED',
+]);
+function safeCalibrationError(code) { return typeof code === 'string' && CODES.has(code) ? code : 'FIXTURE_FAILED'; }
+module.exports = { safeCalibrationError };
