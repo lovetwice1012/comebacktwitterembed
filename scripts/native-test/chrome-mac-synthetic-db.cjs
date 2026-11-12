@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { generateKeyPairSync } = require('node:crypto');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const { createXSetup } = require('../../src/automation/x-setup');
-const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
+const { parseTransferFile, createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { createXPushStore } = require('../../src/automation/x-push-store');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
 const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
@@ -14,7 +14,16 @@ const { createQueue } = require('../../src/automation/queue');
 const entitlements = require('../../src/automation/entitlements');
 const { createSyntheticSetupHttp } = require('./chrome-mac-synthetic-http.cjs');
 
-async function verifySyntheticMacDatabaseTransfer(file, work) {
+function syntheticTransferText(file, fileText) {
+    const text = fileText === undefined ? JSON.stringify(file) : fileText;
+    try {
+        if (typeof text !== 'string' || Buffer.byteLength(text) > 32768
+            || JSON.stringify(parseTransferFile(text)) !== JSON.stringify(file)) throw new Error();
+    } catch { throw new Error('FIXTURE_TRANSFER_MISMATCH'); }
+    return text;
+}
+
+async function verifySyntheticMacDatabaseTransfer(file, work, { fileText } = {}) {
     if (process.env.CBTE_MAC_DB_FIXTURE !== '1' || process.env.AUTOMATION_TEST_DB_PORT !== '33621') throw new Error('FIXTURE_DB_NOT_ENABLED');
     const db = await createTestDatabase(33621);
     const previousUrl = process.env.NEXTAUTH_URL;
@@ -30,7 +39,10 @@ async function verifySyntheticMacDatabaseTransfer(file, work) {
         const sessionResult = await http.post('x-setup/sessions', { consent: true });
         assert.equal(sessionResult.status, 200); assert.equal(sessionResult.cacheControl, 'private, no-store');
         const session = sessionResult.body;
-        const text = JSON.stringify(file);
+        // A fixture may supply bytes read from the locally saved file. Verify
+        // these are exactly the expected synthetic transfer before the HTTP
+        // request, without logging or displaying any key material.
+        const text = syntheticTransferText(file, fileText);
         const preview = await http.post('x-setup/validate', { sessionId: session.sessionId, fileText: text });
         assert.equal(preview.status, 200); assert.equal(preview.body.valid, true);
         const imported = await http.post('x-setup/import', { sessionId: session.sessionId, fileText: text, consent: true });
@@ -84,4 +96,4 @@ async function verifySyntheticMacDatabaseTransfer(file, work) {
         await db.close();
     }
 }
-module.exports = { verifySyntheticMacDatabaseTransfer };
+module.exports = { verifySyntheticMacDatabaseTransfer, syntheticTransferText };

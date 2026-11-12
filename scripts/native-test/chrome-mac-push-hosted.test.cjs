@@ -25,6 +25,7 @@ const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
 const { checkin } = require('../../src/automation/chrome-checkin');
 const { verifySyntheticMacTransfer } = require('./chrome-mac-synthetic-transfer.cjs');
+const { writeMacChromeExport } = require('../../src/automation/chrome-mac-private-export');
 const { verifySyntheticMacDatabaseTransfer } = require('./chrome-mac-synthetic-db.cjs');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
@@ -267,6 +268,19 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
         const browserVersion = version.product.slice('Chrome/'.length);
         const transfer = verifySyntheticMacTransfer({ origin, subscription: value, ...fixtureCredentials, browserVersion });
         t.diagnostic('synthetic X-format transfer passed parser and owner-bound worker vault; local origin was substituted');
+        // Exercise the actual local writer on a private, disposable directory.
+        // The test only substitutes its own synthetic origin in memory; no
+        // real browser profile, X account, or automatic user upload is used.
+        const exportDir = path.join(base, 'synthetic-export'); await fs.mkdir(exportDir, { mode: 0o700 });
+        const exportName = 'synthetic-notifications.json', exportPath = path.join(exportDir, exportName);
+        const exported = await writeMacChromeExport({ directory: exportDir, filename: exportName, file: transfer, confirmed: true });
+        assert.equal(exported.uploaded, false); assert.equal(exported.encrypted, false);
+        const exportInfo = await fs.lstat(exportPath);
+        assert.ok(exportInfo.isFile() && !exportInfo.isSymbolicLink() && exportInfo.uid === process.getuid()
+            && (exportInfo.mode & 0o777) === 0o600 && exportInfo.nlink === 1, 'synthetic export was not private');
+        const fileText = await fs.readFile(exportPath, 'utf8');
+        assert.ok(JSON.stringify(JSON.parse(fileText)) === JSON.stringify(transfer), 'saved synthetic transfer changed');
+        t.diagnostic('synthetic transfer saved locally with private permissions; no upload was performed by the writer');
         t.diagnostic(`synthetic credential ranges: deviceHighBit=${BigInt(fixtureCredentials.deviceId) >= (1n << 63n)} tokenHighBit=${BigInt(fixtureCredentials.securityToken) >= (1n << 63n)}`);
         async function receiveWithDiagnostics(database) {
             const receive = (port = 443) => receiveSyntheticMacPush({ subscription: value, vapid, ...fixtureCredentials, browserVersion, port, database,
@@ -296,7 +310,7 @@ test('macOS Chrome creates a synthetic Web Push subscription on a local origin',
             }
         }
         if (process.env.CBTE_MAC_DB_FIXTURE === '1') {
-            await verifySyntheticMacDatabaseTransfer(transfer, receiveWithDiagnostics);
+            await verifySyntheticMacDatabaseTransfer(transfer, receiveWithDiagnostics, { fileText });
             t.diagnostic('synthetic Mac transfer and encrypted MCS receipt persisted in disposable database before ACK');
             if (process.env.CBTE_MAC_REAL_ROUTE_FIXTURE === '1') t.diagnostic('synthetic MCS receipt routed to one notification job');
         } else await receiveWithDiagnostics();

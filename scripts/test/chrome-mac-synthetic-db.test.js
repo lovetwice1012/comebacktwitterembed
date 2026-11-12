@@ -5,7 +5,23 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { fixture, encrypted } = require('./helpers/x-push-fixture.cjs');
 const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs-store-adapter');
-const { verifySyntheticMacDatabaseTransfer } = require('../native-test/chrome-mac-synthetic-db.cjs');
+const { verifySyntheticMacDatabaseTransfer, syntheticTransferText } = require('../native-test/chrome-mac-synthetic-db.cjs');
+const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
+
+test('synthetic upload uses the exact saved JSON and rejects mismatches without exposing contents', () => {
+    const original = fixture(), key = original.push.p256dhPrivateKey;
+    const source = { format: original.format, version: 2,
+        provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion: '157.0.0.1', readMethod: 'chrome-gcm-snapshot' },
+        push: { deviceId: '123456', securityToken: '987654', appId: 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2',
+            productCategory: 'com.chrome.macosx', authorizedEntity: 'sender_123', scope: 'https://x.com/',
+            p256dhPublicKey: original.push.p256dhPublicKey, authenticationSecret: original.push.authenticationSecret,
+            p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
+    const file = parseTransferFile(JSON.stringify(source)), saved = JSON.stringify(file, null, 2);
+    assert.equal(syntheticTransferText(file, saved), saved);
+    assert.throws(() => syntheticTransferText(file, saved.replace('987654', '987655')), /FIXTURE_TRANSFER_MISMATCH/);
+    assert.throws(() => syntheticTransferText(file, '{'), /FIXTURE_TRANSFER_MISMATCH/);
+    assert.throws(() => syntheticTransferText(file, 'x'.repeat(32769)), /FIXTURE_TRANSFER_MISMATCH/);
+});
 
 test('synthetic Mac intake stores encrypted receipt and replay ID atomically',
     { skip: process.env.CBTE_MAC_DB_FIXTURE !== '1', timeout: 30000 }, async () => {
