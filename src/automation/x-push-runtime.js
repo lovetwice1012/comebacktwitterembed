@@ -33,12 +33,18 @@ function createXPushRuntime(db, queue, options = {}) {
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
     const sessions = new Map(), sessionControls = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
     const refreshPending = new Map();
+    // Eligibility failures are transient and fail closed. Retain a bounded
+    // retry hint so a failure near the start of a large scan does not wait
+    // for the complete cursor to wrap. The database remains authoritative.
+    const policyRetries = new Map(), maxPolicyRetries = Math.max(maxConnections, pageSize) * 2;
     // Recovered/processed states are durable; this bounded cache merely avoids
     // retrying still-unknown formats on every tick during the same process.
     const quarantineCursors = new Map(), realtimeCursors = new Map();
     const controller = new AbortController(), workerId = `node-${randomUUID()}`;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
-    let timer, ticking = null, stopped = false, cursor = '';
+    // The next source to inspect after an eligibility check: refreshed
+    // subscriptions, eligibility retries, or the ordinary cursor page.
+    let timer, ticking = null, stopped = false, cursor = '', candidateTurn = 0;
     const assertAllowed = options.assertAllowed || (() => { throw new Error('X_PUSH_AUTHORITY_UNAVAILABLE'); });
     const listCandidates = options.listCandidates || (async afterId => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision,s.updated_at_ms FROM automation_x_subscriptions s
         LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id
@@ -271,32 +277,64 @@ function createXPushRuntime(db, queue, options = {}) {
             await reconcileSessions();
             const page = await listCandidates(cursor);
             if (!Array.isArray(page)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
-            cursor = page.length === pageSize ? page.at(-1).id : '';
-            let refreshed = [];
-            if (refreshPending.size) {
-                refreshed = await listActiveSessions([...refreshPending.keys()]);
-                if (!Array.isArray(refreshed)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
-                const eligibleIds = new Set(refreshed.map(row => row.id));
+            if (!page.length) cursor = '';
+            let updates = [], retries = [];
+            const dueRetries = [...policyRetries].filter(([, retry]) => retry.until <= clock()).slice(0, pageSize).map(([id]) => id);
+            if (refreshPending.size || dueRetries.length) {
+                const active = await listActiveSessions([...new Set([...refreshPending.keys(), ...dueRetries])]);
+                if (!Array.isArray(active)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
+                const eligibleIds = new Set(active.map(row => row.id));
                 for (const id of refreshPending.keys()) if (!eligibleIds.has(id)) refreshPending.delete(id);
+                for (const id of dueRetries) if (!eligibleIds.has(id)) policyRetries.delete(id);
+                const activeById = new Map(active.map(row => [row.id, row]));
+                updates = [...refreshPending.keys()].map(id => activeById.get(id)).filter(Boolean);
+                retries = dueRetries.map(id => activeById.get(id)).filter(Boolean);
             }
             // Refreshes can accumulate beyond one page when many settings
             // change at once. Bound starts across both sources, not just the
             // ordinary paginated query, so recovery cannot create a burst.
-            // Interleave the sources so ongoing refreshes cannot indefinitely
-            // starve registrations found by the ordinary cursor.
+            // One round-robin turn covers all three sources; independent
+            // alternating flags can phase-lock and starve one source.
             function* candidates() {
-                for (let index = 0; index < Math.max(refreshed.length, page.length); index++) {
-                    if (index < refreshed.length) yield refreshed[index];
-                    if (index < page.length) yield page[index];
+                const groups = [updates, retries, page], indices = [0, 0, 0], first = candidateTurn;
+                while (indices.some((index, group) => index < groups[group].length)) {
+                    for (let offset = 0; offset < groups.length; offset++) {
+                        const group = (first + offset) % groups.length, index = indices[group];
+                        if (index < groups[group].length) { indices[group]++; yield { row: groups[group][index], group, index }; }
+                    }
                 }
             }
-            let started = 0;
-            for (const candidate of candidates()) {
+            let started = 0, policyChecks = 0; const inspected = new Set();
+            for (const item of candidates()) {
                 if (stopped || sessions.size >= maxConnections || started >= pageSize) break;
-                if (sessions.has(candidate.id)) continue;
-                if ((cooldowns.get(candidate.id) || 0) > clock()) continue;
-                const policy = await evaluateXRollout(db.queryDatabase, { userId: candidate.owner_user_id }, rolloutOptions);
-                if (!policy.eligible) continue;
+                const candidate = item.row;
+                // Advance only past ordinary candidates actually inspected.
+                // Refreshes may exhaust the start budget before the page is
+                // reached; skipping the entire page can starve registrations.
+                const advanceCursor = () => { if (item.group === 2) cursor = item.index === page.length - 1 && page.length < pageSize ? '' : candidate.id; };
+                if (inspected.has(candidate.id)) { advanceCursor(); continue; }
+                if (sessions.has(candidate.id)) { advanceCursor(); policyRetries.delete(candidate.id); continue; }
+                if ((cooldowns.get(candidate.id) || 0) > clock() || (policyRetries.get(candidate.id)?.until || 0) > clock()) { advanceCursor(); continue; }
+                // Failures and ineligible users also use DB capacity. Limit
+                // checks, not only successful connection starts, and leave an
+                // uninspected ordinary candidate at the cursor for next time.
+                if (policyChecks >= pageSize) break;
+                advanceCursor(); inspected.add(candidate.id); policyChecks++; candidateTurn = (item.group + 1) % 3;
+                let policy;
+                try { policy = await evaluateXRollout(db.queryDatabase, { userId: candidate.owner_user_id }, rolloutOptions); }
+                catch {
+                    if (stopped || controller.signal.aborted) break;
+                    const attempts = Math.min((policyRetries.get(candidate.id)?.attempts || 0) + 1, 7);
+                    const until = clock() + reconnectDelay(attempts, 'X_PUSH_ROLLOUT_CHECK_FAILED', options.jitter || randomInt);
+                    policyRetries.delete(candidate.id); policyRetries.set(candidate.id, { attempts, until });
+                    while (policyRetries.size > maxPolicyRetries) policyRetries.delete(policyRetries.keys().next().value);
+                    refreshPending.delete(candidate.id);
+                    continue;
+                }
+                if (stopped || controller.signal.aborted) break;
+                assertAllowed();
+                policyRetries.delete(candidate.id);
+                if (!policy.eligible) { refreshPending.delete(candidate.id); continue; }
                 let active = true;
                 const revision = Number(candidate.revision || 1);
                 const localController = new AbortController(), routingController = new AbortController();
@@ -305,7 +343,13 @@ function createXPushRuntime(db, queue, options = {}) {
                     updatedAtMs: Number(candidate.updated_at_ms || 0), connectionGeneration: /** @type {number|undefined} */ (undefined) };
                 sessionControls.set(candidate.id, record);
                 const rememberSession = value => { if (active && !localController.signal.aborted && sessions.get(candidate.id) === pending) remember(value); };
-                const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
+                const pending = Promise.resolve().then(() => {
+                    // stop() can run between registering this session and the
+                    // microtask that would otherwise open its connection.
+                    if (stopped || controller.signal.aborted || localController.signal.aborted) return { state: 'stopped' };
+                    try { assertAllowed(); } catch { return { state: 'authority_unavailable' }; }
+                    return gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
+                    assertAllowed, requireActiveMonitor: true,
                     workerId, signal: localController.signal, onSession: rememberSession, onLease: rememberSession, onStopping: () => routingController.abort(),
                     onClaim: ({ connectionGeneration }) => { if (Number.isSafeInteger(connectionGeneration) && connectionGeneration > 0) record.connectionGeneration = connectionGeneration; },
                     onReceived: async ({ lease, inbox }) => { if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); },
@@ -330,10 +374,13 @@ function createXPushRuntime(db, queue, options = {}) {
                             const result = await drain(lease, { recoverySignal: signal });
                             if (result.state !== 'processed' || Number(result.processed || 0) < pageSize) break;
                         }
-                    } }))
-                    .catch(error => ({ state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' }))
+                    } });
+                })
+                    .catch(error => ['X_ROLLOUT_DISABLED', 'X_ROLLOUT_SUPPORTERS_ONLY', 'X_PUSH_MONITOR_INACTIVE', 'X_PUSH_AUTHORITY_UNAVAILABLE'].includes(error?.code)
+                        ? { state: 'ineligible' }
+                        : { state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' })
                     .then(async result => {
-                        if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;
+                        if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment', 'authority_unavailable', 'inactive', 'ineligible'].includes(result?.state)) return;
                         const lease = leases.get(candidate.id);
                         const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision,
                             ...(record.connectionGeneration === undefined ? {} : { connectionGeneration: record.connectionGeneration }) };
@@ -387,14 +434,15 @@ function createXPushRuntime(db, queue, options = {}) {
         schedule();
     }
     async function stop() {
-        stopped = true; clearTimeout(timer); timer = null; controller.abort();
+        stopped = true; clearTimeout(timer); timer = null; controller.abort(); policyRetries.clear();
         for (const record of sessionControls.values()) record.controller.abort();
         let deadline;
         try { await Promise.race([Promise.allSettled([...sessions.values(), ...draining.values(), ...(ticking ? [ticking] : [])]),
             new Promise(resolve => { deadline = setTimeout(resolve, 5000); })]); }
         finally { clearTimeout(deadline); }
     }
-    return { start, stop, tick, drain, status: () => ({ enabled, processingConfigured: cadenceConfigured, processingPolicy: mode, sessions: sessions.size, stopped }) };
+    return { start, stop, tick, drain, status: () => ({ enabled, processingConfigured: cadenceConfigured, processingPolicy: mode,
+        sessions: sessions.size, pendingEligibilityRetries: policyRetries.size, stopped }) };
 }
 
 // Web intake deliberately never imports or calls this constructor. Only the
@@ -432,13 +480,14 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         };
         const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
         const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
+        const assertAllowed = options.assertAllowed || require('../recoveryLease').assertAllowed;
         const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
             chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', chromeMacEnabled: env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1', braveMacEnabled, edgeEnabled,
-            edgeConnectV2Enabled: env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1', edgeTokenVault });
+            edgeConnectV2Enabled: env.X_NOTIFICATION_EDGE_CONNECT_V2_ENABLED === '1', edgeTokenVault, assertAllowed });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
             maxConnections, drainConcurrency,
             useLegacyUserInterval: env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
-            assertAllowed: options.assertAllowed || require('../recoveryLease').assertAllowed });
+            assertAllowed });
     } catch (error) {
         if (error?.code === 'X_PUSH_WORKER_CAPACITY_INVALID') throw error;
         throw Object.assign(new Error('X notification receiver configuration is unavailable'), { code: 'X_PUSH_WORKER_KEY_UNAVAILABLE' });

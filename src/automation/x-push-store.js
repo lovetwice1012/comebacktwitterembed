@@ -70,10 +70,11 @@ function createXPushStore(db, options = {}) {
         || !Number.isSafeInteger(leaseMs) || leaseMs < 100 || leaseMs > 300000) fail('X_PUSH_STORE_CONFIG_INVALID');
     // Keep the owner -> subscription -> receiver lock order used by intake and
     // deletion. A delete cannot race a fenced inbox commit or resurrect a lease.
-    async function locked(input, work, { createReceiver = false, signal, authorize } = {}) {
+    /** @param {any} input @param {any} work @param {{createReceiver?: boolean, signal?: AbortSignal, authorize?: any, postAuthorize?: any}} [options] */
+    async function locked(input, work, { createReceiver = false, signal, authorize, postAuthorize } = {}) {
         identity(input);
         if (signal !== undefined && !(signal instanceof AbortSignal)) fail('X_PUSH_CONFIG_INVALID');
-        if (authorize !== undefined && typeof authorize !== 'function') fail('X_PUSH_CONFIG_INVALID');
+        if (authorize !== undefined && typeof authorize !== 'function' || postAuthorize !== undefined && typeof postAuthorize !== 'function') fail('X_PUSH_CONFIG_INVALID');
         if (signal?.aborted) fail('X_PUSH_STOPPED');
         try {
             return await db.withDatabaseTransaction(async query => {
@@ -93,6 +94,8 @@ function createXPushStore(db, options = {}) {
                 if (authorize) await authorize(query);
                 if (signal?.aborted) fail('X_PUSH_STOPPED');
                 const result = await work(query, subscription, receiver);
+                const completionGuard = postAuthorize || authorize;
+                if (completionGuard && typeof completionGuard.assertStillAllowed === 'function') completionGuard.assertStillAllowed();
                 if (signal?.aborted) fail('X_PUSH_STOPPED');
                 return result;
             });
@@ -111,7 +114,8 @@ function createXPushStore(db, options = {}) {
                 || !Number.isSafeInteger(Number(receiver.processing_lease_expires_at_ms)) || Number(receiver.processing_lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
         } else if (receiver.lease_token !== lease.token || Number(receiver.lease_expires_at_ms) <= now()) fail('X_PUSH_LEASE_LOST');
     }
-    async function claim(input) {
+    /** @param {any} input @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function claim(input, { authorize, signal } = {}) {
         if (typeof input?.workerId !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(input.workerId)) fail('X_PUSH_WORKER_INVALID');
         return locked(input, async (query, subscription, receiver) => {
             const processingParts = [receiver?.processing_lease_token, receiver?.processing_worker_id, receiver?.processing_lease_expires_at_ms, receiver?.processing_revision];
@@ -147,7 +151,7 @@ function createXPushStore(db, options = {}) {
             try { sealedEnvelope = JSON.parse(subscription.sealed_json); } catch { fail('X_PUSH_VAULT_INVALID'); }
             return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope,
                 ...(connectionGeneration === undefined ? {} : { connectionGeneration }) };
-        }, { createReceiver: true });
+        }, { createReceiver: true, authorize, signal });
     }
     async function renew(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -161,7 +165,7 @@ function createXPushStore(db, options = {}) {
             // generation after the socket watchdog has already closed it.
             fence(lease, subscription, receiver);
             return { ...lease, expiresAtMs };
-        });
+        }, { postAuthorize: authorize });
     }
     async function assertLease(lease, { authorize, signal } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -169,7 +173,7 @@ function createXPushStore(db, options = {}) {
             if (authorize) await authorize(query);
             fence(lease, subscription, receiver, { allowProcessing: true });
             return true;
-        }, { signal });
+        }, { signal, postAuthorize: authorize });
     }
     async function chromeCheckinState(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -182,7 +186,7 @@ function createXPushStore(db, options = {}) {
             if (!Number.isSafeInteger(checkedAtMs) || checkedAtMs < 0 || !Number.isSafeInteger(intervalSeconds)
                 || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
             return { checkedAtMs, intervalSeconds };
-        });
+        }, { postAuthorize: authorize });
     }
     async function recordChromeCheckin(lease, { intervalSeconds }, { authorize } = { authorize: undefined }) {
         if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
@@ -195,7 +199,7 @@ function createXPushStore(db, options = {}) {
                 [checkedAtMs, intervalSeconds, lease.revision, lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { checkedAtMs, intervalSeconds };
-        });
+        }, { postAuthorize: authorize });
     }
     // This API is inert until an Edge intake and receiver are explicitly wired.
     // A token is never returned until the lease and authorization transaction commits.
@@ -230,7 +234,7 @@ function createXPushStore(db, options = {}) {
                     revision: lease.revision, generation: state.generation });
                 fence(lease, subscription, receiver);
                 return { generation: state.generation, token: opened };
-            });
+            }, { postAuthorize: authorize });
         } catch (error) { opened?.fill(0); throw error; }
     }
     /** @param {any} lease @param {{vault?: any, authorize?: any, token?: Buffer, expectedGeneration?: number}} [options] */
@@ -253,9 +257,10 @@ function createXPushStore(db, options = {}) {
                 [serialized, lease.revision, generation, lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { generation };
-        });
+        }, { postAuthorize: authorize });
     }
-    async function markState(lease, state, reasonCode = null) {
+    /** @param {any} lease @param {any} state @param {any} [reasonCode] @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function markState(lease, state, reasonCode = null, { authorize, signal } = {}) {
         if (!STATES.has(state)) fail('X_PUSH_STATE_INVALID');
         validReason(reasonCode);
         return locked(lease, async (query, subscription, receiver) => {
@@ -263,7 +268,7 @@ function createXPushStore(db, options = {}) {
             await query(`UPDATE automation_x_push_receivers SET state=?,reason_code=?,updated_at_ms=?${state === 'listening' ? ',last_connected_at_ms=?' : ''} WHERE subscription_id=?`,
                 [state, reasonCode, now(), ...(state === 'listening' ? [now()] : []), lease.subscriptionId]);
             return { state, reasonCode };
-        });
+        }, { authorize, signal });
     }
     async function release(lease, { state = 'stopped', reasonCode = null } = {}) {
         if (!['stopped', 'error', 'requires_reenrollment'].includes(state)) fail('X_PUSH_STATE_INVALID');
@@ -321,7 +326,7 @@ function createXPushStore(db, options = {}) {
             // rolls back the insert, and the caller must close without an ACK.
             fence(lease, subscription, receiver);
             return { ...inboxDto(row, lease.ownerUserId), duplicate };
-        });
+        }, { postAuthorize: authorize });
     }
     async function recordMcsFrame(lease, input, { authorize } = { authorize: undefined }) {
         return recordFrame(lease, input, { authorize, mcsPending: true });
@@ -362,7 +367,7 @@ function createXPushStore(db, options = {}) {
                 [lease.ownerUserId, lease.subscriptionId, action, JSON.stringify({ revision: lease.revision, providerEventIdHash: idHash }), now()]);
             fence(lease, subscription, receiver);
             return { duplicate: previous.length > 0 };
-        });
+        }, { postAuthorize: authorize });
     }
     async function recordMcsControl(lease, input, options) { return recordMcsControlInternal(lease, input, options); }
     async function recordMcsRecoveryControl(lease, input, options) { return recordMcsControlInternal(lease, input, options, true); }
@@ -376,7 +381,7 @@ function createXPushStore(db, options = {}) {
             if (rows.length > 100) fail('X_PUSH_MCS_PENDING_LIMIT');
             if (rows.some(row => Number(row.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
             return rows.map(row => row.persistent_id);
-        });
+        }, { postAuthorize: authorize });
     }
     async function confirmMcs(lease, ids, { authorize } = { authorize: undefined }) {
         if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length
@@ -388,7 +393,7 @@ function createXPushStore(db, options = {}) {
                 [lease.subscriptionId, lease.revision, ids]);
             fence(lease, subscription, receiver);
             return Number(result.affectedRows);
-        });
+        }, { postAuthorize: authorize });
     }
     async function markRouted(lease, id, { signal, authorize } = {}) {
         if (!/^[0-9]{1,20}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
@@ -572,13 +577,14 @@ function createXPushStore(db, options = {}) {
             return { recorded: true, retryAtMs, retryAttempt };
         });
     }
-    async function resetRetry(lease) {
+    /** @param {any} lease @param {{authorize?: any, signal?: AbortSignal}} [options] */
+    async function resetRetry(lease, { authorize, signal } = {}) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             await query('UPDATE automation_x_push_receivers SET retry_at_ms=NULL,retry_attempt=0 WHERE subscription_id=?', [lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { retryAtMs: null, retryAttempt: 0 };
-        });
+        }, { authorize, signal });
     }
     return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsRecoveryFrame, recordMcsControl, recordMcsRecoveryControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,

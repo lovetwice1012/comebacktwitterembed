@@ -149,7 +149,7 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
                 // Do not report an ordinary disconnect when recovery itself
                 // failed: some buffered receipts may not have been stored.
                 // Never expose database or frame contents in the reason code.
-                error = /^X_PUSH_(?:LEASE_LOST|ROLLOUT_WITHDRAWN|ROLLOUT_CHECK_FAILED|STORE_TIMEOUT)$/.test(drainError?.code || '')
+                error = /^X_PUSH_(?:LEASE_LOST|ROLLOUT_WITHDRAWN|ROLLOUT_CHECK_FAILED|STORE_TIMEOUT|MONITOR_INACTIVE|MONITOR_CHECK_FAILED|AUTHORITY_UNAVAILABLE)$/.test(drainError?.code || '')
                     ? fail(drainError.code) : fail('X_PUSH_BUFFERED_RECOVERY_FAILED');
             } finally { binding?.reconnectToken.fill(0); drain?.close(); for (const frame of frames) frame.fill(0); }
         }

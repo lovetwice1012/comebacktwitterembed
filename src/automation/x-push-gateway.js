@@ -42,7 +42,7 @@ async function deadline(promise, timeoutMs, code) {
 
 // A bounded serial frame queue is used instead of the compatibility client's
 // recent-version cache: durable ACK codes must be read from the committed DB.
-function socketTransport(createSocket, timeoutMs, userAgent) {
+function socketTransport(createSocket, timeoutMs, userAgent, assertAllowed = () => {}) {
     const socket = createSocket({ url: AUTOPUSH_URL, options: {
         headers: { 'User-Agent': userAgent, Origin: 'https://x.com' },
         perMessageDeflate: false, autoPong: false, maxPayload: MAX_FRAME_BYTES,
@@ -92,6 +92,7 @@ function socketTransport(createSocket, timeoutMs, userAgent) {
     });
     if (opened) { clearTimeout(connectTimer); settleConnect.resolve(); }
     async function send(data, kind = 'text') {
+        assertAllowed();
         if (failed) throw failed;
         if (socket.readyState !== 1) throw fault('X_PUSH_SOCKET_CLOSED');
         await new Promise((resolve, reject) => {
@@ -220,12 +221,70 @@ function createXPushGateway(db, options = {}) {
     }
     async function run(input) {
         configured();
+        if (options.assertAllowed !== undefined && typeof options.assertAllowed !== 'function'
+            || input.assertAllowed !== undefined && typeof input.assertAllowed !== 'function'
+            || input.requireActiveMonitor !== undefined && typeof input.requireActiveMonitor !== 'boolean') throw fault('X_PUSH_CONFIG_INVALID');
+        const authorities = [options.assertAllowed, input.assertAllowed].filter((value, index, values) => value && values.indexOf(value) === index);
+        const assertAuthority = () => {
+            if (input.signal?.aborted) throw fault('X_PUSH_STOPPED');
+            try {
+                for (const authority of authorities) {
+                    const result = authority();
+                    if (result && typeof result.then === 'function') {
+                        // Guardian authority must be locally available and
+                        // synchronous inside the DB fence; never wait under lock.
+                        void Promise.resolve(result).catch(() => {});
+                        throw new Error('asynchronous authority unavailable');
+                    }
+                }
+            } catch { throw fault('X_PUSH_AUTHORITY_UNAVAILABLE'); }
+        };
+        const activeMonitor = async query => {
+            if (input.requireActiveMonitor !== true) return;
+            let rows;
+            try {
+                rows = await query(`SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND enabled=1 AND state='ready'
+                    AND CASE WHEN JSON_VALID(notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(notification_settings_json,'$.subscriptionId')) ELSE NULL END=? LIMIT 1`,
+                [input.ownerUserId, input.subscriptionId]);
+            } catch { throw fault('X_PUSH_MONITOR_CHECK_FAILED'); }
+            if (!Array.isArray(rows)) throw fault('X_PUSH_MONITOR_CHECK_FAILED');
+            if (!rows.length) throw fault('X_PUSH_MONITOR_INACTIVE');
+        };
+        const preClaimAuthorize = async query => { assertAuthority(); await activeMonitor(query); assertAuthority(); };
+        const authorize = async query => {
+            assertAuthority();
+            try {
+                await requireXEnrollment(query, { userId: input.ownerUserId },
+                    options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
+            } catch (error) {
+                throw fault(['X_ROLLOUT_DISABLED', 'X_ROLLOUT_SUPPORTERS_ONLY'].includes(error?.code)
+                    ? 'X_PUSH_ROLLOUT_WITHDRAWN' : 'X_PUSH_ROLLOUT_CHECK_FAILED');
+            }
+            await activeMonitor(query); assertAuthority();
+        };
+        // The store invokes this synchronous guard again after a DB operation
+        // and before its transaction returns. Owner-scoped monitor/plan data
+        // remains protected by the already-held owner lock.
+        authorize.assertStillAllowed = assertAuthority;
+        preClaimAuthorize.assertStillAllowed = assertAuthority;
         // Only server configuration chooses rollout mode; no request option can
         // enable a worker. Cleanup/status remain usable when enrollment closes.
+        assertAuthority();
         await requireXEnrollment(db.queryDatabase, { userId: input.ownerUserId },
             options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
         if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
-        let lease = await deadline(store.claim(input), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+        assertAuthority();
+        let lease; const claimController = new AbortController();
+        const cancelClaim = () => claimController.abort();
+        input.signal?.addEventListener('abort', cancelClaim, { once: true });
+        if (input.signal?.aborted) cancelClaim();
+        try { lease = await deadline(store.claim(input, { authorize: preClaimAuthorize, signal: claimController.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT'); }
+        catch (error) {
+            if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
+            if (error?.code === 'X_PUSH_MONITOR_INACTIVE') return { state: 'inactive', reasonCode: null };
+            if (error?.code === 'X_PUSH_AUTHORITY_UNAVAILABLE') return { state: 'authority_unavailable', reasonCode: null };
+            throw error;
+        } finally { claimController.abort(); input.signal?.removeEventListener('abort', cancelClaim); }
         if (!lease) return { state: 'busy', reasonCode: 'X_PUSH_LEASE_UNAVAILABLE' };
         // The supervisor records the claimed connection generation even if
         // authentication fails before onSession. It contains no credential.
@@ -233,15 +292,6 @@ function createXPushGateway(db, options = {}) {
         let transport, checkinRunner, renewal, renewalStart, expiryTimer, renewalFailure, renewing = false, finished = false, finalState = 'stopped', reasonCode = null;
         let renewalWork = Promise.resolve();
         const aborted = () => transport?.abort('X_PUSH_STOPPED');
-        const authorize = async query => {
-            try {
-                await requireXEnrollment(query, { userId: lease.ownerUserId },
-                    options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
-            } catch (error) {
-                throw fault(['X_ROLLOUT_DISABLED', 'X_ROLLOUT_SUPPORTERS_ONLY'].includes(error?.code)
-                    ? 'X_PUSH_ROLLOUT_WITHDRAWN' : 'X_PUSH_ROLLOUT_CHECK_FAILED');
-            }
-        };
         function watchLease() {
             clearTimeout(expiryTimer);
             if (finished) return;
@@ -260,18 +310,23 @@ function createXPushGateway(db, options = {}) {
                     lease = updated; watchLease();
                     if (!finished && typeof input.onLease === 'function') await notify(input.onLease, { lease }, input.signal);
                 }).catch(error => {
-                    renewalFailure = fault(['X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT'].includes(error?.code) ? error.code : 'X_PUSH_LEASE_LOST');
+                    renewalFailure = fault(['X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT',
+                        'X_PUSH_MONITOR_INACTIVE', 'X_PUSH_MONITOR_CHECK_FAILED', 'X_PUSH_AUTHORITY_UNAVAILABLE'].includes(error?.code) ? error.code : 'X_PUSH_LEASE_LOST');
                     transport?.abort(renewalFailure.code);
                 }).finally(() => { renewing = false; });
             };
             // Spread the first renewal of simultaneously started sessions so
             // a large fleet does not lock the database all at the same instant.
             renewalStart = setTimeout(() => { renew(); renewal = setInterval(renew, renewEvery); }, schedule.firstDelay);
-            const file = await openSubscription(lease);
+            // Eligibility or shutdown can change after the initial lookup and
+            // claim. Fence the initial vault access and its audit just like
+            // later inbox decryptions before opening any provider socket.
+            const file = await openSubscription(lease, { signal: input.signal, authorize });
             const [protocol, crypto] = await loadProtocol();
             await assertAuthorized();
             if (renewalFailure) throw renewalFailure;
             if (input.signal?.aborted) throw fault('X_PUSH_STOPPED');
+            assertAuthority();
             if (file.version === 3) {
                 // The separate Edge gate defaults off. Intake remains closed
                 // until its exporter and end-to-end lifecycle are ready.
@@ -298,6 +353,7 @@ function createXPushGateway(db, options = {}) {
                         while (pendingInbox && !controller.signal.aborted) {
                             const current = pendingInbox; pendingInbox = null;
                             let payload;
+                            assertAuthority();
                             try { payload = decrypt(crypto, file, current); } catch { continue; }
                             await notify(input.onReceived, { lease, inbox: current, payload }, controller.signal);
                         }
@@ -307,11 +363,19 @@ function createXPushGateway(db, options = {}) {
                     .map(name => [name, (...args) => deadline(store[name](...args), timeoutMs, 'X_PUSH_STORE_TIMEOUT')]));
                 await withEdgeWnsCredentials(file, credentials => runEdgeWnsGateway({
                     store: edgeStore, lease, vault: options.edgeTokenVault, authorize, credentials, signal: controller.signal,
-                    ...(options.createEdgeTransport ? { transportFactory: options.createEdgeTransport } : {}),
+                    transportFactory: ({ signal }) => {
+                        assertAuthority();
+                        const inner = options.createEdgeTransport ? options.createEdgeTransport({ signal })
+                            : require('./edge-wns-transport').createEdgeWnsTransport({ signal });
+                        if (!inner || typeof inner.connect !== 'function' || typeof inner.send !== 'function') return inner;
+                        return { ...inner,
+                            connect(...args) { assertAuthority(); return inner.connect(...args); },
+                            send(...args) { assertAuthority(); return inner.send(...args); } };
+                    },
                     onReady: async () => {
                         await assertAuthorized();
-                        await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-                        await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                        await deadline(store.markState(lease, 'listening', null, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                        await deadline(store.resetRetry(lease, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
                         if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
                     },
                     onReceived: async ({ inbox }) => {
@@ -333,11 +397,12 @@ function createXPushGateway(db, options = {}) {
                 const { createChromeMcsSession } = require('./chrome-mcs-session');
                 const { createChromeMcsStoreAdapter } = require('./chrome-mcs-store-adapter');
                 let heartbeatMs = duration(options.chromeHeartbeatMs, 900000, 25, 3600000);
+                assertAuthority();
                 transport = createChromeMcsTransport({ timeoutMs, ...(options.createChromeSocket ? { createSocket: options.createChromeSocket } : {}) });
                 input.signal?.addEventListener('abort', aborted, { once: true });
                 if (input.signal?.aborted) aborted();
                 await transport.connect();
-                const chromeStore = createChromeMcsStoreAdapter({ store, lease, authorize, decrypt: row => decrypt(crypto, file, row) });
+                const chromeStore = createChromeMcsStoreAdapter({ store, lease, authorize, assertAllowed: assertAuthority, decrypt: row => decrypt(crypto, file, row) });
                 // The inbox is durable before this hint runs. Coalesce hints
                 // while routing is slow, leaving the runtime's inbox scan to
                 // recover every row without blocking the MCS reader.
@@ -351,6 +416,7 @@ function createXPushGateway(db, options = {}) {
                         while (pendingInbox && !finished && !renewalFailure && !input.signal?.aborted) {
                             const current = pendingInbox; pendingInbox = null;
                             let payload;
+                            assertAuthority();
                             try { payload = decrypt(crypto, file, current); } catch { continue; }
                             await notify(input.onReceived, { lease, inbox: current, payload }, input.signal);
                         }
@@ -363,6 +429,7 @@ function createXPushGateway(db, options = {}) {
                     send: async wire => {
                         await assertAuthorized();
                         if (renewalFailure || input.signal?.aborted) throw renewalFailure || fault('X_PUSH_STOPPED');
+                        assertAuthority();
                         await transport.send(wire);
                     },
                     onReceipt: async inbox => {
@@ -380,8 +447,8 @@ function createXPushGateway(db, options = {}) {
                     if (connected.state !== 'listening') throw fault('X_PUSH_HELLO_FAILED');
                     chromeEstablished = true;
                     if (connected.heartbeatIntervalMs) heartbeatMs = connected.heartbeatIntervalMs;
-                    await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-                    await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                    await deadline(store.markState(lease, 'listening', null, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                    await deadline(store.resetRetry(lease, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
                     const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
                     checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
                         credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion,
@@ -389,11 +456,20 @@ function createXPushGateway(db, options = {}) {
                         ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
                         ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
                         ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),
-                        onFailure: error => {
+                        onFailure: async error => {
                             if (finished || input.signal?.aborted) return;
-                            const code = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_CHECKIN_FAILED';
+                            let code = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_CHECKIN_FAILED';
                             if (code === 'X_PUSH_CHECKIN_UNAUTHORIZED' || code === 'X_PUSH_CHECKIN_ID_CHANGED') {
-                                finalState = 'requires_reenrollment'; reasonCode = code;
+                                try {
+                                    // A provider rejection does not authorize a
+                                    // stale worker to overwrite current state.
+                                    await deadline(store.markState(lease, 'requires_reenrollment', code, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                                    assertAuthority();
+                                    if (finished || input.signal?.aborted) return;
+                                    finalState = 'requires_reenrollment'; reasonCode = code;
+                                } catch (guardError) {
+                                    code = /^X_PUSH_[A-Z_]+$/.test(guardError?.code || '') ? guardError.code : 'X_PUSH_CHECKIN_FAILED';
+                                }
                             }
                             renewalFailure = fault(code);
                             transport?.abort(code);
@@ -437,10 +513,12 @@ function createXPushGateway(db, options = {}) {
                                 await assertAuthorized();
                             }
                         } catch (cause) {
-                            recoveryError = ['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(cause?.code)
+                            recoveryError = ['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED',
+                                'X_PUSH_MONITOR_INACTIVE', 'X_PUSH_MONITOR_CHECK_FAILED', 'X_PUSH_AUTHORITY_UNAVAILABLE'].includes(cause?.code)
                                 ? cause : fault('X_PUSH_BUFFERED_RECOVERY_FAILED');
                         } finally { for (const frame of frames) frame.payload.fill(0); }
-                        if (recovered && !renewalFailure && !input.signal?.aborted && !['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(recoveryError?.code)) {
+                        if (recovered && !renewalFailure && !input.signal?.aborted && !['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED',
+                            'X_PUSH_MONITOR_INACTIVE', 'X_PUSH_MONITOR_CHECK_FAILED', 'X_PUSH_AUTHORITY_UNAVAILABLE'].includes(recoveryError?.code)) {
                             await assertAuthorized();
                             await notifyRecovery(input.onRecovery, lease, input.signal);
                         }
@@ -450,7 +528,8 @@ function createXPushGateway(db, options = {}) {
                 } finally { session.close(); }
             }
             if (file.version !== 1) throw fault('X_PUSH_PROTOCOL_INVALID');
-            transport = socketTransport(createSocket, timeoutMs, protocol.AUTOPUSH_USER_AGENT);
+            assertAuthority();
+            transport = socketTransport(createSocket, timeoutMs, protocol.AUTOPUSH_USER_AGENT, assertAuthority);
             input.signal?.addEventListener('abort', aborted, { once: true });
             if (input.signal?.aborted) aborted();
             await transport.connect();
@@ -465,13 +544,14 @@ function createXPushGateway(db, options = {}) {
             // Changing a UAID would detach Firefox's real X subscription. Never
             // REGISTER, recreate keys, or call X when Mozilla rejects that UAID.
             if (hello.uaid !== file.push.uaid) {
+                await store.markState(lease, 'requires_reenrollment', 'X_PUSH_UAID_CHANGED', { authorize, signal: input.signal });
+                assertAuthority();
                 finalState = 'requires_reenrollment'; reasonCode = 'X_PUSH_UAID_CHANGED';
-                await store.markState(lease, finalState, reasonCode);
                 throw fault(reasonCode);
             }
             if (hello.use_webpush === false) throw fault('X_PUSH_PROTOCOL_INVALID');
-            await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
-            await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+            await deadline(store.markState(lease, 'listening', null, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+            await deadline(store.resetRetry(lease, { authorize, signal: input.signal }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
             if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
             let nextPing = now() + pingMs, pongDeadline = null;
             while (!input.signal?.aborted) {
@@ -488,7 +568,7 @@ function createXPushGateway(db, options = {}) {
                     if (frame.code !== 1000 && frame.code !== 1005) throw fault(frame.code === 4774 ? 'X_PUSH_BACKOFF' : 'X_PUSH_SOCKET_CLOSED');
                     break;
                 }
-                if (frame.type === 'ping') { await transport.send(frame.data, 'pong'); continue; }
+                if (frame.type === 'ping') { assertAuthority(); await transport.send(frame.data, 'pong'); continue; }
                 if (frame.type === 'pong') continue;
                 if (protocol.isPong(frame.data)) { pongDeadline = null; nextPing = now() + pingMs; continue; }
                 let notification;
@@ -521,6 +601,7 @@ function createXPushGateway(db, options = {}) {
                 const entry = { version: notification.version, data: notification.data || '', headers: notification.headers || {}, status: 'decryption_failed', ackCode: 101 };
                 entry.headers = validateFrame(entry);
                 let payload;
+                assertAuthority();
                 try { payload = decrypt(crypto, file, entry); entry.status = 'received'; entry.ackCode = 100; } catch { /* Persist ciphertext and safe decryption status. */ }
                 const inbox = await deadline(store.recordFrame(lease, entry, { authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
                 await assertAuthorized();
@@ -536,6 +617,8 @@ function createXPushGateway(db, options = {}) {
             return { state: 'stopped', reasonCode: null };
         } catch (error) {
             if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
+            if (error?.code === 'X_PUSH_MONITOR_INACTIVE') return { state: 'inactive', reasonCode: null };
+            if (error?.code === 'X_PUSH_AUTHORITY_UNAVAILABLE') return { state: 'authority_unavailable', reasonCode: null };
             if (finalState !== 'requires_reenrollment') {
                 finalState = 'error';
                 // A single MCS login rejection is not proof that the user's
