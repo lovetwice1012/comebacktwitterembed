@@ -13,9 +13,11 @@ const { spawn, spawnSync } = require('node:child_process');
 const { createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { acquireMacProfileLease } = require('../../src/automation/chrome-mac-profile-lease');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
+const { instrumentCodesign, snapshotEdgeMetadata, metadataChanged } = require('./edge-mac-codesign-diagnostic.cjs');
 
 test('signed Edge uses its isolated Mac profile and releases only after termination',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 300000 }, async t => {
+        assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-edge-launch-hosted-'));
         const profile = await createMacEdgeProfile(base); let child, childClosed = false, broker;
         t.after(async () => {
@@ -34,6 +36,10 @@ test('signed Edge uses its isolated Mac profile and releases only after terminat
         });
         const modulePath = path.resolve(__dirname, '../../src/automation/edge-mac-broker.js');
         const source = await fs.readFile(modulePath, 'utf8'), local = createRequire(modulePath), mod = { exports: {} };
+        const metadataBefore = await snapshotEdgeMetadata();
+        const signatureCheck = instrumentCodesign(local('node:child_process').execFile, result => {
+            t.diagnostic(`initial signature attempt=${result.attempt} class=${result.classification} elapsedMs=${result.elapsedMs}`);
+        });
         vm.runInNewContext(source, { module: mod, exports: mod.exports, process, require(name) {
             if (name === './edge-private-broker') {
                 const original = local(name);
@@ -47,7 +53,7 @@ test('signed Edge uses its isolated Mac profile and releases only after terminat
             }
             if (name !== 'node:child_process') return local(name);
             const native = local(name);
-            return { ...native, spawn(executable, args, options) {
+            return { ...native, execFile: signatureCheck.run, spawn(executable, args, options) {
                 assert.equal(executable, '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
                 assert(args.includes(`--user-data-dir=${profile.profilePath}`));
                 assert.equal(args.at(-1), 'https://x.com/');
@@ -58,6 +64,8 @@ test('signed Edge uses its isolated Mac profile and releases only after terminat
         } });
         try { broker = await mod.exports.startMacEdgeBroker({ rootPath: profile.rootPath, profileId: profile.profileId, suppressReceive: false }); }
         catch (error) {
+            if (!signatureCheck.attempts()) t.diagnostic('initial signature class=not_attempted');
+            t.diagnostic(`installed metadata changed=${metadataChanged(metadataBefore, await snapshotEdgeMetadata())}`);
             const app = '/Applications/Microsoft Edge.app', executable = path.join(app, 'Contents/MacOS/Microsoft Edge');
             for (const filename of [app, executable]) {
                 try { const stat = await fs.lstat(filename); t.diagnostic(`installed ${path.basename(filename)}: directory=${stat.isDirectory()} file=${stat.isFile()} link=${stat.isSymbolicLink()} canonical=${await fs.realpath(filename) === filename}`); }
