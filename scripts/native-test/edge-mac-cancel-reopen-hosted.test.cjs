@@ -14,10 +14,11 @@ const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
 const { constants } = require('node:fs');
 const { classifyName, plausibleHeader } = require('./edge-mac-store-classifier.cjs');
-const { createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
+const { getOrCreateMacEdgeProfile } = require('../../src/automation/chrome-mac-profile-registry');
+const { rotateMacEdgeProfile } = require('../../src/automation/edge-mac-profile-rotation');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
-test('a fresh Edge setup cancelled before notifications can be reopened',
+test('a cancelled Edge setup can be reopened or explicitly restarted in a separate owned profile',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 300000 }, async t => {
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-edge-cancel-reopen-'));
@@ -41,7 +42,8 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
             }
             assert.equal(safe, true, 'fixture retained because Edge termination could not be confirmed');
         });
-        const profile = await createMacEdgeProfile(base);
+        const profile = await getOrCreateMacEdgeProfile(base);
+        const originalIndex = await readFixtureFile([base], path.join(base, 'edge-setup-profile.json'));
         server = http.createServer((_request, response) => response.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>Fixture</title>'));
         await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { listening = true; resolve(); }); });
         const origin = `http://127.0.0.1:${server.address().port}`;
@@ -97,8 +99,23 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                     || await fs.realpath(directory) !== directory) throw new Error('fixture path changed');
             }
         }
+        async function readFixtureFile(directories, file) {
+            await verifyFixtureDirectories(directories);
+            const before = await fs.lstat(file), handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+            try {
+                const stat = await handle.stat();
+                if (!before.isFile() || before.isSymbolicLink() || before.uid !== process.getuid() || before.nlink !== 1
+                    || stat.dev !== before.dev || stat.ino !== before.ino || stat.uid !== process.getuid() || stat.nlink !== 1
+                    || stat.size > 4096) throw new Error('fixture file identity invalid');
+                const result = await handle.readFile('utf8'), after = await handle.stat();
+                if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) throw new Error('fixture file changed');
+                return result;
+            } finally { await handle.close(); }
+        }
         const parents = [base, profile.rootPath, profile.profilePath, path.join(profile.profilePath, 'Default')];
         await verifyFixtureDirectories(parents.slice(0, 3));
+        const sentinel = path.join(profile.rootPath, 'synthetic-sentinel');
+        await fs.writeFile(sentinel, 'preserve', { flag: 'wx', mode: 0o600 });
         assert.ok((await fs.readdir(profile.profilePath)).length > 0, 'first launch did not populate the synthetic profile');
         const store = path.join(profile.profilePath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
         let storeState = 'unavailable';
@@ -166,9 +183,20 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                 : 'filesScan=unavailable';
             const records = inspectPhase === 'scanned' ? String(recordCount) : 'unavailable';
             t.diagnostic(`synthetic reopen failure code=${code} lock=${lockState} helper=${helperState} reader=${inspectStatus} phase=${inspectPhase} records=${records} ${files}`);
-            throw new Error('FIXTURE_EDGE_REOPEN_FAILED');
+            if (code !== 'X_EDGE_MAC_PROFILE_INSPECTION_REQUIRED') throw new Error('FIXTURE_EDGE_REOPEN_FAILED');
+            // The confirmation here is synthetic. UI dialogs are tested separately.
+            const replacement = await rotateMacEdgeProfile({ directory: base, oldProfile: profile, confirmed: true });
+            assert.ok(replacement.rootPath !== profile.rootPath, 'rotation did not create a separate profile');
+            assert.ok(await readFixtureFile([base, profile.rootPath], sentinel) === 'preserve', 'prior fixture profile changed');
+            const backups = (await fs.readdir(base)).filter(name => /^edge-setup-profile-backup-[a-f0-9]{32}\.json$/.test(name));
+            assert.equal(backups.length, 1);
+            assert.ok(await readFixtureFile([base], path.join(base, backups[0])) === originalIndex, 'prior fixture index changed');
+            const current = await getOrCreateMacEdgeProfile(base);
+            assert.ok(current.rootPath === replacement.rootPath && current.profileId === replacement.profileId, 'current index mismatch');
+            second = await openModule.exports.openMacEdgeForSetup({ ...args, rootPath: replacement.rootPath, profileId: replacement.profileId });
+            t.diagnostic('synthetic explicit rotation preserved prior profile and index; new owned profile opened');
         }
         brokers.push(second); assert.equal(second.chrome.kill('SIGTERM'), true);
         assert.equal(await second.releaseComplete, true); await second.stop();
-        t.diagnostic('synthetic cancelled profile reopened and both owned browsers stopped');
+        t.diagnostic('synthetic setup browser opened and both owned browsers stopped');
     });
