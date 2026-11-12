@@ -9,6 +9,7 @@ on:
       - src/automation/chrome-mac-*.js
       - scripts/native-test/brave-mac-push-hosted.test.cjs
       - scripts/native-test/brave-mac-install-diagnostic.cjs
+      - scripts/native-test/brave-mac-verifier-diagnostic.cjs
       - scripts/test/brave-mac-install-diagnostic.test.js
       - scripts/native-test/chrome-mac-push-error.cjs
       - scripts/native-test/chrome-mac-push-probe.cjs

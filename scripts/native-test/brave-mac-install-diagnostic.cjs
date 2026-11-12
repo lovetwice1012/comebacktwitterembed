@@ -29,6 +29,7 @@ async function snapshotBraveInstallation() {
 function classifyCodesign(result) {
     if (result?.status === 0) return 'valid';
     if (result?.error?.code === 'ETIMEDOUT') return 'timeout';
+    if (typeof result?.signal === 'string' && result.signal.length) return 'terminated';
     if (Number.isInteger(result?.status)) return 'rejected';
     return 'unavailable';
 }

@@ -13,7 +13,7 @@ const { createHash } = require('node:crypto');
 const { ClassicLevel } = require('classic-level');
 const webpush = require('web-push');
 const { createMacBraveProfile, createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
-const { verifyInstalledMacBrave } = require('../../src/automation/brave-mac-browser');
+require('../../src/automation/brave-mac-browser');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
@@ -25,6 +25,7 @@ const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs'
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
 const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
 const { snapshotBraveInstallation, diagnoseBraveInstallation } = require('./brave-mac-install-diagnostic.cjs');
+const { createInstrumentedBraveVerifier } = require('./brave-mac-verifier-diagnostic.cjs');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -87,6 +88,7 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         const preferencesFile = path.join(profile.profilePath, 'Default', 'Preferences');
         assert.equal(JSON.parse(await fs.readFile(preferencesFile, 'utf8')).brave.gcm.channel_status, true);
         const installationBefore = await snapshotBraveInstallation(); let installed;
+        const verifyInstalledMacBrave = await createInstrumentedBraveVerifier(t);
         try { installed = await verifyInstalledMacBrave(); }
         catch (error) { await diagnoseBraveInstallation(t, installationBefore); throw error; }
         const vapid = webpush.generateVAPIDKeys();
@@ -202,10 +204,13 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         // the startup origin in memory so this test never opens X.
         const privatePath = require.resolve('../../src/automation/chrome-private-broker');
         const bravePath = require.resolve('../../src/automation/brave-mac-broker');
+        const browserPath = require.resolve('../../src/automation/brave-mac-browser');
         const privateModule = require.cache[privatePath], previousExports = privateModule.exports, previousBrave = require.cache[bravePath];
+        const browserModule = require.cache[browserPath], previousBrowser = browserModule.exports;
         try {
             privateModule.exports = { ...previousExports, startChromeBroker: options => previousExports.startChromeBroker({ ...options, origin,
                 extraArgs: ['--headless=new', '--no-proxy-server'] }) };
+            browserModule.exports = { ...previousBrowser, verifyInstalledMacBrave };
             delete require.cache[bravePath];
             const { startMacBraveBroker } = require(bravePath);
             realBrokerAttempted = true;
@@ -220,6 +225,7 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
             t.diagnostic('signed Brave broker released its profile lock after the process group stopped');
         } finally {
             privateModule.exports = previousExports;
+            browserModule.exports = previousBrowser;
             if (previousBrave) require.cache[bravePath] = previousBrave; else delete require.cache[bravePath];
         }
         credentials = null;
