@@ -18,3 +18,7 @@ node scripts/build-mac-firefox-release-candidate.cjs \
 署名済みヘルパー、Firefox の読取プログラムとその起動プログラムを manifest のハッシュに結び付けます。Apple の公証受理後にチケットを添付し、最終 ZIP を展開して署名・チケット・Gatekeeper と３つのハッシュを検証します。失敗した場合は候補 ZIP を作らず、既存ファイルも上書きしません。署名・公証時の制約は [Mac Chrome 候補の手順](mac-chrome-release-candidate.md) と共通です。
 
 候補作成で配布設定は変わりません。Developer ID による正式署名、Apple 公証、Finder からの起動、設定用プロフィールからのファイル作成、実 X 通知と Discord 配送は未検証です。実 X の確認は利用者が後日行う方針です。内部 manifest は現在のアプリが要求する `0.1.0-mac-firefox-preview.1` を維持し、ZIP に指定した版とは区別します。
+
+2026年11月12日の [Actions run 43198478223](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43198478223) では、Apple Silicon・Intel の両方で関連試験39件と Mac 専用試験4件が成功しました。Firefox 候補 ZIP の組み立て、同梱 Node とネイティブ addon の合成データ読み書き、初期ダイアログへの到達を確認しました。署名は ad-hoc、公証と Gatekeeper の応答は模擬です。正式な Developer ID 署名・Apple 公証・Finder の実操作や、実 X・Discord の通知はこの試験に含まれません。
+
+同じ差分の [Actions run 43198478174](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43198478174) では、従来の未署名 preview の組み立て・検証3件と、署名済み Firefox の XPCShell を使った合成 Push DB の読み取り、sandbox、設定用プロフィールのローカル操作など33件が、両 CPU で成功しました。これは使い捨てデータでの検証であり、実 Mozilla 通知サーバーからの配送や実利用者の X 購読の移譲を示しません。preview を正式な配布候補として提供したものでもありません。
