@@ -8,6 +8,11 @@ on:
       - src/automation/brave-mac-*.js
       - src/automation/chrome-mac-*.js
       - scripts/native-test/brave-mac-push-hosted.test.cjs
+      - scripts/native-test/brave-mac-install-diagnostic.cjs
+      - scripts/test/brave-mac-install-diagnostic.test.js
+      - scripts/native-test/chrome-mac-push-error.cjs
+      - scripts/native-test/chrome-mac-push-probe.cjs
+      - scripts/test/chrome-mac-push-probe.test.js
       - scripts/test/brave-mac-broker.test.js
       - scripts/test/brave-mac-setup-session.test.js
       - scripts/test/chrome-mac-dialogs.test.js
@@ -62,4 +67,4 @@ jobs:
         run: |
           test "$GITHUB_ACTIONS" = true
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          node --test --test-concurrency=1 scripts/native-test/brave-mac-push-hosted.test.cjs scripts/test/brave-mac-broker.test.js scripts/test/brave-mac-setup-session.test.js scripts/test/chrome-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/native-test/brave-mac-composed.test.cjs
+          node --test --test-concurrency=1 scripts/native-test/brave-mac-push-hosted.test.cjs scripts/test/brave-mac-broker.test.js scripts/test/brave-mac-setup-session.test.js scripts/test/chrome-mac-dialogs.test.js scripts/test/chrome-mac-profile-registry.test.js scripts/native-test/brave-mac-composed.test.cjs scripts/test/chrome-mac-push-probe.test.js scripts/test/brave-mac-install-diagnostic.test.js

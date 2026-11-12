@@ -22,6 +22,9 @@ const { withMacBraveKeychainPassword } = require('../../src/automation/chrome-ma
 const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-mac-token-crypto');
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
+const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
+const { snapshotBraveInstallation, diagnoseBraveInstallation } = require('./brave-mac-install-diagnostic.cjs');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -83,7 +86,10 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
         await fs.writeFile(chromeSentinel, 'unchanged', { flag: 'wx', mode: 0o600 });
         const preferencesFile = path.join(profile.profilePath, 'Default', 'Preferences');
         assert.equal(JSON.parse(await fs.readFile(preferencesFile, 'utf8')).brave.gcm.channel_status, true);
-        const installed = await verifyInstalledMacBrave(), vapid = webpush.generateVAPIDKeys();
+        const installationBefore = await snapshotBraveInstallation(); let installed;
+        try { installed = await verifyInstalledMacBrave(); }
+        catch (error) { await diagnoseBraveInstallation(t, installationBefore); throw error; }
+        const vapid = webpush.generateVAPIDKeys();
         let browserDeliveries = 0;
         server = http.createServer((req, res) => {
             if (req.url === '/sw.js') {
@@ -112,12 +118,28 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
             `return(await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:${JSON.stringify(vapid.publicKey)}})).toJSON()})()`;
         const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId, 120000);
         if (response.exceptionDetails) throw new Error('FIXTURE_SUBSCRIBE_FAILED');
+        const subscriptionTime = performance.now(), elapsedMs = () => Math.max(0, Math.round(performance.now() - subscriptionTime));
         const subscription = response.result?.value;
         assert.ok(/^https:\/\/fcm\.googleapis\.com\//.test(subscription?.endpoint || ''), 'unexpected synthetic provider');
         assert.equal(typeof subscription.keys?.p256dh, 'string'); assert.equal(typeof subscription.keys?.auth, 'string');
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
+        const initialSendTime = elapsedMs(); let initialSendFailed = false;
         try { await webpush.sendNotification(subscription, 'baseline', { TTL: 60, timeout: 15000 }); }
-        catch { throw new Error('FIXTURE_BASELINE_SEND_FAILED'); }
+        catch (error) {
+            const category = classifyPushError(error); initialSendFailed = true;
+            t.diagnostic(`initial synthetic Brave send=${category}`);
+            t.diagnostic(`initial synthetic Brave send timing sinceSubscriptionMs=${initialSendTime} durationMs=${elapsedMs() - initialSendTime}`);
+            if (!category.startsWith('410_')) throw new Error(`FIXTURE_BASELINE_SEND_${category}`);
+            const current = await call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.ready;const s=await r.pushManager.getSubscription();return s?s.toJSON():null})()`,
+                awaitPromise: true, returnByValue: true }, attached.sessionId);
+            const currentValue = current.result?.value;
+            t.diagnostic(`synthetic Brave subscription still present=${Boolean(currentValue)} unchanged=${Boolean(currentValue && currentValue.endpoint === subscription.endpoint)}`);
+            const comparison = await probeAfterGone({ send: () => webpush.sendNotification(subscription, 'baseline-recheck', { TTL: 60, timeout: 15000 }),
+                sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), elapsedMs,
+                report: event => t.diagnostic(`synthetic Brave recheck attempt=${event.attempt} sinceSubscriptionMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs} result=${event.result}`) });
+            if (!comparison.accepted) throw new Error(`FIXTURE_BASELINE_SEND_${category}`);
+            t.diagnostic('continuing synthetic Brave checks after diagnostic retry; the initial failure remains a failing result');
+        }
         for (let i = 0; i < 100 && browserDeliveries === 0; i++) await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(browserDeliveries, 1, 'baseline synthetic push was not delivered to Brave');
         await call('Browser.close').catch(() => {});
@@ -187,7 +209,8 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
             delete require.cache[bravePath];
             const { startMacBraveBroker } = require(bravePath);
             realBrokerAttempted = true;
-            realBroker = await startMacBraveBroker({ rootPath: profile.rootPath, profileId: profile.profileId });
+            try { realBroker = await startMacBraveBroker({ rootPath: profile.rootPath, profileId: profile.profileId }); }
+            catch (error) { await diagnoseBraveInstallation(t, installationBefore); throw error; }
             assert.equal(realBroker.pushChannelStatus, 'enabled');
             await fs.access(path.join(profile.rootPath, 'broker.lock'));
             await realBroker.closeBrowser();
@@ -200,4 +223,5 @@ test('signed Mac Brave isolates its profile and hands synthetic push to the work
             if (previousBrave) require.cache[bravePath] = previousBrave; else delete require.cache[bravePath];
         }
         credentials = null;
+        assert.equal(initialSendFailed, false, 'initial synthetic Brave push failed despite diagnostic recovery');
     });
