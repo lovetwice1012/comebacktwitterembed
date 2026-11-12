@@ -331,8 +331,13 @@ async function main() {
         await fs.cp(storePath, exportStore, { recursive: true, errorOnExist: true, force: false });
         const bundleRoot = path.join(root, 'bundle'), appRoot = path.join(bundleRoot, '_app');
         await fs.mkdir(bundleRoot);
-        const archive = await require('../../scripts/build-edge-setup-package.cjs').buildArchive();
-        for (const [name, data] of Object.entries(require('fflate').unzipSync(archive.archive))) {
+        // The hosted integration validates and consumes the same immutable
+        // preview.14 bytes built on disk, rather than another in-memory build.
+        // Existing local-only probes keep their established behaviour.
+        const archive = process.env.EDGE_PROBE_PINNED_HOSTED_PACKAGE === '1'
+            ? await require('./edge-fixture-archive.cjs').readPinnedHostedArchive()
+            : (await require('../../scripts/build-edge-setup-package.cjs').buildArchive()).archive;
+        for (const [name, data] of Object.entries(require('fflate').unzipSync(archive))) {
             if (!/^(?:_app\/)?[^/\\]+$/.test(name)) throw new Error('PROBE_PACKAGE_FAILED');
             const target = path.join(bundleRoot, name); await fs.mkdir(path.dirname(target), { recursive: true });
             await fs.writeFile(target, data, { flag: 'wx' });

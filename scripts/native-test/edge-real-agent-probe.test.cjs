@@ -24,6 +24,7 @@ test('real signed Edge synthetic calibration reveals a parseable connect-agent s
         const result = JSON.parse(child.stdout);
         assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.agentFormatRecognized, true);
         assert(['1', '2'].includes(result.connectVersion));
+        t.diagnostic(`synthetic signed Edge connect version ${result.connectVersion}`);
         if (process.env.CBTE_RUN_EDGE_CONNECT_PROBE === '1') {
             assert(Array.isArray(result.connections)); assert.deepEqual(result.connections.map(item => item.version), ['1', '2']);
             for (const item of result.connections) assert.match(item.status, /^(?:accepted|X_EDGE_WNS_[A-Z_]+|PROBE_EXCHANGE_FAILED)$/);

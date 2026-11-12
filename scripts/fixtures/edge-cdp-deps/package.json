@@ -1,0 +1,9 @@
+{
+  "name": "cbte-edge-synthetic-cdp-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated dependencies for synthetic Edge integration tests",
+  "dependencies": {
+    "chrome-remote-interface": "0.33.3"
+  }
+}
