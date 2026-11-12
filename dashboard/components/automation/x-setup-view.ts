@@ -3,11 +3,12 @@ import { xObject } from "./x-monitor-view";
 export const X_SETUP_MAX_FILE_BYTES = 32 * 1024;
 export const X_SETUP_DOWNLOAD_URL = "/api/automation/x-setup/download";
 export const X_SETUP_CHROME_DOWNLOAD_URL = "/api/automation/x-setup/download-chrome";
+export const X_SETUP_CHROME_MAC_DOWNLOAD_URL = "/api/automation/x-setup/download-chrome-mac";
 export const X_SETUP_EDGE_DOWNLOAD_URL = "/api/automation/x-setup/download-edge";
 export type XReceiverState = "awaiting" | "connecting" | "listening" | "requires_reenrollment" | "stopped" | "error";
 export type XReceiptCounts = { received: number; routed: number; unsupported: number; decryptionFailed: number; unmatched?: number };
 export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserKind: "firefox" | "chrome" | "brave" | "edge"; browserVersion: string; receiverState: XReceiverState; receiverRetryPending?: boolean; boundMonitorCount: number; lastReceivedAtMs: number | null; lastProviderLossAtMs?: number; receiptCounts?: XReceiptCounts };
-export type XSetupStatus = { available: boolean; receiverEnabled: boolean; chromeEnabled: boolean; braveEnabled: boolean; edgeEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
+export type XSetupStatus = { available: boolean; receiverEnabled: boolean; chromeEnabled: boolean; chromeMacDownloads: { arm64: boolean; x64: boolean }; braveEnabled: boolean; edgeEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
 export type XSetupSession = { sessionId: string; expiresAtMs: number };
 export type XSetupPreview = { browserVersion: string; scope: string; formatVersion: 1 | 2 | 3; browserKind?: "brave" | "edge" };
 const invalid = () => new Error("Invalid X setup response");
@@ -35,6 +36,8 @@ export function parseXSetupSubscription(value: unknown): XSetupSubscription {
 export function parseXSetupStatus(value: unknown): XSetupStatus {
   const item = xObject(value), download = xObject(item.download);
   const rollout = item.rollout == null ? { mode: "disabled", eligible: false, reasonCode: "X_ROLLOUT_DISABLED", reason: null } : xObject(item.rollout);
+  const macDownloads = item.chromeMacDownloads === undefined ? { arm64: false, x64: false } : xObject(item.chromeMacDownloads);
+  if (typeof macDownloads.arm64 !== "boolean" || typeof macDownloads.x64 !== "boolean") throw invalid();
   if (!["disabled", "supporters", "public"].includes(String(rollout.mode)) || typeof rollout.eligible !== "boolean"
     || rollout.reasonCode != null && (typeof rollout.reasonCode !== "string" || rollout.reasonCode.length > 80)
     || rollout.reason != null && (typeof rollout.reason !== "string" || rollout.reason.length > 500)) throw invalid();
@@ -43,7 +46,9 @@ export function parseXSetupStatus(value: unknown): XSetupStatus {
     || typeof download.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(download.sha256)
     || item.nextCursor != null && (typeof item.nextCursor !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(item.nextCursor))
     || !Number.isSafeInteger(item.maxFileBytes) || Number(item.maxFileBytes) < 1 || Number(item.maxFileBytes) > X_SETUP_MAX_FILE_BYTES) throw invalid();
-  return { available: item.available && rollout.eligible && rollout.mode !== "disabled", receiverEnabled: item.receiverEnabled, chromeEnabled: item.chromeEnabled === true, braveEnabled: item.braveEnabled === true && item.chromeEnabled === true, edgeEnabled: item.edgeEnabled === true && item.receiverEnabled && rollout.eligible && rollout.mode !== "disabled", rollout: { mode: rollout.mode as XSetupStatus["rollout"]["mode"], eligible: rollout.eligible, reasonCode: rollout.reasonCode as string | null ?? null, reason: rollout.reason as string | null ?? null }, download: { url: download.url, version: download.version, sha256: download.sha256 },
+  return { available: item.available && rollout.eligible && rollout.mode !== "disabled", receiverEnabled: item.receiverEnabled, chromeEnabled: item.chromeEnabled === true,
+    chromeMacDownloads: { arm64: macDownloads.arm64 === true && item.chromeEnabled === true && item.receiverEnabled && rollout.eligible && rollout.mode !== "disabled", x64: macDownloads.x64 === true && item.chromeEnabled === true && item.receiverEnabled && rollout.eligible && rollout.mode !== "disabled" },
+    braveEnabled: item.braveEnabled === true && item.chromeEnabled === true, edgeEnabled: item.edgeEnabled === true && item.receiverEnabled && rollout.eligible && rollout.mode !== "disabled", rollout: { mode: rollout.mode as XSetupStatus["rollout"]["mode"], eligible: rollout.eligible, reasonCode: rollout.reasonCode as string | null ?? null, reason: rollout.reason as string | null ?? null }, download: { url: download.url, version: download.version, sha256: download.sha256 },
     subscriptions: item.subscriptions.map(parseXSetupSubscription), maxFileBytes: item.maxFileBytes as number, nextCursor: item.nextCursor as string | null ?? null };
 }
 export function parseXSetupSession(value: unknown): XSetupSession {

@@ -7,6 +7,7 @@ const { parseTransferFile, identifyTransfer, createTransferPublicSealer, MAX_FIL
 const { evaluateXRollout, requireXEnrollment } = require('./x-rollout-policy');
 const { resolveXProcessingPolicy } = require('./x-processing-policy');
 const { X_SETUP_RELEASE } = require('./x-setup-release');
+const { getChromeMacRelease } = require('./x-chrome-mac-release');
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const DOWNLOAD = Object.freeze({ url: X_SETUP_RELEASE.href, version: X_SETUP_RELEASE.version, sha256: X_SETUP_RELEASE.sha256 });
@@ -115,6 +116,8 @@ function createXSetup(db, options = {}) {
         const rollout = await evaluateXRollout(db.queryDatabase, actor, rolloutOptions);
         return { available: Boolean(sealer) && rollout.eligible, reasonCode: !rollout.eligible ? rollout.reasonCode : sealer ? null : 'X_SETUP_NOT_CONFIGURED', rollout,
             chromeEnabled: chromeEnabled && receiverEnabled && rollout.eligible, braveEnabled: braveEnabled && receiverEnabled && rollout.eligible,
+            chromeMacDownloads: { arm64: Boolean(chromeMacEnabled && receiverEnabled && rollout.eligible && getChromeMacRelease('arm64')),
+                x64: Boolean(chromeMacEnabled && receiverEnabled && rollout.eligible && getChromeMacRelease('x64')) },
             edgeEnabled: edgeEnabled && receiverEnabled && rollout.eligible,
             receiverEnabled: receiverEnabled && rollout.eligible, download: DOWNLOAD, maxFileBytes: MAX_FILE_BYTES,
             subscriptions: rows.slice(0, 100).map(row => publicSubscription(row, now(), receiverEnabled && rollout.eligible)), nextCursor: rows.length > 100 ? rows[99].id : null };

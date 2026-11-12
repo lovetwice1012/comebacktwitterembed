@@ -100,8 +100,31 @@ test('Chrome preparation and review appear only when Chrome intake is enabled', 
     try { assert.equal([...disabled.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Chrome'), false); }
     finally { await disabled.close(); }
     const chromeOnly = await fixture({ current: status({ chromeEnabled: true, braveEnabled: false }), upload: false });
-    try { assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false); }
+    try {
+        assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false);
+        const chrome = [...chromeOnly.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome');
+        await chromeOnly.act(async () => chrome.querySelector('input').click());
+        assert(!chromeOnly.container.textContent.includes('Mac（Appleシリコン）'));
+    }
     finally { await chromeOnly.close(); }
+});
+test('Mac Chrome shows only published architectures and keeps upload manual', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, receiverEnabled: true,
+        chromeMacDownloads: { arm64: true, x64: false } }), upload: false });
+    try {
+        const chrome = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome');
+        await f.act(async () => chrome.querySelector('input').click());
+        const arm = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Mac（Appleシリコン）');
+        assert(arm); assert(!f.container.textContent.includes('Mac（Intel）'));
+        await f.act(async () => arm.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome-mac?arch=arm64');
+        assert.match(f.container.textContent, /「X通知の準備」を開き/);
+        assert.match(f.container.textContent, /「設定できた」を押してファイルを保存/);
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+        assert.deepEqual({ ...f.exports.parseXSetupStatus(status({ chromeEnabled: true, receiverEnabled: false,
+            chromeMacDownloads: { arm64: true, x64: true } })).chromeMacDownloads }, { arm64: false, x64: false });
+        assert.throws(() => f.exports.parseXSetupStatus(status({ chromeMacDownloads: { arm64: 'true', x64: false } })));
+    } finally { await f.close(); }
 });
 test('Brave preparation uses a separate launcher and review labels the imported browser', async () => {
     const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,

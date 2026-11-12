@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
   // Runtime download uses requireBotModule, whose evaluated require is not
   // discoverable by Next's automatic file tracing. Include only release inputs.
   outputFileTracingIncludes: {
+    "/api/automation/x-setup/download-chrome-mac": [
+      "../src/**/*.js",
+      "../packages/angelic-angel/dist/**",
+      "../src/automation/x-chrome-mac-release.js",
+      "../artifacts/angelic-setup/chrome-mac-*.zip",
+    ],
     "/api/automation/x-setup/download-edge": [
       "../src/**/*.js",
       "../packages/angelic-angel/dist/**",
