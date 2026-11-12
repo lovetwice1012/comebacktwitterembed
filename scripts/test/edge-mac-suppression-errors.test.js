@@ -17,4 +17,8 @@ test('fixture send and stages never expose external error fields', async () => {
     assert.equal(sendCategory(Object.defineProperty({}, 'category', { get() { throw new Error('SECRET_GETTER'); } })), 'OTHER');
     assert.equal(sendCategory({ category: 'SECRET_VALUE' }), 'OTHER');
     assert.equal(sendCategory({ category: 'HTTP_410' }), 'HTTP_410');
+    const response = { statusCode: 201, headers: { 'x-wns-deviceconnectionstatus': 'disconnected', 'x-wns-status': 'received',
+        authorization: 'SECRET_HEADER' }, body: 'SECRET_BODY' };
+    assert.equal(await safeFixtureSend(async () => response), 'H201-DDISCONNECTED-WRECEIVED');
+    assert.equal(await safeFixtureSend(async () => Object.defineProperty({}, 'headers', { get() { throw new Error('SECRET_GETTER'); } })), 'HUNKNOWN-DOTHER-WOTHER');
 });

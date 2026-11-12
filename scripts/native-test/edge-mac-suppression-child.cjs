@@ -11,7 +11,7 @@ const originalServer = http.createServer;
 http.createServer = handler => originalServer((request, response) => {
     if (request.url === '/sw.js') {
         response.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
-        response.end("self.addEventListener('push',e=>e.waitUntil((async()=>{const x=e.data?e.data.text():'';await fetch('/delivered?tag='+encodeURIComponent(x));await self.registration.showNotification('Fixture')})()));self.addEventListener('message',e=>e.waitUntil(fetch('/delivered?tag='+encodeURIComponent(e.data))));");
+        response.end("self.addEventListener('push',e=>e.waitUntil((async()=>{await fetch('/push-event');const x=e.data?e.data.text():'';await fetch('/delivered?tag='+encodeURIComponent(x));await self.registration.showNotification('Fixture')})()));self.addEventListener('message',e=>e.waitUntil(fetch('/delivered?tag='+encodeURIComponent(e.data))));");
     } else handler(request, response);
 });
 const pipeId = require.resolve('../../src/automation/edge-cdp-pipe'), original = require(pipeId);

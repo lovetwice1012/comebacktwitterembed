@@ -112,8 +112,9 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         } finally {
             try { await db.close(); dbClosed = true; } finally { for (const v of [expected.publicKey, expected.auth, expected.applicationServerKey]) v.fill(0); }
         }
-        const markers = new Set(), observed = new Set();
+        const markers = new Set(), observed = new Set(); let pushEvents = 0;
         server = http.createServer((request, response) => {
+            if (request.url === '/push-event') pushEvents++;
             if (request.url?.startsWith('/delivered?tag=')) {
                 try { const marker = decodeURIComponent(request.url.slice('/delivered?tag='.length)); if (markers.has(marker)) observed.add(marker); } catch {}
             }
@@ -157,8 +158,11 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         while (!observed.has(ping) && Date.now() < pingDeadline) await new Promise(resolve => setTimeout(resolve, 100));
         assert.equal(observed.has(ping), true, 'fixture worker observation unavailable');
         stage = 'BASELINE_SEND';
-        await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
+        const baselineEventsBefore = pushEvents;
+        const baselineSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
+        t.diagnostic(`synthetic baseline send=${baselineSend}`);
         stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
+        t.diagnostic(`synthetic baseline push-event=${pushEvents > baselineEventsBefore ? 'observed' : 'not_observed'}`);
         assert.equal(observed.has(control), true, 'fixture browser did not receive control');
         stage = 'BASELINE_STOP'; await stop(baseline);
         let stored; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
@@ -170,8 +174,9 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             session = createEdgeWnsSession({ ...credentials, transport, store, lease, authorize: async () => {}, saveRotatedToken: async value => { rotated = Buffer.from(value); } });
             assert.equal((await session.start()).state, 'ready');
             stage = 'SUPPRESSED_OPEN'; const suppressed = await launch(true), marker = `trial-${randomBytes(16).toString('hex')}`, payload = JSON.stringify({ text: marker });
-            stage = 'SEND';
-            markers.add(payload); await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, payload, { TTL: 60, timeout: 15000 }));
+            stage = 'SEND'; const trialEventsBefore = pushEvents;
+            markers.add(payload); const trialSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, payload, { TTL: 60, timeout: 15000 }));
+            t.diagnostic(`synthetic trial send=${trialSend}`);
             stage = 'RECEIVE'; deadline = Date.now() + 30000; let received = false;
             while (Date.now() < deadline && !received) received = (await session.next(Math.min(3000, Math.max(1, deadline - Date.now())))).state === 'persisted';
             assert.ok(received && stored, 'fixture worker did not receive');
@@ -181,6 +186,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             finally { Object.values(keys).forEach(value => value.fill(0)); }
             stage = 'OBSERVE'; await new Promise(resolve => setTimeout(resolve, 5000));
             assert.equal(observed.has(payload), false, 'fixture browser also received');
+            assert.equal(pushEvents, trialEventsBefore, 'fixture browser push event observed');
             assert.ok(suppressed.chrome.exitCode === null && suppressed.chrome.signalCode === null, 'fixture browser did not remain running');
             assert.equal((await session.next(1000)).state, 'idle', 'fixture receiver did not remain ready');
             const again = await captureFromBroker({ port: suppressed.port, token: suppressed.token, includeApplicationServerKey: true });
