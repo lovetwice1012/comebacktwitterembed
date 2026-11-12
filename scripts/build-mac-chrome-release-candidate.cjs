@@ -8,7 +8,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { buildMacChromePreview, readInput } = require('./build-mac-chrome-preview.cjs');
+const { buildMacChromePreview, buildMacBraveReleasePreview, readInput } = require('./build-mac-chrome-preview.cjs');
 const exec = promisify(execFile);
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -37,15 +37,20 @@ async function publishCandidate(output, bytes) {
     return { cleanupPending };
 }
 
-function validateOptions(input, platform = process.platform) {
+const CANDIDATE_KINDS = Object.freeze({
+    chrome: Object.freeze({ prefix: 'chrome-mac', packageId: 'x-notification-mac-chrome-setup', manifestVersion: '0.1.0-mac-preview.1', buildPreview: buildMacChromePreview }),
+    brave: Object.freeze({ prefix: 'brave-mac', packageId: 'x-notification-mac-brave-setup', manifestVersion: '0.1.0-mac-brave-preview.2', buildPreview: buildMacBraveReleasePreview }),
+});
+function validateOptions(input, platform = process.platform, browser = 'chrome') {
     if (platform !== 'darwin') fail('MAC_RELEASE_PLATFORM_REQUIRED');
+    const kind = Object.hasOwn(CANDIDATE_KINDS, browser) ? CANDIDATE_KINDS[browser] : null;
     if (!input || !['arm64', 'x64'].includes(input.arch) || typeof input.version !== 'string'
         || !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(input.version)
         || typeof input.teamId !== 'string' || !/^[A-Z0-9]{10}$/.test(input.teamId)
         || typeof input.identity !== 'string' || !/^Developer ID Application: [^\r\n]{1,180}$/.test(input.identity)
         || typeof input.profile !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(input.profile)
         || ![input.runtime, input.license, input.output].every(value => typeof value === 'string' && path.isAbsolute(value))
-        || path.basename(input.output) !== `chrome-mac-${input.arch}-${input.version}.zip`) fail('MAC_RELEASE_INPUT_INVALID');
+        || !kind || path.basename(input.output) !== `${kind.prefix}-${input.arch}-${input.version}.zip`) fail('MAC_RELEASE_INPUT_INVALID');
     return Object.freeze({ ...input });
 }
 async function run(file, args, opts = {}) {
@@ -61,8 +66,9 @@ function releaseEnvironment(source) {
         .map(name => [name, source[name]]));
     env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'; return env;
 }
-async function buildCandidate(raw, dependencies = {}) {
-    const input = validateOptions(raw, dependencies.platform || process.platform);
+async function buildForBrowser(browser, raw, dependencies = {}) {
+    const input = validateOptions(raw, dependencies.platform || process.platform, browser);
+    const kind = CANDIDATE_KINDS[browser];
     const command = dependencies.run || run;
     try { await fs.lstat(input.output); fail('MAC_RELEASE_OUTPUT_EXISTS'); }
     catch (error) { if (error?.code !== 'ENOENT') throw error; }
@@ -94,7 +100,7 @@ async function buildCandidate(raw, dependencies = {}) {
         const sign = async (target, args = []) => command('/usr/bin/codesign', ['--force', '--sign', input.identity, '--timestamp', '--options', 'runtime', ...args, target]);
         stage = 'sign_components'; await sign(helper); await sign(launcher);
         stage = 'assemble';
-        const preview = await (dependencies.buildPreview || buildMacChromePreview)({ arch: input.arch, runtime, license,
+        const preview = await (dependencies.buildPreview || kind.buildPreview)({ arch: input.arch, runtime, license,
             launcher: await readInput(launcher, 4 * 1024 * 1024), helper: await readInput(helper, 4 * 1024 * 1024) });
         const previewZip = path.join(temp, 'preview.zip'), stageDir = path.join(temp, 'stage');
         await fs.writeFile(previewZip, preview.archive, { flag: 'wx', mode: 0o600 }); await fs.mkdir(stageDir, { mode: 0o700 });
@@ -105,7 +111,7 @@ async function buildCandidate(raw, dependencies = {}) {
         // The current entry point requires this exact internal format version.
         // Keep it unchanged; the separately supplied version is the bundle's
         // release version, not a replacement for the internal protocol marker.
-        if (manifest.packageId !== 'x-notification-mac-chrome-setup' || manifest.version !== '0.1.0-mac-preview.1'
+        if (manifest.packageId !== kind.packageId || manifest.version !== kind.manifestVersion
             || manifest.lockSha256 !== digest(await fs.readFile(path.join(bin, 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
         const plistPath = path.join(app, 'Contents', 'Info.plist');
         const plist = await fs.readFile(plistPath, 'utf8');
@@ -147,7 +153,8 @@ async function buildCandidate(raw, dependencies = {}) {
         await verify(checkedApp); await command(stapler, ['validate', checkedApp]);
         await command('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', checkedApp]);
         const checkedManifest = JSON.parse(await fs.readFile(path.join(checkedApp, 'Contents', 'Resources', 'MacSetup-manifest.json'), 'utf8'));
-        if (checkedManifest.version !== '0.1.0-mac-preview.1' || checkedManifest.lockSha256 !== digest(await fs.readFile(path.join(checkedApp, 'Contents', 'MacOS', 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
+        if (checkedManifest.packageId !== kind.packageId || checkedManifest.version !== kind.manifestVersion
+            || checkedManifest.lockSha256 !== digest(await fs.readFile(path.join(checkedApp, 'Contents', 'MacOS', 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
         const bytes = await readInput(finalZip, 200 * 1024 * 1024);
         stage = 'save'; const saved = await publishCandidate(input.output, bytes); outputCreated = true;
         return Object.freeze({ version: input.version, arch: input.arch, filename: path.basename(input.output), bytes: bytes.length,
@@ -160,6 +167,8 @@ async function buildCandidate(raw, dependencies = {}) {
         if (path.dirname(actual) === tmpRoot && path.basename(actual).startsWith('cbte-mac-candidate-')) await fs.rm(actual, { recursive: true, force: true });
     }
 }
+const buildCandidate = (raw, dependencies) => buildForBrowser('chrome', raw, dependencies);
+const buildBraveCandidate = (raw, dependencies) => buildForBrowser('brave', raw, dependencies);
 function parseArgs(args) {
     if (args.length !== 8) fail('MAC_RELEASE_INPUT_INVALID');
     const [arch, version, teamId, identity, profile, runtime, license, output] = args;
@@ -168,4 +177,4 @@ function parseArgs(args) {
 if (require.main === module) Promise.resolve().then(() => buildCandidate(parseArgs(process.argv.slice(2)))).then(result => process.stdout.write(JSON.stringify(result) + '\n'))
     .catch(error => { const stage = /^[a-z_]+$/.test(String(error?.stage || '')) ? ` stage=${error.stage}` : '';
         process.stderr.write(`${/^MAC_RELEASE_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'MAC_RELEASE_FAILED'}${stage}\n`); process.exitCode = 1; });
-module.exports = { buildCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };
+module.exports = { buildCandidate, buildBraveCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };

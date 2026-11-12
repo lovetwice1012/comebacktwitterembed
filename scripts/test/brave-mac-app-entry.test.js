@@ -7,11 +7,14 @@ const vm = require('node:vm');
 
 async function harness({ enabled = true, manifest, result = { state: 'saved' }, error } = {}) {
     const source = await fs.readFile(path.join(__dirname, '../brave-mac-app.cjs'), 'utf8');
+    const coreSource = await fs.readFile(path.join(__dirname, '../brave-mac-app-core.cjs'), 'utf8');
     const module = { exports: {} }, calls = [];
+    const coreModule = { exports: {} };
     const ui = { showSaved: async () => calls.push('saved'), showError: async code => calls.push(`error:${code}`) };
     const valid = JSON.stringify({ packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.2', lockSha256: 'a'.repeat(64) });
     const content = manifest === undefined ? valid : manifest;
     const mockedRequire = name => {
+        if (name === './brave-mac-app-core.cjs') return coreModule.exports;
         if (name === 'node:fs/promises') return { open: async filename => {
             calls.push(`manifest:${filename}`); return { stat: async () => ({ isFile: () => true, size: Buffer.byteLength(content) }),
                 readFile: async () => content, close: async () => {} };
@@ -25,13 +28,31 @@ async function harness({ enabled = true, manifest, result = { state: 'saved' }, 
         if (name === '../src/automation/strict-json') return require('../../src/automation/strict-json');
         return require(name);
     };
+    vm.runInNewContext(coreSource, { module: coreModule, exports: coreModule.exports, require: mockedRequire,
+        __dirname: '/package/Resources', Buffer, Object, process: { env: {}, exitCode: 0 } });
     vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, __dirname: '/package/Resources', Buffer, Object,
         process: { env: enabled ? { CBTE_EXPERIMENTAL_BRAVE_MAC_LOCAL: '1' } : {}, exitCode: 0 } });
-    return { main: module.exports.main, calls };
+    return { main: module.exports.main, coreMain: coreModule.exports.main, calls };
 }
 test('experimental Brave entry is disabled unless explicitly selected', async () => {
     const h = await harness({ enabled: false });
     await assert.rejects(h.main(), /X_BRAVE_MAC_APP_UNAVAILABLE/); assert.deepEqual(h.calls, []);
+});
+test('candidate entry can start without changing the experimental environment gate', async () => {
+    const h = await harness({ enabled: false });
+    await h.coreMain();
+    assert.equal(h.calls[0], 'dialogs');
+    assert.equal(h.calls[2].experimental, true);
+    assert.equal(h.calls.at(-1), 'saved');
+    const ordinary = await harness({ enabled: false });
+    await assert.rejects(ordinary.main({ releaseCandidate: true }), /X_BRAVE_MAC_APP_UNAVAILABLE/);
+    const candidateSource = await fs.readFile(path.join(__dirname, '../brave-mac-release-app.cjs'), 'utf8');
+    let invoked = false;
+    vm.runInNewContext(candidateSource, { process: { exitCode: 0 }, require: name => {
+        assert.equal(name, './brave-mac-app-core.cjs');
+        return { main: async () => { invoked = true; } };
+    } });
+    assert.equal(invoked, true);
 });
 test('Brave entry checks fixed package metadata and provides local helper paths', async () => {
     const h = await harness(); await h.main();

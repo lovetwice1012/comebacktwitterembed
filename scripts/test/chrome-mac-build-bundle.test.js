@@ -59,7 +59,7 @@ test('experimental Brave bundle uses verified Mac addon and stays disabled by de
     const pkg = require.resolve('classic-level/package.json');
     await fs.copyFile(path.join(path.dirname(pkg), 'prebuilds', platform, 'classic-level.node'), path.join(temp, 'MacOS', 'MacLevelDB.node'));
     const env = { ...process.env }; delete env.NODE_OPTIONS; delete env.NODE_PATH; delete env.CBTE_EXPERIMENTAL_BRAVE_MAC_LOCAL;
-    const code = 'const app=require(process.argv[1]);app.main().then(()=>process.exitCode=2,error=>process.stdout.write(error.message))';
+    const code = 'const app=require(process.argv[1]);app.main({releaseCandidate:true}).then(()=>process.exitCode=2,error=>process.stdout.write(error.message))';
     const child = spawnSync(process.execPath, ['-e', code, path.join(temp, 'Resources', 'MacSetup.cjs')], { encoding: 'utf8', env, timeout: 15000 });
     assert.equal(child.status, 0, child.stderr); assert.equal(child.stdout, 'X_BRAVE_MAC_APP_UNAVAILABLE');
 });

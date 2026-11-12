@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
-const { buildCandidate } = require('../build-mac-chrome-release-candidate.cjs');
+const { buildCandidate, buildBraveCandidate } = require('../build-mac-chrome-release-candidate.cjs');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const exec = promisify(execFile);
 
@@ -22,7 +22,7 @@ test('selected notarization tools are Apple signed',
         }
     });
 
-test('candidate workflow assembles and launches with ad-hoc signatures and a fake notary',
+for (const browser of ['chrome', 'brave']) test(`${browser} candidate assembles and launches with ad-hoc signatures and a fake notary`,
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_CANDIDATE_FIXTURE !== '1', timeout: 180000 }, async t => {
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-candidate-native-'));
@@ -37,7 +37,7 @@ test('candidate workflow assembles and launches with ad-hoc signatures and a fak
         const arch = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : null;
         assert.ok(arch); const runtime = process.env.MAC_CANDIDATE_RUNTIME, license = process.env.MAC_CANDIDATE_LICENSE;
         assert.ok(path.isAbsolute(runtime || '') && path.isAbsolute(license || ''));
-        const output = path.join(root, `chrome-mac-${arch}-1.2.3.zip`);
+        const output = path.join(root, `${browser}-mac-${arch}-1.2.3.zip`);
         await fs.copyFile('/usr/bin/true', path.join(root, 'notarytool')); await fs.copyFile('/usr/bin/true', path.join(root, 'stapler'));
         const run = async (file, args, options = {}) => {
             if (file.endsWith('/xcrun') && args[0] === '--find') return { stdout: path.join(root, args[1]) };
@@ -51,7 +51,8 @@ test('candidate workflow assembles and launches with ad-hoc signatures and a fak
             }
             return exec(file, args, { timeout: options.timeout || 120000, maxBuffer: 1024 * 1024 });
         };
-        const candidate = await buildCandidate({ arch, version: '1.2.3', teamId: 'ABCDEFGHIJ', identity: 'Developer ID Application: Fixture', profile: 'fixture', runtime, license, output }, { run });
+        const build = browser === 'brave' ? buildBraveCandidate : buildCandidate;
+        const candidate = await build({ arch, version: '1.2.3', teamId: 'ABCDEFGHIJ', identity: 'Developer ID Application: Fixture', profile: 'fixture', runtime, license, output }, { run });
         assert.equal(candidate.published, false); const extracted = path.join(root, 'extracted'); await fs.mkdir(extracted);
         await exec('/usr/bin/ditto', ['-x', '-k', output, extracted], { timeout: 30000 });
         const app = path.join(extracted, 'X通知の準備.app'), launcher = path.join(app, 'Contents/MacOS/Launch');
@@ -71,5 +72,5 @@ test('candidate workflow assembles and launches with ad-hoc signatures and a fak
             if (!dialog) await new Promise(resolve => setTimeout(resolve, 200));
         }
         assert.ok(dialog, 'ad-hoc candidate did not reach the initial dialog');
-        t.diagnostic('ad-hoc native candidate reached a synthetic dialog; notarization and Developer ID were not tested');
+        t.diagnostic(`${browser} ad-hoc candidate reached a synthetic dialog; notarization and Developer ID were not tested`);
     });
