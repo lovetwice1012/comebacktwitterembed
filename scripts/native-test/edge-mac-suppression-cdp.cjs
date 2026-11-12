@@ -1,9 +1,13 @@
 'use strict';
 // Hosted fixture CDP over the already-owned pipe. No general product API.
-async function withFixtureCdp(child, work) {
-    if (!child?.stdio?.[3] || !child?.stdio?.[4] || typeof work !== 'function') throw new Error('FIXTURE_CDP_INVALID');
+const sequences = new WeakMap();
+async function withFixtureCdp(child, work, { timeoutMs = 10000 } = {}) {
+    if (!child?.stdio?.[3] || !child?.stdio?.[4] || typeof work !== 'function'
+        || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000) throw new Error('FIXTURE_CDP_INVALID');
     const input = child.stdio[3], output = child.stdio[4], pending = new Map();
-    let sequence = 1000000000, buffer = Buffer.alloc(0), stopped = false;
+    let sequence = sequences.get(child);
+    if (!sequence) { sequence = { value: 1000000000 }; sequences.set(child, sequence); }
+    let buffer = Buffer.alloc(0), stopped = false;
     const fail = () => {
         if (stopped) return; stopped = true;
         for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('FIXTURE_CDP_CLOSED')); }
@@ -24,12 +28,12 @@ async function withFixtureCdp(child, work) {
     };
     output.on('data', onData); output.on('error', fail); input.on('error', fail); child.on('exit', fail); child.on('error', fail);
     const call = (method, params = {}, sessionId) => {
-        if (stopped || pending.size >= 4 || sequence >= 1000000100) {
+        if (stopped || pending.size >= 4 || sequence.value >= 2000000000) {
             const rejected = Promise.reject(new Error('FIXTURE_CDP_INVALID')); rejected.catch(() => {}); return rejected;
         }
-        const id = ++sequence;
+        const id = ++sequence.value;
         const response = new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { pending.delete(id); reject(new Error('FIXTURE_CDP_TIMEOUT')); }, 10000);
+            const timer = setTimeout(() => { pending.delete(id); reject(new Error('FIXTURE_CDP_TIMEOUT')); }, timeoutMs);
             pending.set(id, { resolve, reject, timer });
             try { input.write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0', error => { if (error) fail(); }); }
             catch { fail(); }

@@ -34,3 +34,18 @@ test('a call made after fixture scope closure is observed and rejected', async (
     await withFixtureCdp(child, async call => { late = call; });
     await assert.rejects(late('Target.getTargets'), { message: 'FIXTURE_CDP_INVALID' });
 });
+test('a late reply from an earlier scope cannot satisfy a new request', async () => {
+    const child = new EventEmitter(), output = new PassThrough(); let firstId, writes = 0;
+    const input = new Writable({ write(chunk, _encoding, done) {
+        const request = JSON.parse(chunk.subarray(0, -1).toString()); done();
+        if (++writes === 1) firstId = request.id;
+        else {
+            output.write(Buffer.from(JSON.stringify({ id: firstId, result: { value: 'stale' } }) + '\0'));
+            output.write(Buffer.from(JSON.stringify({ id: request.id, result: { value: 'current' } }) + '\0'));
+        }
+    } });
+    child.stdio = [null, null, null, input, output];
+    await withFixtureCdp(child, async call => { await assert.rejects(call('First'), { message: 'FIXTURE_CDP_TIMEOUT' }); }, { timeoutMs: 5 });
+    const result = await withFixtureCdp(child, call => call('Second'));
+    assert.equal(result.value, 'current');
+});

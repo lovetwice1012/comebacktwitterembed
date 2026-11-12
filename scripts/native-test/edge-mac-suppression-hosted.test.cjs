@@ -147,22 +147,44 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
             if (typeof attached.sessionId !== 'string') throw new Error('fixture target invalid');
             try {
-                const expression = `(async()=>{const a=await navigator.serviceWorker.getRegistrations();const r=a.find(x=>x.scope===location.origin+'/');const s=await r?.pushManager.getSubscription();if(!r?.active||!s)return null;r.active.postMessage(${JSON.stringify(ping)});return s.toJSON()})()`;
+                const expression = `(async()=>{const a=await navigator.serviceWorker.getRegistrations();const r=a.find(x=>x.scope===location.origin+'/');const s=await r?.pushManager.getSubscription();if(!r?.active||!s)return null;window.__cbteFixturePushCount=0;window.__cbteFixturePongCount=0;navigator.serviceWorker.addEventListener('message',e=>{if(e.data==='cbte-fixture-push')window.__cbteFixturePushCount++;if(e.data==='cbte-fixture-pong')window.__cbteFixturePongCount++});r.active.postMessage(${JSON.stringify(ping)});return s.toJSON()})()`;
                 const value = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
                 const subscription = value.result?.value;
                 assert.ok(subscription && subscription.endpoint === captured.endpoint && subscription.keys?.p256dh === captured.keys.p256dh
                     && subscription.keys?.auth === captured.keys.auth, 'fixture subscription not active');
             } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
         });
-        stage = 'BASELINE_SW_PING'; let pingDeadline = Date.now() + 10000;
-        while (!observed.has(ping) && Date.now() < pingDeadline) await new Promise(resolve => setTimeout(resolve, 100));
-        assert.equal(observed.has(ping), true, 'fixture worker observation unavailable');
+        async function fixtureCounts() {
+            try {
+                return await withFixtureCdp(baseline.chrome, async call => {
+                    const values = await call('Target.getTargets');
+                    const target = values.targetInfos?.find(item => { try { return item.type === 'page' && new URL(item.url).origin === origin.origin; } catch { return false; } });
+                    if (!target?.targetId) return null;
+                    const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+                    if (typeof attached.sessionId !== 'string') return null;
+                    try {
+                        const response = await call('Runtime.evaluate', { expression: '({push:window.__cbteFixturePushCount,pong:window.__cbteFixturePongCount})', returnByValue: true }, attached.sessionId);
+                        const value = response.result?.value;
+                        return Number.isSafeInteger(value?.push) && value.push >= 0 && Number.isSafeInteger(value?.pong) && value.pong >= 0 ? value : null;
+                    } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
+                });
+            } catch { return null; }
+        }
+        stage = 'BASELINE_SW_PING'; let pingDeadline = Date.now() + 10000, pingCounts = null;
+        while (Date.now() < pingDeadline) {
+            pingCounts = await fixtureCounts(); if (observed.has(ping) && pingCounts?.pong > 0) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        assert.ok(observed.has(ping) && pingCounts?.pong > 0, 'fixture worker round trip unavailable');
         stage = 'BASELINE_SEND';
         const baselineEventsBefore = pushEvents;
         const baselineSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
         t.diagnostic(`synthetic baseline send=${baselineSend}`);
         stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
         t.diagnostic(`synthetic baseline push-event=${pushEvents > baselineEventsBefore ? 'observed' : 'not_observed'}`);
+        const counts = await fixtureCounts();
+        const clientObservation = counts ? counts.push > 0 ? 'observed' : 'not_observed' : 'unavailable';
+        t.diagnostic(`synthetic baseline push-client=${clientObservation}`);
         assert.equal(observed.has(control), true, 'fixture browser did not receive control');
         stage = 'BASELINE_STOP'; await stop(baseline);
         let stored; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
