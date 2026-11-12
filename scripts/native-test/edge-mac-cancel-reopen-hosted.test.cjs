@@ -12,6 +12,8 @@ const vm = require('node:vm');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
 const { spawnSync } = require('node:child_process');
+const { constants } = require('node:fs');
+const { classifyName, plausibleHeader } = require('./edge-mac-store-classifier.cjs');
 const { createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
@@ -111,17 +113,37 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                 'X_EDGE_MAC_BROKER_INVALID', 'X_EDGE_MAC_BROKER_BUSY', 'X_EDGE_MAC_BROKER_CLEANUP_PENDING']);
             const code = known.has(error?.code) ? error.code : 'OTHER';
             let lockState = 'unknown', helperState = 'not_run', filesScanned = false; const lockPath = path.join(store, 'LOCK');
-            const counts = { lock: 0, current: 0, manifest: 0, log: 0, table: 0, other: 0 };
+            const counts = { lock: 0, current: 0, manifest: 0, diagnosticLog: 0, journal: 0, table: 0, other: 0 };
+            const sizes = { current: 0, diagnosticLog: 0, journal: 0 };
+            const headers = { current: 'not_present', diagnosticLog: 'not_present', journal: 'not_present' };
             try {
                 await verifyFixtureDirectories([...parents, store]);
                 const entries = await fs.readdir(store, { withFileTypes: true });
                 if (entries.length > 256) throw new Error('fixture store too large');
                 for (const entry of entries) {
-                    const kind = !entry.isFile() || entry.isSymbolicLink() ? 'other' : entry.name === 'LOCK' ? 'lock'
-                        : entry.name === 'CURRENT' ? 'current' : /^MANIFEST-[0-9]+$/.test(entry.name) ? 'manifest'
-                            : /^(?:LOG|LOG\.old|[0-9]+\.log)$/.test(entry.name) ? 'log'
-                                : /^[0-9]+\.(?:ldb|sst)$/.test(entry.name) ? 'table' : 'other';
+                    const kind = classifyName(entry.name, entry.isFile() && !entry.isSymbolicLink());
                     counts[kind]++;
+                    if (!Object.hasOwn(sizes, kind)) continue;
+                    await verifyFixtureDirectories([...parents, store]);
+                    const file = path.join(store, entry.name), before = await fs.lstat(file);
+                    if (!before.isFile() || before.isSymbolicLink() || before.uid !== process.getuid() || before.nlink !== 1
+                        || !Number.isSafeInteger(before.size) || before.size > 64 * 1024 * 1024) throw new Error('fixture file changed');
+                    sizes[kind] += before.size;
+                    if (sizes[kind] > 128 * 1024 * 1024) throw new Error('fixture size exceeded');
+                    const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+                    const prefix = Buffer.alloc(Math.min(before.size, 128));
+                    try {
+                        const opened = await handle.stat();
+                        if (opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size
+                            || opened.uid !== before.uid || opened.nlink !== 1) throw new Error('fixture file changed');
+                        const read = await handle.read(prefix, 0, prefix.length, 0);
+                        const after = await handle.stat();
+                        if (read.bytesRead !== prefix.length || after.size !== before.size || after.mtimeMs !== before.mtimeMs)
+                            throw new Error('fixture file changed');
+                        const result = plausibleHeader(kind, prefix, before.size);
+                        if (headers[kind] === 'not_present') headers[kind] = result;
+                        else if (headers[kind] !== result) headers[kind] = 'mixed';
+                    } finally { prefix.fill(0); await handle.close(); }
                 }
                 filesScanned = true;
                 const lock = await fs.lstat(lockPath);
@@ -140,7 +162,7 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                     helperState = ['R', 'B', 'E'].includes(probe.stdout) ? probe.stdout : 'unknown';
                 }
             } catch (reason) { lockState = reason?.code === 'ENOENT' ? 'missing' : 'unknown'; }
-            const files = filesScanned ? `filesScan=complete filesLock=${counts.lock} filesCurrent=${counts.current} filesManifest=${counts.manifest} filesLog=${counts.log} filesTable=${counts.table} filesOther=${counts.other}`
+            const files = filesScanned ? `filesScan=complete filesLock=${counts.lock} filesCurrent=${counts.current} filesManifest=${counts.manifest} filesDiagnosticLog=${counts.diagnosticLog} filesJournal=${counts.journal} filesTable=${counts.table} filesOther=${counts.other} currentBytes=${sizes.current} diagnosticLogBytes=${sizes.diagnosticLog} journalBytes=${sizes.journal} currentHeader=${headers.current} diagnosticLogHeader=${headers.diagnosticLog} journalHeader=${headers.journal}`
                 : 'filesScan=unavailable';
             const records = inspectPhase === 'scanned' ? String(recordCount) : 'unavailable';
             t.diagnostic(`synthetic reopen failure code=${code} lock=${lockState} helper=${helperState} reader=${inspectStatus} phase=${inspectPhase} records=${records} ${files}`);
