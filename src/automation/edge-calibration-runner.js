@@ -28,12 +28,12 @@ async function checkRoot(rootPath, token) {
         || (await fs.readdir(profile)).length !== 0) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     return profile;
 }
-/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function, platform?:'windows'|'macos', captureAgent?:boolean}} options */
-async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn, platform = 'windows', captureAgent = false }) {
+/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function, platform?:'windows'|'macos', captureAgent?:boolean, afterBrowserClose?:Function}} options */
+async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn, platform = 'windows', captureAgent = false, afterBrowserClose }) {
     if (!['windows', 'macos'].includes(platform) || typeof edgePath !== 'string' || !path.isAbsolute(edgePath)
         || path.basename(edgePath).toLowerCase() !== (platform === 'macos' ? 'microsoft edge' : 'msedge.exe')
         || !Buffer.isBuffer(pfx) || !Buffer.isBuffer(certificate) || typeof captureIdentity !== 'function' || typeof authorizePeer !== 'function'
-        || typeof spawnBrowser !== 'function' || typeof captureAgent !== 'boolean' || signal !== undefined && !(signal instanceof AbortSignal)
+        || typeof spawnBrowser !== 'function' || typeof captureAgent !== 'boolean' || afterBrowserClose !== undefined && typeof afterBrowserClose !== 'function' || signal !== undefined && !(signal instanceof AbortSignal)
         || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     let profile, pageServer, relay, browser, pipe, version, spki, closing; const controller = new AbortController();
     let abortCode = 'X_EDGE_CALIBRATION_STOPPED';
@@ -61,7 +61,10 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
                         await Promise.race([exited, new Promise((_resolve, reject) => { timer = setTimeout(() => reject(fail('X_EDGE_CALIBRATION_CLEANUP_FAILED')), 5000); })]);
                     } finally { clearTimeout(timer); owned.removeListener('exit', onExit); }
                 }
-            } finally { if (browser === owned) { browser = null; pipe = null; } }
+            } finally {
+                try { if (afterBrowserClose) await afterBrowserClose(owned); }
+                finally { if (browser === owned) { browser = null; pipe = null; } }
+            }
         })();
         try { await closing; } finally { closing = null; }
     }

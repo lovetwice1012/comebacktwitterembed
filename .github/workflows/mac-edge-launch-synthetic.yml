@@ -12,6 +12,8 @@ on:
       - src/automation/chrome-mac-process-group.js
       - scripts/native-test/edge-mac-broker-hosted.test.cjs
       - scripts/test/edge-mac-broker.test.js
+      - scripts/test/edge-mac-calibration.test.js
+      - scripts/test/edge-mac-calibration-runner.test.js
       - scripts/native-test/edge-mac-calibration-hosted*.cjs
       - scripts/native-test/edge-mac-synthetic-db.cjs
       - src/automation/edge-mac-calibration.js
@@ -88,4 +90,4 @@ jobs:
             done
             test "$ready" = 1
           fi
-          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js

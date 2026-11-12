@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 
 test('Mac calibration verifies Edge before wiring peer checks into the isolated runner', async () => {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/edge-mac-calibration.js'), 'utf8');
-    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false, missingMetadata = false;
+    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false, missingMetadata = false, groupGone = true;
     const captureIdentity = () => {}, authorizePeer = () => {};
     const mockedRequire = name => {
         if (name === './edge-mac-browser-version') return { readVerifiedMacEdgeVersion: async () => {
@@ -20,13 +20,15 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
         if (name === './edge-mac-ephemeral-certificate') return { withMacEdgeEphemeralCertificate: async work => {
             calls.push('certificate'); return work({ pfx: Buffer.from('pfx'), passphrase: 'fixture', certificate: Buffer.from('cert') });
         } };
-        if (name === 'node:child_process') return { spawn: () => new EventEmitter() };
+        if (name === 'node:child_process') return { spawn: (_file, _args, options) => { assert.equal(options.detached, true); const child = new EventEmitter(); child.pid = 12345; return child; } };
+        if (name === './chrome-mac-process-group') return { waitForMacProcessGroupExit: async () => { calls.push('group-check'); return groupGone; } };
         if (name === './edge-calibration-runner') return { runEdgeCalibration: async options => {
             calls.push(options);
             if (childMode !== 'none') {
                 const child = options.spawnBrowser('/synthetic', [], {});
                 child.emit('exit', 0);
                 if (childMode === 'close') setImmediate(() => { calls.push('child-close'); child.emit('close', 0); });
+                await options.afterBrowserClose(child);
             }
             return { browserVersion: engineVersion, connectVersion: missingMetadata ? undefined : '2', agent: {}, client: {} };
         } };
@@ -55,6 +57,10 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
     calls.length = 0; childMode = 'close';
     assert.equal((await module.exports.runMacEdgeCalibration(input)).browserVersion, '157.0.0.1');
     assert(calls.indexOf('child-close') < calls.lastIndexOf('signature'));
+    assert(calls.indexOf('child-close') < calls.indexOf('group-check'));
+    calls.length = 0; groupGone = false;
+    await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
+    assert.equal(calls.filter(item => item === 'signature').length, 1); groupGone = true;
     calls.length = 0; childMode = 'hang'; shortTimeout = true;
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
     assert.equal(calls.filter(item => item === 'signature').length, 1);

@@ -49,6 +49,13 @@ test('Mac Edge calibration uses a disposable profile and requires a process-star
     const result = await module.exports.runEdgeCalibration(args);
     assert.equal(result.browserVersion, '157.0.0.1'); assert.equal(result.connectVersion, '2'); assert.equal(result.client, expectedClient); assert.equal(result.agent, expectedAgent); assert.equal(authorizeCalls, 1);
     assert.equal(captured.browserStartTicks, '1700000000:123456'); assert.equal(captured.browserExecutable, edgePath);
+    const firstPid = nextPid; let release, entered;
+    const gate = new Promise(resolve => { release = resolve; }), waiting = new Promise(resolve => { entered = resolve; });
+    const pending = module.exports.runEdgeCalibration({ ...args, afterBrowserClose: async browser => {
+        if (browser.pid === firstPid) { entered(); await gate; }
+    } });
+    await waiting; assert.equal(nextPid, firstPid + 1, 'second browser must wait for the first process group');
+    release(); await pending; assert.equal(nextPid, firstPid + 2);
     authorizeCalls = 0;
     await assert.rejects(module.exports.runEdgeCalibration({ ...args, captureIdentity: async () => 'pid-only' }), { code: 'X_EDGE_CALIBRATION_PEER_FAILED' });
     assert.equal(authorizeCalls, 0);
