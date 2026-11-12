@@ -38,3 +38,7 @@ node scripts/build-mac-edge-release-candidate.cjs \
 手動切替では新旧 index を切替直前に確認しますが、確認と rename の間の同一ユーザーによる置換を原子的には防げません。registry の更新同士と同じプロフィールへのアクセスは、それぞれ registry lock とプロフィール lease で排他します。
 
 別の設定プロセスが旧 index を取得した後、明示切替が完了してからそのプロセスが設定を続ける競合は未解決です。旧プロフィールは保持されますが、新旧両方の設定操作が並行する可能性があります。この競合を解消して検証するまで候補を公開しません。既存の registry lock と profile lease は強制終了後の stale lock を自動復旧しないため、同じ仕組みの長時間 lock を追加して回避することはしていません。
+
+研究用のセッション試験では、index 読取前に lock を取得すれば通常の並行起動を拒否できることと、helper 喪失時に協調する作業を中断できることを合成コードで確認しました。一方、helper が失われると lock が解放されるため、停止要求に応じない古い作業と次の設定操作が重なるケースも再現しました。待機時間の上限は event loop の動作が前提で、同期処理の無限停止や lock を保持したままの無期限待機を止める保証はありません。これらは実装候補の安全性を証明するものではなく、通常の入口には接続していません。実 Mac での lock 解放検証も別途必要です。
+
+代替案として、設定を実行する Node 本体内の Node-API addon が lock を持つ方式を調査しています。外部 helper の先行終了を避けられ、プロセス終了時の OS 解放を利用できます。ただし Apple の [fcntl の説明](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fcntl.2.html) では、同一プロセスが同じファイルを指す別の descriptor を閉じても record lock が解放されます。専用 descriptor の管理だけで安全とは断定できず、同資料が説明する `flock` も選択肢です。両方式は同じ方式で参加者を統一して試験する必要があります。[Node-API の環境ライフサイクル](https://nodejs.org/api/n-api.html) に沿った cleanup、同一プロセス内の多重取得、worker、異常終了、実行中の filesystem 操作、旧プロフィールと index の保存、Apple Silicon・Intel の検証が必要です。既存候補は固定 Node と `MacLevelDB.node` の署名検証を行っていますが、追加 addon のビルド・署名・公証・ロードは未実装・未検証です。
