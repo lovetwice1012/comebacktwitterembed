@@ -211,17 +211,26 @@ async function recordApnsDiagnostics(stage) {
   }
 }
 
+function classifyAxProbe(probe, mode) {
+  if (!['baseline', 'inspect', 'allow'].includes(mode)) return { value: 'unknown', reason: 'invalid_mode' };
+  if (probe?.error?.code === 'ETIMEDOUT') return { value: 'unknown', reason: 'timeout' };
+  if (probe?.signal) return { value: 'unknown', reason: 'terminated' };
+  if (probe?.status !== 0) return { value: 'unknown', reason: 'execution_failed' };
+  const output = typeof probe.stdout === 'string' ? probe.stdout.trim() : '';
+  if (mode === 'baseline' && output === 'baseline=clean') return { value: 'clean', reason: 'ok' };
+  if (mode === 'baseline' && output === 'baseline=not_clean') return { value: 'not_clean', reason: 'ok' };
+  if (mode === 'inspect' && output === 'diagnostic=notification_prompt_present') return { value: 'notification_prompt_present', reason: 'ok' };
+  if (mode === 'allow' && output === 'diagnostic=allow_pressed') return { value: 'allow_pressed', reason: 'ok' };
+  return { value: 'unknown', reason: 'unexpected_output' };
+}
 function axProbe(mode) {
   const probe = spawnSync('/usr/bin/swift', [axProbePath, mode], {
-    encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'],
+    // Fresh hosted VMs may need to initialise Swift compiler caches first.
+    encoding: 'utf8', timeout: 45000, maxBuffer: 16384, stdio: ['ignore', 'pipe', 'ignore'],
   });
-  if (probe.status !== 0) return 'unknown';
-  const output = (probe.stdout || '').trim();
-  if (mode === 'baseline' && output === 'baseline=clean') return 'clean';
-  if (mode === 'baseline' && output === 'baseline=not_clean') return 'not_clean';
-  if (mode === 'inspect' && output === 'diagnostic=notification_prompt_present') return 'notification_prompt_present';
-  if (mode === 'allow' && output === 'diagnostic=allow_pressed') return 'allow_pressed';
-  return 'unknown';
+  const result = classifyAxProbe(probe, mode);
+  if (result.value === 'unknown') console.log(`Safari synthetic AX inspection: ${result.reason}`);
+  return result.value;
 }
 
 function listen(server) {
@@ -285,6 +294,15 @@ test('subscription result categories do not turn pending or refusal into success
   assert.equal(outcome('pending', 'default'), 'permission_pending_timeout');
   assert.equal(outcome('pending', 'granted'), 'subscription_timeout_after_permission_granted');
   assert.equal(outcome('error', 'default'), 'subscription_error');
+});
+
+test('AX helper classifies failures without exposing raw output', () => {
+  assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'baseline=clean\n' }, 'baseline'), { value: 'clean', reason: 'ok' });
+  assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'baseline=not_clean\n' }, 'baseline'), { value: 'not_clean', reason: 'ok' });
+  assert.deepEqual(classifyAxProbe({ status: null, error: { code: 'ETIMEDOUT', message: 'private path' } }, 'baseline'), { value: 'unknown', reason: 'timeout' });
+  assert.deepEqual(classifyAxProbe({ status: null, signal: 'SIGTERM' }, 'allow'), { value: 'unknown', reason: 'terminated' });
+  assert.deepEqual(classifyAxProbe({ status: 1, stderr: 'private' }, 'allow'), { value: 'unknown', reason: 'execution_failed' });
+  assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'private' }, 'baseline'), { value: 'unknown', reason: 'unexpected_output' });
 });
 
 test('fixture host and localhost DNS are restricted to the expected loopback addresses', () => {
