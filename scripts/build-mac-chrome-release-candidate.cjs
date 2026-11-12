@@ -8,7 +8,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { buildMacChromePreview, buildMacBraveReleasePreview, buildMacFirefoxReleasePreview, readInput } = require('./build-mac-chrome-preview.cjs');
+const { buildMacChromePreview, buildMacBraveReleasePreview, buildMacFirefoxReleasePreview, buildMacEdgeReleasePreview, readInput } = require('./build-mac-chrome-preview.cjs');
 const exec = promisify(execFile);
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -41,6 +41,7 @@ const CANDIDATE_KINDS = Object.freeze({
     chrome: Object.freeze({ prefix: 'chrome-mac', packageId: 'x-notification-mac-chrome-setup', manifestVersion: '0.1.0-mac-preview.1', buildPreview: buildMacChromePreview }),
     brave: Object.freeze({ prefix: 'brave-mac', packageId: 'x-notification-mac-brave-setup', manifestVersion: '0.1.0-mac-brave-preview.2', buildPreview: buildMacBraveReleasePreview }),
     firefox: Object.freeze({ prefix: 'firefox-mac', packageId: 'x-notification-mac-firefox-setup', manifestVersion: '0.1.0-mac-firefox-preview.1', buildPreview: buildMacFirefoxReleasePreview }),
+    edge: Object.freeze({ prefix: 'edge-mac', packageId: 'x-notification-mac-edge-setup', manifestVersion: '0.1.0-mac-edge-preview.1', buildPreview: buildMacEdgeReleasePreview }),
 });
 async function verifyManifest(kind, manifest, bin, res) {
     if (!manifest || manifest.packageId !== kind.packageId || manifest.version !== kind.manifestVersion
@@ -48,6 +49,11 @@ async function verifyManifest(kind, manifest, bin, res) {
     if (kind.prefix === 'firefox-mac') {
         for (const [field, filename] of [['bootstrapSha256', 'FirefoxXPCShellReader.js'], ['readerSha256', 'Read-PushSubscription.js']]) {
             if (manifest[field] !== digest(await fs.readFile(path.join(res, filename)))) fail('MAC_RELEASE_MANIFEST_INVALID');
+        }
+    }
+    if (kind.prefix === 'edge-mac') {
+        for (const [field, filename] of [['identitySha256', 'MacEdgeIdentity'], ['peerSha256', 'MacEdgeSocketOwner']]) {
+            if (manifest[field] !== digest(await fs.readFile(path.join(bin, filename)))) fail('MAC_RELEASE_MANIFEST_INVALID');
         }
     }
 }
@@ -108,10 +114,17 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
         await command('/usr/bin/clang', ['-O2', '-arch', targetArch, '-mmacosx-version-min=13.5', helperSource, '-o', helper]);
         await command('/usr/bin/clang', ['-O2', '-arch', targetArch, '-mmacosx-version-min=13.5', launchSource, `-Wl,-sectcreate,__RESTRICT,__restrict,${section}`, '-o', launcher]);
         const sign = async (target, args = []) => command('/usr/bin/codesign', ['--force', '--sign', input.identity, '--timestamp', '--options', 'runtime', ...args, target]);
+        const edgeIdentity = path.join(temp, 'MacEdgeIdentity'), edgePeer = path.join(temp, 'MacEdgeSocketOwner');
+        if (browser === 'edge') {
+            await command('/usr/bin/clang', ['-O2', '-arch', targetArch, '-mmacosx-version-min=13.5', path.join(repo, 'client/angelic-setup/mac/edge-process-identity.c'), '-o', edgeIdentity]);
+            await command('/usr/bin/clang', ['-O2', '-arch', targetArch, '-mmacosx-version-min=13.5', path.join(repo, 'client/angelic-setup/mac/edge-socket-owner.c'), '-o', edgePeer]);
+        }
         stage = 'sign_components'; await sign(helper); await sign(launcher);
+        if (browser === 'edge') { await sign(edgeIdentity); await sign(edgePeer); }
         stage = 'assemble';
         const preview = await (dependencies.buildPreview || kind.buildPreview)({ arch: input.arch, runtime, license,
-            launcher: await readInput(launcher, 4 * 1024 * 1024), helper: await readInput(helper, 4 * 1024 * 1024) });
+            launcher: await readInput(launcher, 4 * 1024 * 1024), helper: await readInput(helper, 4 * 1024 * 1024),
+            ...(browser === 'edge' ? { edgeIdentity: await readInput(edgeIdentity, 4 * 1024 * 1024), edgePeer: await readInput(edgePeer, 4 * 1024 * 1024) } : {}) });
         const previewZip = path.join(temp, 'preview.zip'), stageDir = path.join(temp, 'stage');
         await fs.writeFile(previewZip, preview.archive, { flag: 'wx', mode: 0o600 }); await fs.mkdir(stageDir, { mode: 0o700 });
         await command('/usr/bin/ditto', ['-x', '-k', previewZip, stageDir]);
@@ -134,7 +147,8 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
         await sign(app);
         const requirement = `=anchor apple generic and certificate leaf[subject.OU] = "${input.teamId}" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists`;
         const verify = async target => command('/usr/bin/codesign', ['--verify', '--strict', '-R', requirement, target]);
-        for (const target of [path.join(bin, 'MacStoreLock'), path.join(bin, 'Launch'), path.join(bin, 'MacNode'), path.join(bin, 'MacLevelDB.node'), app]) await verify(target);
+        const edgeHelpers = browser === 'edge' ? ['MacEdgeIdentity', 'MacEdgeSocketOwner'] : [];
+        for (const target of [path.join(bin, 'MacStoreLock'), path.join(bin, 'Launch'), path.join(bin, 'MacNode'), path.join(bin, 'MacLevelDB.node'), ...edgeHelpers.map(name => path.join(bin, name)), app]) await verify(target);
         if (manifest.lockSha256 !== digest(await fs.readFile(path.join(bin, 'MacStoreLock')))) fail('MAC_RELEASE_MANIFEST_INVALID');
         const submitZip = path.join(temp, 'submit.zip');
         await command('/usr/bin/ditto', ['-c', '-k', '--keepParent', app, submitZip]);
@@ -154,8 +168,8 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
         await command('/usr/bin/ditto', ['-x', '-k', finalZip, check]);
         const checkedApp = path.join(check, 'X通知の準備.app');
         const checkedBin = path.join(checkedApp, 'Contents', 'MacOS');
-        for (const name of ['MacStoreLock', 'Launch', 'MacNode', 'MacLevelDB.node']) await verify(path.join(checkedBin, name));
-        for (const name of ['MacStoreLock', 'Launch', 'MacNode']) {
+        for (const name of ['MacStoreLock', 'Launch', 'MacNode', 'MacLevelDB.node', ...edgeHelpers]) await verify(path.join(checkedBin, name));
+        for (const name of ['MacStoreLock', 'Launch', 'MacNode', ...edgeHelpers]) {
             const stat = await fs.lstat(path.join(checkedBin, name));
             if (!stat.isFile() || stat.isSymbolicLink() || !(stat.mode & 0o111)) fail('MAC_RELEASE_PACKAGE_INVALID');
         }
@@ -178,6 +192,7 @@ async function buildForBrowser(browser, raw, dependencies = {}) {
 const buildCandidate = (raw, dependencies) => buildForBrowser('chrome', raw, dependencies);
 const buildBraveCandidate = (raw, dependencies) => buildForBrowser('brave', raw, dependencies);
 const buildFirefoxCandidate = (raw, dependencies) => buildForBrowser('firefox', raw, dependencies);
+const buildEdgeCandidate = (raw, dependencies) => buildForBrowser('edge', raw, dependencies);
 function parseArgs(args) {
     if (args.length !== 8) fail('MAC_RELEASE_INPUT_INVALID');
     const [arch, version, teamId, identity, profile, runtime, license, output] = args;
@@ -186,4 +201,4 @@ function parseArgs(args) {
 if (require.main === module) Promise.resolve().then(() => buildCandidate(parseArgs(process.argv.slice(2)))).then(result => process.stdout.write(JSON.stringify(result) + '\n'))
     .catch(error => { const stage = /^[a-z_]+$/.test(String(error?.stage || '')) ? ` stage=${error.stage}` : '';
         process.stderr.write(`${/^MAC_RELEASE_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'MAC_RELEASE_FAILED'}${stage}\n`); process.exitCode = 1; });
-module.exports = { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };
+module.exports = { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, buildEdgeCandidate, validateOptions, parseArgs, publishCandidate, releaseEnvironment };

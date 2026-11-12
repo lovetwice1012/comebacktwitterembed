@@ -14,6 +14,7 @@ on:
       - scripts/native-test/edge-synthetic-restart-child.test.cjs
       - scripts/native-test/edge-fixture-frame-count.test.cjs
       - scripts/native-test/edge-fixture-send-status.test.cjs
+      - scripts/test/edge-calibration-cleanup-race.test.js
       - scripts/native-test/edge-fixture-archive.test.cjs
       - experiments/chrome-push/edge-fixture-archive.cjs
       - experiments/chrome-push/edge-broker-pipe-probe.cjs
@@ -59,15 +60,15 @@ jobs:
       - name: Verify immutable package reader
         shell: pwsh
         run: |
-          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs scripts/native-test/edge-hosted-probe-mode.test.cjs scripts/native-test/edge-synthetic-restart-child.test.cjs scripts/native-test/edge-fixture-frame-count.test.cjs scripts/native-test/edge-fixture-send-status.test.cjs
+          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs scripts/native-test/edge-hosted-probe-mode.test.cjs scripts/native-test/edge-synthetic-restart-child.test.cjs scripts/native-test/edge-fixture-frame-count.test.cjs scripts/native-test/edge-fixture-send-status.test.cjs scripts/test/edge-calibration-cleanup-race.test.js
           if ($LASTEXITCODE -ne 0) { throw 'Pinned package test failed' }
       - name: Build exact preview candidate in runner temp
         shell: pwsh
         run: |
-          $output = Join-Path $env:RUNNER_TEMP 'cbte-edge-preview-15.zip'
+          $output = Join-Path $env:RUNNER_TEMP 'cbte-edge-preview-16.zip'
           node scripts/build-edge-setup-package.cjs --output $output
           if ($LASTEXITCODE -ne 0) { throw 'Preview build failed' }
-          if ((Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash -ine '9a0577be4216b1f3970c00c51b1258275f72df052c21090322e63e1dde0c5397') { throw 'Preview hash mismatch' }
+          if ((Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash -ine '90e38fb2c879b0748cd5a3a9ab2a4f048836ad92c549358ded87253a800afbb4') { throw 'Preview hash mismatch' }
       - name: Run signed Edge, packaged export, isolated DB and WNS
         shell: powershell
         run: |

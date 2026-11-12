@@ -6,11 +6,12 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { zipSync } = require('fflate');
-const { buildMacChromeBundle, buildMacBraveBundle, buildMacBraveReleaseBundle, buildMacFirefoxBundle, buildMacFirefoxReleaseBundle } = require('./build-mac-chrome-setup-bundle.cjs');
+const { buildMacChromeBundle, buildMacBraveBundle, buildMacBraveReleaseBundle, buildMacFirefoxBundle, buildMacFirefoxReleaseBundle, buildMacEdgeReleaseBundle } = require('./build-mac-chrome-setup-bundle.cjs');
 const { isMacExecutable: isMachOExecutable, isRestrictedMacExecutable } = require('./lib/mac-macho.cjs');
 const VERSION = '0.1.0-mac-preview.1';
 const BRAVE_VERSION = '0.1.0-mac-brave-preview.2';
 const FIREFOX_VERSION = '0.1.0-mac-firefox-preview.1';
+const EDGE_VERSION = '0.1.0-mac-edge-preview.1';
 const RUNTIME_HASH = Object.freeze({ arm64: 'e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b',
     x64: '7abcf39bd37ab251015337ff75304d7555f0d8e88c6e0fbf04bce8ce34636f49' });
 const LICENSE_HASH = '5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace';
@@ -20,18 +21,22 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-
 
 // Pure layout helper; the public preview builder verifies all executable inputs
 // before calling it. It is not a signing or release operation.
-function assembleMacApp({ bundle, runtime, launcher, helper, license, projectLicense, guide, browser = 'chrome', firefoxBootstrap, firefoxReader }) {
-    if (!['chrome', 'brave', 'firefox'].includes(browser)) throw new Error('Unsupported Mac preview');
+function assembleMacApp({ bundle, runtime, launcher, helper, license, projectLicense, guide, browser = 'chrome', firefoxBootstrap, firefoxReader, edgeIdentity, edgePeer }) {
+    if (!['chrome', 'brave', 'firefox', 'edge'].includes(browser)) throw new Error('Unsupported Mac preview');
     if (!Buffer.isBuffer(launcher) || !launcher.length || !Buffer.isBuffer(projectLicense) || !projectLicense.length || !Buffer.isBuffer(guide) || !guide.length)
         throw new Error('Missing preview documentation');
     if (browser === 'firefox' && (!Buffer.isBuffer(firefoxBootstrap) || !firefoxBootstrap.length || !Buffer.isBuffer(firefoxReader) || !firefoxReader.length))
         throw new Error('Missing Firefox readers');
+    if (browser === 'edge' && (!Buffer.isBuffer(edgeIdentity) || !edgeIdentity.length || !Buffer.isBuffer(edgePeer) || !edgePeer.length))
+        throw new Error('Missing Edge helpers');
     const manifest = Buffer.from(JSON.stringify({ packageId: browser === 'brave' ? 'x-notification-mac-brave-setup'
-        : browser === 'firefox' ? 'x-notification-mac-firefox-setup' : 'x-notification-mac-chrome-setup',
-    version: browser === 'brave' ? BRAVE_VERSION : browser === 'firefox' ? FIREFOX_VERSION : VERSION, lockSha256: hash(helper),
-    ...(browser === 'firefox' ? { bootstrapSha256: hash(firefoxBootstrap), readerSha256: hash(firefoxReader) } : {}) }) + '\n');
+        : browser === 'firefox' ? 'x-notification-mac-firefox-setup' : browser === 'edge' ? 'x-notification-mac-edge-setup' : 'x-notification-mac-chrome-setup',
+    version: browser === 'brave' ? BRAVE_VERSION : browser === 'firefox' ? FIREFOX_VERSION : browser === 'edge' ? EDGE_VERSION : VERSION, lockSha256: hash(helper),
+    ...(browser === 'firefox' ? { bootstrapSha256: hash(firefoxBootstrap), readerSha256: hash(firefoxReader) } : {}),
+    ...(browser === 'edge' ? { identitySha256: hash(edgeIdentity), peerSha256: hash(edgePeer) } : {}) }) + '\n');
     const plist = browser === 'brave' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.brave-setup')
-        : browser === 'firefox' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.firefox-setup') : PLIST;
+        : browser === 'firefox' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.firefox-setup')
+            : browser === 'edge' ? PLIST.replace('jp.cbte.xnotification.setup', 'jp.cbte.xnotification.edge-setup') : PLIST;
     const contents = { [`${APP}Info.plist`]: [Buffer.from(plist), false], [`${APP}MacOS/Launch`]: [launcher, true],
         [`${APP}MacOS/MacNode`]: [runtime, true], [`${APP}MacOS/MacStoreLock`]: [helper, true],
         [`${APP}Resources/MacSetup-manifest.json`]: [manifest, false], [`${APP}Resources/Node-LICENSE.txt`]: [license, false],
@@ -41,32 +46,40 @@ function assembleMacApp({ bundle, runtime, launcher, helper, license, projectLic
         contents[`${APP}Resources/FirefoxXPCShellReader.js`] = [firefoxBootstrap, false];
         contents[`${APP}Resources/Read-PushSubscription.js`] = [firefoxReader, false];
     }
+    if (browser === 'edge') {
+        contents[`${APP}MacOS/MacEdgeIdentity`] = [edgeIdentity, true];
+        contents[`${APP}MacOS/MacEdgeSocketOwner`] = [edgePeer, true];
+    }
     const entries = Object.fromEntries(Object.entries(contents).map(([name, [data, executable]]) => [name,
         [data, { mtime: new Date('2020-01-01T00:00:00Z'), os: 3, attrs: ((executable ? 0o100755 : 0o100644) << 16) >>> 0 }]]));
     return Buffer.from(zipSync(entries, { level: 6 }));
 }
-async function buildMacPreview({ arch, runtime, launcher, helper, license, browser, releaseCandidate = false }) {
+async function buildMacPreview({ arch, runtime, launcher, helper, license, browser, releaseCandidate = false, edgeIdentity, edgePeer }) {
     if (!['arm64', 'x64'].includes(arch) || !Buffer.isBuffer(runtime) || !Buffer.isBuffer(launcher) || !Buffer.isBuffer(helper) || !Buffer.isBuffer(license)
         || runtime.length > 150 * 1024 * 1024 || launcher.length > 4 * 1024 * 1024 || helper.length > 4 * 1024 * 1024 || license.length > 1024 * 1024
         || hash(runtime) !== RUNTIME_HASH[arch] || hash(license) !== LICENSE_HASH
         || !isMachOExecutable(runtime, arch) || !isRestrictedMacExecutable(launcher, arch) || !isMachOExecutable(helper, arch)) throw new Error('Mac preview input verification failed');
-    if (!['chrome', 'brave', 'firefox'].includes(browser) || typeof releaseCandidate !== 'boolean'
-        || releaseCandidate && !['brave', 'firefox'].includes(browser)) throw new Error('Unsupported Mac preview');
+    if (!['chrome', 'brave', 'firefox', 'edge'].includes(browser) || typeof releaseCandidate !== 'boolean'
+        || releaseCandidate && !['brave', 'firefox', 'edge'].includes(browser) || browser === 'edge' && !releaseCandidate)
+        throw new Error('Unsupported Mac preview');
+    if (browser === 'edge' && (![edgeIdentity, edgePeer].every(value => Buffer.isBuffer(value) && value.length <= 4 * 1024 * 1024 && isMachOExecutable(value, arch))))
+        throw new Error('Mac Edge helper input verification failed');
     const [bundle, projectLicense, guide, firefoxBootstrap, firefoxReader] = await Promise.all([
-        browser === 'brave' ? (releaseCandidate ? buildMacBraveReleaseBundle() : buildMacBraveBundle()) : browser === 'firefox' ? (releaseCandidate ? buildMacFirefoxReleaseBundle() : buildMacFirefoxBundle()) : buildMacChromeBundle(),
+        browser === 'brave' ? (releaseCandidate ? buildMacBraveReleaseBundle() : buildMacBraveBundle()) : browser === 'firefox' ? (releaseCandidate ? buildMacFirefoxReleaseBundle() : buildMacFirefoxBundle()) : browser === 'edge' ? buildMacEdgeReleaseBundle() : buildMacChromeBundle(),
         readInput(path.resolve(__dirname, '../client/angelic-setup/LICENSE'), 1024 * 1024),
         readInput(path.resolve(__dirname, browser === 'brave' ? (releaseCandidate ? '../client/angelic-setup/mac/Brave-候補用.txt' : '../client/angelic-setup/mac/Brave-試験用.txt')
-            : browser === 'firefox' ? (releaseCandidate ? '../client/angelic-setup/mac/Firefox-候補用.txt' : '../client/angelic-setup/mac/Firefox-試験用.txt') : '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024),
+            : browser === 'firefox' ? (releaseCandidate ? '../client/angelic-setup/mac/Firefox-候補用.txt' : '../client/angelic-setup/mac/Firefox-試験用.txt') : browser === 'edge' ? '../client/angelic-setup/mac/Edge-候補用.txt' : '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024),
         browser === 'firefox' ? readInput(path.resolve(__dirname, '../client/angelic-setup/mac/FirefoxXPCShellReader.js'), 1024 * 1024) : null,
         browser === 'firefox' ? readInput(path.resolve(__dirname, '../client/angelic-setup/Read-PushSubscription.js'), 1024 * 1024) : null]);
-    const archive = assembleMacApp({ bundle, runtime, launcher, helper, license, projectLicense, guide, browser, firefoxBootstrap, firefoxReader });
-    return { archive, sha256: hash(archive), version: browser === 'brave' ? BRAVE_VERSION : browser === 'firefox' ? FIREFOX_VERSION : VERSION, arch, signed: false };
+    const archive = assembleMacApp({ bundle, runtime, launcher, helper, license, projectLicense, guide, browser, firefoxBootstrap, firefoxReader, edgeIdentity, edgePeer });
+    return { archive, sha256: hash(archive), version: browser === 'brave' ? BRAVE_VERSION : browser === 'firefox' ? FIREFOX_VERSION : browser === 'edge' ? EDGE_VERSION : VERSION, arch, signed: false };
 }
 const buildMacChromePreview = options => buildMacPreview({ ...options, browser: 'chrome', releaseCandidate: false });
 const buildMacBravePreview = options => buildMacPreview({ ...options, browser: 'brave', releaseCandidate: false });
 const buildMacBraveReleasePreview = options => buildMacPreview({ ...options, browser: 'brave', releaseCandidate: true });
 const buildMacFirefoxPreview = options => buildMacPreview({ ...options, browser: 'firefox', releaseCandidate: false });
 const buildMacFirefoxReleasePreview = options => buildMacPreview({ ...options, browser: 'firefox', releaseCandidate: true });
+const buildMacEdgeReleasePreview = options => buildMacPreview({ ...options, browser: 'edge', releaseCandidate: true });
 async function readInput(filename, max) {
     if (typeof filename !== 'string' || !path.isAbsolute(filename)) throw new Error('Input must be absolute');
     const stat = await fs.lstat(filename);
@@ -92,4 +105,4 @@ async function main(args) {
     process.stdout.write(JSON.stringify({ path: outputPath, sha256: result.sha256, arch, version: VERSION, signed: false }) + '\n');
 }
 if (require.main === module) main(process.argv.slice(2)).catch(() => { process.stderr.write('Mac preview build failed. No release was published.\n'); process.exitCode = 1; });
-module.exports = { assembleMacApp, buildMacChromePreview, buildMacBravePreview, buildMacBraveReleasePreview, buildMacFirefoxPreview, buildMacFirefoxReleasePreview, readInput, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };
+module.exports = { assembleMacApp, buildMacChromePreview, buildMacBravePreview, buildMacBraveReleasePreview, buildMacFirefoxPreview, buildMacFirefoxReleasePreview, buildMacEdgeReleasePreview, readInput, isMachOExecutable, RUNTIME_HASH, LICENSE_HASH };

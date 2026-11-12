@@ -35,7 +35,7 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         || !Buffer.isBuffer(pfx) || !Buffer.isBuffer(certificate) || typeof captureIdentity !== 'function' || typeof authorizePeer !== 'function'
         || typeof spawnBrowser !== 'function' || typeof captureAgent !== 'boolean' || afterBrowserClose !== undefined && typeof afterBrowserClose !== 'function' || signal !== undefined && !(signal instanceof AbortSignal)
         || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
-    let profile, pageServer, relay, browser, pipe, version, spki, closing; const controller = new AbortController();
+    let profile, pageServer, pageListen, relay, relayPending, browser, pipe, version, spki, closing; const controller = new AbortController();
     let abortCode = 'X_EDGE_CALIBRATION_STOPPED';
     const abort = () => { controller.abort(); if (browser && browser.exitCode === null && browser.signalCode === null) { try { browser.kill(); } catch {} } };
     const timer = setTimeout(() => { abortCode = 'X_EDGE_CALIBRATION_TIMEOUT'; abort(); }, timeoutMs);
@@ -81,7 +81,8 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         });
         pageServer.maxConnections = 8;
         pageServer.on('connection', socket => socket.setTimeout(5000, () => socket.destroy()));
-        await wait(new Promise((resolve, reject) => { pageServer.once('error', reject); pageServer.listen({ host: '127.0.0.1', port: 0 }, resolve); }));
+        pageListen = new Promise((resolve, reject) => { pageServer.once('error', reject); pageServer.listen({ host: '127.0.0.1', port: 0 }, resolve); });
+        await wait(pageListen);
         const address = pageServer.address(); if (!address || typeof address === 'string' || address.address !== '127.0.0.1') throw fail('X_EDGE_CALIBRATION_LISTEN_FAILED');
         const origin = `http://127.0.0.1:${address.port}`;
         const key = createECDH('prime256v1'); key.generateKeys(); const publicKey = key.getPublicKey().toString('base64url');
@@ -97,14 +98,15 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         version = await wait(initial.pipe.ready()); await wait(initial.pipe.prepareCalibration(publicKey)); await wait(closeBrowser());
         if (controller.signal.aborted) throw fail(abortCode);
         let identityPromise;
-        relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), captureAgent: platform === 'macos' || captureAgent, authorizePeer: async ports => {
+        relayPending = createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), captureAgent: platform === 'macos' || captureAgent, authorizePeer: async ports => {
             const identity = await identityPromise;
             // macOS identity uses the process start seconds and six-digit
             // microseconds reported by proc_bsdinfo, never PID alone.
             const identityPattern = platform === 'macos' ? /^[1-9]\d{0,19}:[0-9]{6}$/ : /^\d{18}$/;
             if (controller.signal.aborted || !identity || typeof identity.startTicks !== 'string' || !identityPattern.test(identity.startTicks)) return false;
             return (await authorizePeer({ ...ports, browserPid: identity.pid, browserStartTicks: identity.startTicks, browserExecutable: edgePath })) === true;
-        } }));
+        } });
+        relay = await wait(relayPending);
         const resumed = start([...common, `--edge-wns-push-server-url=https://127.0.0.1:${relay.port}`, `--ignore-certificate-errors-spki-list=${spki}`, 'about:blank']);
         const pid = resumed.browser.pid;
         identityPromise = Promise.resolve().then(() => captureIdentity(pid, edgePath)).then(startTicks => ({ pid, startTicks }));
@@ -121,9 +123,24 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
     } finally {
         clearTimeout(timer); signal?.removeEventListener('abort', abort);
         let cleanupFailed = false;
-        if (relay) try { await relay.close(); } catch { cleanupFailed = true; }
-        try { await closeBrowser(); } catch { cleanupFailed = true; }
-        if (pageServer) try { await new Promise(resolve => { pageServer.close(resolve); pageServer.closeAllConnections?.(); }); } catch { cleanupFailed = true; }
+        async function boundedCleanup(work) {
+            let timer;
+            // The promise stays observed after the timeout: if a listener
+            // finishes starting late, its handler still closes it.
+            const observed = Promise.resolve(work).then(() => true, () => false);
+            try { return await Promise.race([observed, new Promise(resolve => { timer = setTimeout(() => resolve(false), Math.min(timeoutMs, 10000)); })]); }
+            finally { clearTimeout(timer); }
+        }
+        const cleanups = [];
+        if (relay) cleanups.push(Promise.resolve().then(() => relay.close()));
+        else if (relayPending) cleanups.push(Promise.resolve(relayPending).then(value => value.close(), () => undefined));
+        cleanups.push(Promise.resolve().then(() => closeBrowser()));
+        if (pageServer && pageListen) cleanups.push(Promise.resolve(pageListen).then(() => new Promise((resolve, reject) => {
+            try { pageServer.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve());
+                pageServer.closeAllConnections?.(); } catch (error) { if (error?.code === 'ERR_SERVER_NOT_RUNNING') resolve(); else reject(error); }
+        }), () => undefined));
+        const completed = await Promise.all(cleanups.map(boundedCleanup));
+        if (completed.some(value => value !== true)) cleanupFailed = true;
         if (cleanupFailed) throw fail('X_EDGE_CALIBRATION_CLEANUP_FAILED');
     }
 }

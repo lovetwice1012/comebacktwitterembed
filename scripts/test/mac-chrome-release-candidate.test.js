@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { createHash } = require('node:crypto');
-const { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, validateOptions, publishCandidate, releaseEnvironment } = require('../build-mac-chrome-release-candidate.cjs');
+const { buildCandidate, buildBraveCandidate, buildFirefoxCandidate, buildEdgeCandidate, validateOptions, publishCandidate, releaseEnvironment } = require('../build-mac-chrome-release-candidate.cjs');
 const hash = b => createHash('sha256').update(b).digest('hex');
 const baseInput = (root, browser = 'chrome') => ({ arch: 'arm64', version: '1.2.3', teamId: 'ABCDEFGHIJ', identity: 'Developer ID Application: Fixture', profile: 'fixture',
     runtime: path.join(root, 'node'), license: path.join(root, 'license'), output: path.join(root, `${browser}-mac-arm64-1.2.3.zip`) });
@@ -14,7 +14,7 @@ async function fixture(t, mode, browser = 'chrome') {
         const lstat = fs.lstat;
         t.mock.method(fs, 'lstat', async filename => {
             const info = await lstat(filename);
-            if (/[/\\](?:MacStoreLock|Launch|MacNode)$/.test(filename)) info.mode |= 0o111;
+            if (/[/\\](?:MacStoreLock|Launch|MacNode|MacEdgeIdentity|MacEdgeSocketOwner)$/.test(filename)) info.mode |= 0o111;
             return info;
         });
     }
@@ -37,11 +37,17 @@ async function fixture(t, mode, browser = 'chrome') {
             const helper = path.join(path.dirname(dest), 'MacStoreLock'), launcher = path.join(path.dirname(dest), 'Launch');
             await fs.copyFile(helper, path.join(bin, 'MacStoreLock')); await fs.copyFile(launcher, path.join(bin, 'Launch'));
             await fs.writeFile(path.join(bin, 'MacNode'), 'runtime', { mode: 0o755 }); await fs.writeFile(path.join(bin, 'MacLevelDB.node'), 'addon');
+            if (browser === 'edge') {
+                await fs.copyFile(path.join(path.dirname(dest), 'MacEdgeIdentity'), path.join(bin, 'MacEdgeIdentity'));
+                await fs.copyFile(path.join(path.dirname(dest), 'MacEdgeSocketOwner'), path.join(bin, 'MacEdgeSocketOwner'));
+            }
             if (browser === 'firefox') {
                 await fs.writeFile(path.join(res, 'FirefoxXPCShellReader.js'), 'bootstrap');
                 await fs.writeFile(path.join(res, 'Read-PushSubscription.js'), 'reader');
             }
-            await fs.writeFile(path.join(res, 'MacSetup-manifest.json'), JSON.stringify(browser === 'firefox'
+            await fs.writeFile(path.join(res, 'MacSetup-manifest.json'), JSON.stringify(browser === 'edge'
+                ? { packageId: 'x-notification-mac-edge-setup', version: '0.1.0-mac-edge-preview.1', lockSha256: hash(await fs.readFile(helper)), identitySha256: hash(await fs.readFile(path.join(bin, 'MacEdgeIdentity'))), peerSha256: hash(await fs.readFile(path.join(bin, 'MacEdgeSocketOwner'))) }
+                : browser === 'firefox'
                 ? { packageId: 'x-notification-mac-firefox-setup', version: '0.1.0-mac-firefox-preview.1', lockSha256: hash(await fs.readFile(helper)), bootstrapSha256: hash('bootstrap'), readerSha256: hash('reader') }
                 : browser === 'brave'
                 ? { packageId: 'x-notification-mac-brave-setup', version: '0.1.0-mac-brave-preview.2', lockSha256: hash(await fs.readFile(helper)) }
@@ -62,10 +68,15 @@ async function fixture(t, mode, browser = 'chrome') {
             await fs.appendFile(path.join(args.at(-1), 'Contents', 'Resources', 'Read-PushSubscription.js'), 'tampered');
         if (path.basename(cmd) === 'stapler' && args[0] === 'staple' && mode === 'tamper-firefox-bootstrap')
             await fs.appendFile(path.join(args.at(-1), 'Contents', 'Resources', 'FirefoxXPCShellReader.js'), 'tampered');
+        if (path.basename(cmd) === 'stapler' && args[0] === 'staple' && mode === 'tamper-edge-identity')
+            await fs.appendFile(path.join(args.at(-1), 'Contents', 'MacOS', 'MacEdgeIdentity'), 'tampered');
+        if (path.basename(cmd) === 'stapler' && args[0] === 'staple' && mode === 'tamper-edge-peer')
+            await fs.appendFile(path.join(args.at(-1), 'Contents', 'MacOS', 'MacEdgeSocketOwner'), 'tampered');
         return {};
     };
-    const buildPreview = async ({ helper, launcher, runtime, license }) => {
+    const buildPreview = async ({ helper, launcher, runtime, license, edgeIdentity, edgePeer }) => {
         assert.ok(helper.toString().endsWith('signed') && launcher.toString().endsWith('signed'));
+        if (browser === 'edge') assert.ok(edgeIdentity.toString().endsWith('signed') && edgePeer.toString().endsWith('signed'));
         assert.equal(runtime.toString(), 'runtime'); assert.equal(license.toString(), 'license'); return { archive: Buffer.from('preview') };
     };
     return { input, calls, run, buildPreview };
@@ -118,6 +129,20 @@ test('Firefox candidate verifies its own identity and both reader hashes', async
     const result = await buildFirefoxCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview });
     assert.equal(result.filename, 'firefox-mac-arm64-1.2.3.zip'); assert.equal(result.published, false);
     assert.equal(result.sha256, hash(await fs.readFile(f.input.output)));
+});
+test('Edge candidate signs its two peer helpers before binding their hashes', async t => {
+    const f = await fixture(t, undefined, 'edge');
+    assert.throws(() => validateOptions(f.input, 'darwin', 'chrome'), { code: 'MAC_RELEASE_INPUT_INVALID' });
+    const result = await buildEdgeCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview });
+    const signed = f.calls.filter(c => c.cmd.endsWith('/codesign') && c.args.includes('--sign')).map(c => path.basename(c.args.at(-1)));
+    assert.deepEqual(signed, ['MacStoreLock', 'Launch', 'MacEdgeIdentity', 'MacEdgeSocketOwner', 'MacLevelDB.node', 'MacNode', 'X通知の準備.app']);
+    assert.equal(result.filename, 'edge-mac-arm64-1.2.3.zip'); assert.equal(result.published, false);
+    assert.equal(result.sha256, hash(await fs.readFile(f.input.output)));
+});
+for (const mode of ['tamper-edge-identity', 'tamper-edge-peer']) test(`Edge candidate rejects ${mode} after notarization`, async t => {
+    const f = await fixture(t, mode, 'edge');
+    await assert.rejects(buildEdgeCandidate(f.input, { platform: 'darwin', run: f.run, buildPreview: f.buildPreview }), { code: 'MAC_RELEASE_MANIFEST_INVALID' });
+    await assert.rejects(fs.access(f.input.output), { code: 'ENOENT' });
 });
 for (const mode of ['tamper-firefox-reader', 'tamper-firefox-bootstrap']) test(`Firefox candidate rejects ${mode} after notarization`, async t => {
     const f = await fixture(t, mode, 'firefox');

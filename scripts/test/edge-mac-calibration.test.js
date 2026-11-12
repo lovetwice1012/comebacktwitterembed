@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 
 test('Mac calibration verifies Edge before wiring peer checks into the isolated runner', async () => {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/edge-mac-calibration.js'), 'utf8');
-    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false, missingMetadata = false, groupGone = true;
+    const module = { exports: {} }, calls = []; let allowed = true, changeAfter = false, versions = 0, engineVersion = '157.0.0.1', childMode = 'none', shortTimeout = false, missingMetadata = false, groupGone = true, runnerFailsAfterCleanup = false;
     const captureIdentity = () => {}, authorizePeer = () => {};
     const mockedRequire = name => {
         if (name === './edge-mac-browser-version') return { readVerifiedMacEdgeVersion: async () => {
@@ -30,6 +30,7 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
                 if (childMode === 'close') setImmediate(() => { calls.push('child-close'); child.emit('close', 0); });
                 await options.afterBrowserClose(child);
             }
+            if (runnerFailsAfterCleanup) throw Object.assign(new Error('fixture error'), { code: 'X_EDGE_CALIBRATION_FAILED' });
             return { browserVersion: engineVersion, connectVersion: missingMetadata ? undefined : '2', agent: {}, client: {} };
         } };
         return require(name);
@@ -55,17 +56,24 @@ test('Mac calibration verifies Edge before wiring peer checks into the isolated 
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_PROTOCOL_INVALID' });
     missingMetadata = false;
     calls.length = 0; childMode = 'close';
-    assert.equal((await module.exports.runMacEdgeCalibration(input)).browserVersion, '157.0.0.1');
+    let cleanupCount = 0;
+    assert.equal((await module.exports.runMacEdgeCalibration({ ...input, onCleanupConfirmed: () => { cleanupCount++; } })).browserVersion, '157.0.0.1');
+    assert.equal(cleanupCount, 1);
     assert(calls.indexOf('child-close') < calls.lastIndexOf('signature'));
     assert(calls.indexOf('child-close') < calls.indexOf('group-check'));
     calls.length = 0; groupGone = false;
-    await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
+    await assert.rejects(module.exports.runMacEdgeCalibration({ ...input, onCleanupConfirmed: () => { cleanupCount++; } }), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
+    assert.equal(cleanupCount, 1, 'an unconfirmed process group must not authorize workspace cleanup');
     assert.equal(calls.filter(item => item === 'signature').length, 1); groupGone = true;
     calls.length = 0; childMode = 'hang'; shortTimeout = true;
     await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_CALIBRATION_CLEANUP_FAILED' });
     assert.equal(calls.filter(item => item === 'signature').length, 1);
     childMode = 'none'; shortTimeout = false;
+    runnerFailsAfterCleanup = true;
+    await assert.rejects(module.exports.runMacEdgeCalibration({ ...input, onCleanupConfirmed: () => { cleanupCount++; } }), { code: 'X_EDGE_CALIBRATION_FAILED' });
+    assert.equal(cleanupCount, 2, 'confirmed cleanup remains usable after a failed calibration'); runnerFailsAfterCleanup = false;
     calls.length = 0; allowed = false;
-    await assert.rejects(module.exports.runMacEdgeCalibration(input), { code: 'X_EDGE_MAC_BROWSER_INVALID' });
+    await assert.rejects(module.exports.runMacEdgeCalibration({ ...input, onCleanupConfirmed: () => { cleanupCount++; } }), { code: 'X_EDGE_MAC_BROWSER_INVALID' });
+    assert.equal(cleanupCount, 3, 'preflight failure starts no browser and permits workspace cleanup');
     assert.deepEqual(calls, ['signature']);
 });

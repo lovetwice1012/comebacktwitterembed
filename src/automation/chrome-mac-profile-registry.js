@@ -8,7 +8,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { parseUniqueJson } = require('./strict-json');
 const { createMacChromeProfile, verifyMacChromeProfile, createMacBraveProfile, verifyMacBraveProfile,
-    createMacFirefoxProfile, verifyMacFirefoxProfile } = require('./chrome-mac-profile');
+    createMacFirefoxProfile, verifyMacFirefoxProfile, createMacEdgeProfile, verifyMacEdgeProfile } = require('./chrome-mac-profile');
 const fail = code => Object.assign(new Error(code), { code });
 
 async function getOrCreateMacProfile(directory, browser) {
@@ -21,6 +21,9 @@ async function getOrCreateMacProfile(directory, browser) {
         : browser === 'firefox'
             ? { create: createMacFirefoxProfile, verify: verifyMacFirefoxProfile, index: 'firefox-setup-profile.json', lock: 'firefox-registry.lock',
                 orphan: /^x-notification-firefox-[0-9a-f]{32}$/, temporary: '.firefox-setup-profile-' }
+        : browser === 'edge'
+            ? { create: createMacEdgeProfile, verify: verifyMacEdgeProfile, index: 'edge-setup-profile.json', lock: 'edge-registry.lock',
+                orphan: /^x-notification-edge-[0-9a-f]{32}$/, temporary: '.edge-setup-profile-' }
             : null;
     if (process.platform === 'win32' || typeof process.getuid !== 'function' || typeof directory !== 'string' || !path.isAbsolute(directory))
         throw fail('X_CHROME_MAC_REGISTRY_INVALID');
@@ -94,4 +97,5 @@ async function getOrCreateMacProfile(directory, browser) {
 const getOrCreateMacChromeProfile = directory => getOrCreateMacProfile(directory, 'chrome');
 const getOrCreateMacBraveProfile = directory => getOrCreateMacProfile(directory, 'brave');
 const getOrCreateMacFirefoxProfile = directory => getOrCreateMacProfile(directory, 'firefox');
-module.exports = { getOrCreateMacChromeProfile, getOrCreateMacBraveProfile, getOrCreateMacFirefoxProfile };
+const getOrCreateMacEdgeProfile = directory => getOrCreateMacProfile(directory, 'edge');
+module.exports = { getOrCreateMacChromeProfile, getOrCreateMacBraveProfile, getOrCreateMacFirefoxProfile, getOrCreateMacEdgeProfile };
