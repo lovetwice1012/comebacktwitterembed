@@ -329,6 +329,12 @@ test('apsd diagnostics reject ambiguous service output and match exact process b
   assert.equal(parseApsdDisabledState('x'.repeat(262145)), 'unknown');
 });
 
+test('hosted macOS records apsd state without changing it', { skip: !enabled, timeout: 30000 }, () => {
+  assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
+  assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
+  recordApsdState('standalone');
+});
+
 test('WebPush logs classify only known messages and reject malformed output', () => {
   assert.deepEqual(classifyWebPushLogs('[]'), { status: 'no_matches', service_unavailable: false,
     database_error: false, known_public_token: false, public_token_changed: false });
