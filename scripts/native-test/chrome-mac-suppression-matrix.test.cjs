@@ -22,6 +22,7 @@ const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-m
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 const { receiveExpectedSyntheticPush } = require('./chrome-mac-suppression-receive.cjs');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { sendSyntheticBaseline } = require('./chrome-mac-suppression-baseline.cjs');
 
 const OLD = '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND';
 const NEW = '--host-resolver-rules=MAP mtalk.google.com ^NOTFOUND';
@@ -70,7 +71,7 @@ test('hosted Chrome isolates synthetic Push suppression mechanisms',
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const caseName = process.env.CBTE_MAC_SUPPRESSION_CASE, flags = flagsFor(caseName);
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-chrome-suppression-'));
-        const children = [], observed = new Set(), expectedMarkers = new Set(); let server, credentials;
+        const children = [], observed = new Set(), expectedMarkers = new Set(); let server, credentials, initialBaselineFailed = false, subscriptionStartedAt = 0;
         let stage = 'setup';
         const spawnOwned = (file, args, options) => {
             const child = spawn(file, args, { ...options, detached: true });
@@ -136,9 +137,18 @@ test('hosted Chrome isolates synthetic Push suppression mechanisms',
             }
             async function sendAndObserve(label) {
                 const marker = `fixture-${randomBytes(16).toString('hex')}`; expectedMarkers.add(marker);
-                try { await webpush.sendNotification(subscription, marker, { TTL: 300, timeout: 15000 }); }
-                catch (error) { t.diagnostic(`synthetic ${label} send=${classifyPushError(error)}`); throw new Error(`FIXTURE_${label}_SEND_FAILED`); }
-                t.diagnostic(`synthetic ${label} send=accepted`);
+                const send = () => webpush.sendNotification(subscription, marker, { TTL: 300, timeout: 15000 });
+                if (label === 'BASELINE') {
+                    const outcome = await sendSyntheticBaseline({ send, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+                        elapsedMs: () => Math.max(0, Math.round(performance.now() - subscriptionStartedAt)),
+                        report: event => t.diagnostic(`synthetic BASELINE ${event.phase} result=${event.result}${event.phase === 'retry' ? ` attempt=${event.attempt} sinceSubscriptionMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs}` : ''}`) });
+                    initialBaselineFailed = outcome.initialFailed;
+                } else {
+                    // Restart controls and the actual trial are sent only once.
+                    try { await send(); }
+                    catch (error) { t.diagnostic(`synthetic ${label} send=${classifyPushError(error)}`); throw new Error(`FIXTURE_${label}_SEND_FAILED`); }
+                    t.diagnostic(`synthetic ${label} send=accepted`);
+                }
                 const deadline = Date.now() + 30000;
                 while (!observed.has(marker) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
                 return { marker, browserReceived: observed.has(marker) };
@@ -147,6 +157,7 @@ test('hosted Chrome isolates synthetic Push suppression mechanisms',
             const response = await first.call('Runtime.evaluate', { expression: `(async()=>{const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;return(await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:${JSON.stringify(vapid.publicKey)}})).toJSON()})()`, awaitPromise: true, returnByValue: true }, first.sessionId, 120000);
             if (response.exceptionDetails) throw new Error('FIXTURE_SUBSCRIPTION_FAILED');
             subscription = response.result?.value;
+            subscriptionStartedAt = performance.now();
             assert(/^https:\/\/fcm\.googleapis\.com\//.test(subscription?.endpoint || '') && typeof subscription.keys?.p256dh === 'string' && typeof subscription.keys?.auth === 'string', 'invalid synthetic subscription');
             webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
             const baseline = await sendAndObserve('BASELINE');
@@ -206,6 +217,7 @@ test('hosted Chrome isolates synthetic Push suppression mechanisms',
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 assert.equal(observed.has(trial.marker), false, 'browser reported the synthetic notification after MCS receipt');
             }
+            assert.equal(initialBaselineFailed, false, 'initial baseline send failed despite diagnostic retry');
         } catch (error) {
             t.diagnostic(`synthetic suppression case=${caseName} stoppedAt=${stage}; result=inconclusive_or_failed`);
             if (stage === 'mcs' && /^FIXTURE_MCS_[A-Z_]+$/.test(String(error?.message || ''))) t.diagnostic(`synthetic mcs reason=${error.message}`);
