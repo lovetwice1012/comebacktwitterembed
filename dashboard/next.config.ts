@@ -14,7 +14,8 @@ const nextConfig: NextConfig = {
   // discoverable by Next's automatic file tracing. Include only release inputs.
   outputFileTracingIncludes: {
     "/api/automation/x-setup/download-chrome": [
-      "../src/providers/_loader.js",
+      "../src/**/*.js",
+      "../packages/angelic-angel/dist/**",
       "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip",
     ],
     "/api/automation/x-setup/download": [
