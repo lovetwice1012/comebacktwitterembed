@@ -35,10 +35,13 @@ async function createInstrumentedBraveVerifier(t) {
                 const role = ROLES.get(name) || 'unexpected';
                 try {
                     const stat = await fs.lstat(name);
-                    const fingerprint = JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs]);
+                    const fingerprint = [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs];
                     if (phase() === 'pre') beforeStats.set(role, fingerprint);
-                    const stable = phase() === 'post' && beforeStats.has(role) ? String(beforeStats.get(role) === fingerprint) : 'unknown';
-                    events.push(`inspection=${phase()}_${role}_lstat symlink=${stat.isSymbolicLink()} kind=${stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other'} stableSincePre=${stable}`);
+                    const before = phase() === 'post' ? beforeStats.get(role) : null;
+                    const differences = ['dev', 'inode', 'size', 'mtime', 'ctime'].map((name, index) =>
+                        `${name}Changed=${before ? String(before[index] !== fingerprint[index]) : 'unknown'}`);
+                    const stable = before ? String(before.every((value, index) => value === fingerprint[index])) : 'unknown';
+                    events.push(`inspection=${phase()}_${role}_lstat symlink=${stat.isSymbolicLink()} kind=${stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other'} stableSincePre=${stable} ${differences.join(' ')}`);
                     return stat;
                 } catch (error) { events.push(`inspection=${phase()}_${role}_lstat result=${classifyFailure(error)}`); throw error; }
             },

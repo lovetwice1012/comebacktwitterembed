@@ -26,10 +26,15 @@ test('Brave verification diagnostics keep failures in bounded categories', () =>
 test('diagnostic preserves strict verification and identifies the original failed stage', async () => {
     const helper = fs.readFileSync(path.join(__dirname, '../native-test/brave-mac-verifier-diagnostic.cjs'), 'utf8');
     const verifier = fs.readFileSync(path.join(__dirname, '../../src/automation/brave-mac-browser.js'), 'utf8');
-    for (const failure of ['first_signature', 'second_signature', 'post_identity']) {
+    for (const failure of ['first_signature', 'second_signature', 'post_identity', 'post_dev', 'post_inode', 'post_size', 'post_mtime', 'post_ctime']) {
         let signature = 0, inspections = 0; const events = [], calls = [];
         const fakeFs = { async readFile() { return verifier; }, async lstat(name) {
-            inspections++; return { dev: 1, ino: 10, size: 100, mtimeMs: failure === 'post_identity' && inspections > 3 ? 2 : 1, ctimeMs: 1,
+            inspections++;
+            const changed = inspections > 3 && name.replace(/\\/g, '/').endsWith('/Contents/MacOS/Brave Browser');
+            return { dev: changed && failure === 'post_dev' ? 2 : 1, ino: changed && failure === 'post_inode' ? 11 : 10,
+                size: changed && failure === 'post_size' ? 101 : 100,
+                mtimeMs: failure === 'post_identity' && inspections > 3 || changed && failure === 'post_mtime' ? 2 : 1,
+                ctimeMs: changed && failure === 'post_ctime' ? 2 : 1,
                 isSymbolicLink: () => false, isDirectory: () => name.endsWith('.app'), isFile: () => !name.endsWith('.app') };
         }, async realpath(name) { return name; } };
         function execFile() {}
@@ -55,6 +60,11 @@ test('diagnostic preserves strict verification and identifies the original faile
         if (failure === 'first_signature') assert(events.some(event => event.includes('signature=1 result=rejected')));
         if (failure === 'second_signature') assert(events.some(event => event.includes('signature=2 result=rejected')));
         if (failure === 'post_identity') assert(events.some(event => event.includes('inspection=post_app_lstat') && event.includes('stableSincePre=false')));
+        if (/^post_(dev|inode|size|mtime|ctime)$/.test(failure)) {
+            const changedField = failure.slice(5), event = events.find(value => value.includes('inspection=post_executable_lstat'));
+            assert(event && event.includes('stableSincePre=false'));
+            for (const field of ['dev', 'inode', 'size', 'mtime', 'ctime']) assert(event.includes(`${field}Changed=${field === changedField}`));
+        }
         assert(!JSON.stringify(events).includes('secret'));
     }
 });
