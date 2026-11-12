@@ -1,0 +1,41 @@
+name: macOS Safari synthetic subscription with temporary APNs service
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-safari-apsd-enabled-synthetic.yml
+      - scripts/native-test/safari-apsd-ci-experiment.cjs
+      - scripts/test/safari-apsd-ci-experiment.test.js
+
+permissions:
+  contents: read
+
+jobs:
+  safari-apsd:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Enable Safari WebDriver on the disposable runner
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          sudo /usr/bin/safaridriver --enable
+      - name: Temporarily enable APNs for the synthetic subscription
+        env:
+          CBTE_SAFARI_APSD_EXPERIMENT: '1'
+        run: |
+          node --test scripts/test/safari-apsd-ci-experiment.test.js
+          node scripts/native-test/safari-apsd-ci-experiment.cjs
