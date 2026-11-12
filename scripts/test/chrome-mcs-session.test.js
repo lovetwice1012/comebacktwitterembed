@@ -64,7 +64,7 @@ test('authenticated disconnect recovery commits owned frames without sending or 
     await h.session.start(); await h.session.receive(login(1)); h.steps.length = 0;
     h.store.control = async message => { h.steps.push('control'); if (message.persistentId) h.pending.add(message.persistentId); };
     h.session.beginRecovery();
-    assert.deepEqual(await h.session.recover(frame({ id: 'recovered-1' })), { state: 'received' });
+    assert.deepEqual(await h.session.recover(frame({ id: 'recovered-1' })), { state: 'received', inbox: { id: 'recovered-1' } });
     assert.deepEqual(await h.session.recover(frame({ subtype: 'other', id: 'foreign' })), { state: 'discarded' });
     const notice = frame({ id: 'loss' }); notice.payload = Buffer.concat([notice.payload, pair('message_type', 'deleted_messages')]);
     assert.deepEqual(await h.session.recover(notice), { state: 'provider_control' });
@@ -96,7 +96,7 @@ test('recovery accepts one uncertain ACK sequence without confirming replay IDs'
     await assert.rejects(session.receive(frame({ id: 'first' })), { code: 'X_PUSH_SOCKET_FAILED' });
     session.beginRecovery();
     assert.deepEqual(await session.recover({ tag: 1, payload: Buffer.from([16, 2]) }), { state: 'control' });
-    assert.deepEqual(await session.recover(frame({ id: 'second' })), { state: 'received' });
+    assert.deepEqual(await session.recover(frame({ id: 'second' })), { state: 'received', inbox: undefined });
     assert.deepEqual([...pending], ['first', 'second']); assert.deepEqual(confirmed, []); assert.equal(sends, 2);
     await assert.rejects(session.recover({ tag: 1, payload: Buffer.from([16, 3]) }), /X_CHROME_SESSION_SEQUENCE_INVALID/);
 });

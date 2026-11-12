@@ -184,7 +184,7 @@ function createXEventRouter(db, queue, options = {}) {
         }
         return modes;
     }
-    async function routeReceived({ lease, inbox, payload, processingMode }) {
+    async function routeReceived({ lease, inbox, payload, processingMode, recoveryGuard }) {
         if (!lease || !inbox || !/^[1-9]\d{0,19}$/.test(String(inbox.id || '')) || !UUID.test(String(lease.subscriptionId || ''))
             || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')) || inbox.ownerUserId !== lease.ownerUserId || inbox.subscriptionId !== lease.subscriptionId
             || !['received', 'routed'].includes(inbox.status)
@@ -204,6 +204,7 @@ function createXEventRouter(db, queue, options = {}) {
             }
             results.push(await queue.routeX({ ownerUserId: lease.ownerUserId, monitorId: String(row.id), subscriptionId: lease.subscriptionId,
                 inboxEventId: inbox.id, payload, receivedAtMs: inbox.receivedAtMs,
+                ...(recoveryGuard ? { recoveryGuard } : {}),
                 ...(processingMode === undefined ? {} : { processingMode }) }, clock()));
         }
         return { state: !matched ? 'unmatched' : pending || results.some(result => result.state === 'pending') ? 'pending' : 'routed', results };

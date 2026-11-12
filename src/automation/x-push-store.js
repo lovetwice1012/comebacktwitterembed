@@ -70,10 +70,14 @@ function createXPushStore(db, options = {}) {
         || !Number.isSafeInteger(leaseMs) || leaseMs < 100 || leaseMs > 300000) fail('X_PUSH_STORE_CONFIG_INVALID');
     // Keep the owner -> subscription -> receiver lock order used by intake and
     // deletion. A delete cannot race a fenced inbox commit or resurrect a lease.
-    async function locked(input, work, { createReceiver = false } = {}) {
+    async function locked(input, work, { createReceiver = false, signal, authorize } = {}) {
         identity(input);
+        if (signal !== undefined && !(signal instanceof AbortSignal)) fail('X_PUSH_CONFIG_INVALID');
+        if (authorize !== undefined && typeof authorize !== 'function') fail('X_PUSH_CONFIG_INVALID');
+        if (signal?.aborted) fail('X_PUSH_STOPPED');
         try {
             return await db.withDatabaseTransaction(async query => {
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
                 await lockOwner(query, input.ownerUserId);
                 const subscription = (await query('SELECT * FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE', [input.subscriptionId, input.ownerUserId]))[0];
                 if (!subscription) fail('X_PUSH_SUBSCRIPTION_NOT_FOUND');
@@ -85,7 +89,12 @@ function createXPushStore(db, options = {}) {
                     VALUES (?,'awaiting',?,?) ON DUPLICATE KEY UPDATE subscription_id=VALUES(subscription_id)`,
                 [input.subscriptionId, Number(subscription.revision), now()]);
                 const receiver = (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE', [input.subscriptionId]))[0];
-                return work(query, subscription, receiver);
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                if (authorize) await authorize(query);
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                const result = await work(query, subscription, receiver);
+                if (signal?.aborted) fail('X_PUSH_STOPPED');
+                return result;
             });
         } catch (error) {
             if (typeof error?.code === 'string' && error.code.startsWith('X_PUSH_')) throw error;
@@ -125,13 +134,13 @@ function createXPushStore(db, options = {}) {
             return { ...lease, expiresAtMs };
         });
     }
-    async function assertLease(lease, { authorize } = { authorize: undefined }) {
+    async function assertLease(lease, { authorize, signal } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             if (authorize) await authorize(query);
             fence(lease, subscription, receiver);
             return true;
-        });
+        }, { signal });
     }
     async function chromeCheckinState(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -352,21 +361,21 @@ function createXPushStore(db, options = {}) {
             return Number(result.affectedRows);
         });
     }
-    async function markRouted(lease, id) {
+    async function markRouted(lease, id, { signal, authorize } = {}) {
         if (!/^[0-9]{1,20}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             const result = await query("UPDATE automation_x_push_inbox SET status='routed',routed_at_ms=? WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [now(), String(id), lease.subscriptionId, lease.revision]);
             return result.affectedRows === 1;
-        });
+        }, { signal, authorize });
     }
-    async function auditUse(lease, outcome) {
+    async function auditUse(lease, outcome, { signal, authorize } = {}) {
         if (!['opened', 'failed'].includes(outcome)) fail('X_PUSH_AUDIT_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.vault.open', JSON.stringify({ revision: lease.revision, outcome }), now()]);
-        });
+        }, { signal, authorize });
     }
     async function getInbox(input) {
         identity(input);
@@ -390,9 +399,9 @@ function createXPushStore(db, options = {}) {
                 [lease.subscriptionId, lease.revision, String(afterId), limit]);
             fence(lease, subscription, receiver);
             return rows.map(row => inboxDto(row, lease.ownerUserId));
-        });
+        }, { signal: input.signal });
     }
-    async function restoreQuarantinedInbox(lease, inboxId, { authorize } = { authorize: undefined }) {
+    async function restoreQuarantinedInbox(lease, inboxId, { authorize, signal } = { authorize: undefined }) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -403,9 +412,9 @@ function createXPushStore(db, options = {}) {
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.adapter.recovered', JSON.stringify({ inboxId: String(inboxId), adapterVersion: 1 }), now()]);
             fence(lease, subscription, receiver);
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal });
     }
-    async function markUnmatched(lease, inboxId) {
+    async function markUnmatched(lease, inboxId, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -415,7 +424,7 @@ function createXPushStore(db, options = {}) {
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.target.unmatched', JSON.stringify({ inboxId: String(inboxId) }), now()]);
             fence(lease, subscription, receiver);
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal, authorize });
     }
     async function status(input) {
         identity(input);
@@ -427,7 +436,7 @@ function createXPushStore(db, options = {}) {
         const rows = await db.queryDatabase('SELECT s.id,s.revision,s.updated_at_ms,r.state,r.reason_code,r.last_connected_at_ms,r.lease_expires_at_ms,r.retry_at_ms,r.retry_attempt FROM automation_x_subscriptions s LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id WHERE s.owner_user_id=? ORDER BY s.id LIMIT 100', [ownerUserId]);
         return rows.map(row => stateDto(row, now()));
     }
-    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>,resolveProcessing?:(query:any)=>Promise<{effectiveMode:string,intervalMinutes:number|null}>}} [options] */
+    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>,resolveProcessing?:(query:any)=>Promise<{effectiveMode:string,intervalMinutes:number|null}>,signal?:AbortSignal,authorize?:(query:any)=>Promise<void>}} [options] */
     async function beginProcessing(lease, intervalMinutes, options = {}) {
         if (options.resolveInterval !== undefined && typeof options.resolveInterval !== 'function') fail('X_PUSH_PROCESSING_INVALID');
         if (options.resolveProcessing !== undefined && typeof options.resolveProcessing !== 'function'
@@ -461,9 +470,9 @@ function createXPushStore(db, options = {}) {
             await query('UPDATE automation_x_push_receivers SET process_window_at_ms=?,process_window_mode=?,process_cursor_id=0 WHERE subscription_id=?', [windowAtMs, processingMode, lease.subscriptionId]);
             fence(lease, subscription, receiver);
             return { ready: true, windowAtMs, cursorId: '0', processingMode };
-        });
+        }, { signal: options.signal, authorize: options.authorize });
     }
-    async function advanceProcessing(lease, input) {
+    async function advanceProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0 || !/^[1-9]\d{0,19}$/.test(String(input.cursorId))) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -471,9 +480,9 @@ function createXPushStore(db, options = {}) {
                 || BigInt(input.cursorId) < BigInt(receiver.process_cursor_id)) fail('X_PUSH_PROCESSING_INVALID');
             await query('UPDATE automation_x_push_receivers SET process_cursor_id=? WHERE subscription_id=?', [String(input.cursorId), lease.subscriptionId]);
             fence(lease, subscription, receiver);
-        });
+        }, { signal, authorize });
     }
-    async function completeProcessing(lease, input) {
+    async function completeProcessing(lease, input, { signal, authorize } = {}) {
         if (!input || !Number.isSafeInteger(input.windowAtMs) || input.windowAtMs < 0) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -482,18 +491,18 @@ function createXPushStore(db, options = {}) {
             // are reconsidered next time, even when later records were routed.
             await query('UPDATE automation_x_push_receivers SET last_process_at_ms=?,process_window_at_ms=NULL,process_window_mode=NULL,process_cursor_id=0 WHERE subscription_id=?', [input.windowAtMs, lease.subscriptionId]);
             fence(lease, subscription, receiver);
-        });
+        }, { signal, authorize });
     }
-    async function markUnsupported(lease, id) {
+    async function markUnsupported(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             const result = await query("UPDATE automation_x_push_inbox SET status='unsupported' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'", [String(id), lease.subscriptionId, lease.revision]);
             fence(lease, subscription, receiver);
             return result.affectedRows === 1;
-        });
+        }, { signal, authorize });
     }
-    async function markRecoveryQuarantined(lease, id) {
+    async function markRecoveryQuarantined(lease, id, { signal, authorize } = {}) {
         if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
@@ -504,7 +513,7 @@ function createXPushStore(db, options = {}) {
                 [lease.ownerUserId, lease.subscriptionId, 'x.push.recovery.quarantine', JSON.stringify({ inboxId: String(id), revision: lease.revision }), now()]);
             fence(lease, subscription, receiver);
             return Number(result.affectedRows) === 1;
-        });
+        }, { signal, authorize });
     }
     async function recordRetry(input, reasonCode, delayMs) {
         if (!Number.isSafeInteger(input?.revision) || input.revision < 1) fail('X_PUSH_IDENTITY_INVALID');

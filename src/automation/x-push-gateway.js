@@ -146,8 +146,8 @@ function createXPushGateway(db, options = {}) {
         if (options.enabled !== true) throw fault('X_PUSH_RECEIVER_DISABLED');
         if (!privateWorkerVault || typeof privateWorkerVault.open !== 'function') throw fault('X_PUSH_WORKER_KEY_UNAVAILABLE');
     }
-    async function openSubscription(lease) {
-        await deadline(store.assertLease(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+    async function openSubscription(lease, { signal, authorize } = {}) {
+        await deadline(store.assertLease(lease, { signal, authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         let file;
         try {
             // Intake's public-only v2 hybrid envelope is the sole worker format.
@@ -155,10 +155,10 @@ function createXPushGateway(db, options = {}) {
             file = privateWorkerVault.open(lease.sealedEnvelope,
                 { subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId, revision: lease.revision });
         } catch {
-            await deadline(store.auditUse(lease, 'failed'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+            await deadline(store.auditUse(lease, 'failed', { signal, authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
             throw fault('X_PUSH_VAULT_INVALID');
         }
-        await deadline(store.auditUse(lease, 'opened'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+        await deadline(store.auditUse(lease, 'opened', { signal, authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         return file;
     }
     function decrypt(crypto, file, row) {
@@ -170,21 +170,21 @@ function createXPushGateway(db, options = {}) {
             });
         } catch { throw fault('X_PUSH_DECRYPTION_FAILED'); }
     }
-    async function decryptInbox(lease, row) {
+    async function decryptInbox(lease, row, { signal, authorize } = {}) {
         configured();
         if (!row || row.subscriptionId !== lease.subscriptionId || row.ownerUserId !== lease.ownerUserId || row.revision !== lease.revision
             || !['received', 'routed'].includes(row.status)) throw fault('X_PUSH_INBOX_INVALID');
-        const file = await openSubscription(lease), [, crypto] = await loadProtocol();
-        await store.assertLease(lease);
+        const file = await openSubscription(lease, { signal, authorize }), [, crypto] = await loadProtocol();
+        await store.assertLease(lease, { signal, authorize });
         return decrypt(crypto, file, row);
     }
     // Recovery reads existing ciphertext with the current worker's own lease.
-    async function decryptQuarantinedInbox(lease, row) {
+    async function decryptQuarantinedInbox(lease, row, { signal, authorize } = {}) {
         configured();
         if (!row || row.subscriptionId !== lease.subscriptionId || row.ownerUserId !== lease.ownerUserId || row.revision !== lease.revision
             || row.status !== 'unsupported' || row.ackCode !== 100) throw fault('X_PUSH_INBOX_INVALID');
-        const file = await openSubscription(lease), [, crypto] = await loadProtocol();
-        await store.assertLease(lease);
+        const file = await openSubscription(lease, { signal, authorize }), [, crypto] = await loadProtocol();
+        await store.assertLease(lease, { signal, authorize });
         return decrypt(crypto, file, row);
     }
     async function notify(callback, value, signal) {
@@ -200,6 +200,23 @@ function createXPushGateway(db, options = {}) {
         });
         try { await Promise.race([Promise.resolve().then(() => callback(value)).catch(() => {}), done]); }
         finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
+    }
+    async function notifyRecovery(callback, lease, signal) {
+        if (typeof callback !== 'function' || signal?.aborted) return;
+        const controller = new AbortController(); let timer, cancel;
+        const stop = () => controller.abort();
+        signal?.addEventListener('abort', stop, { once: true });
+        if (signal?.aborted) stop();
+        const cancelled = new Promise(resolve => { cancel = resolve; controller.signal.addEventListener('abort', cancel, { once: true }); });
+        timer = setTimeout(stop, timeoutMs);
+        try {
+            if (controller.signal.aborted) return;
+            const work = Promise.resolve().then(() => callback({ lease, signal: controller.signal })).catch(() => {});
+            await Promise.race([work, cancelled]);
+        } finally {
+            clearTimeout(timer); controller.abort(); signal?.removeEventListener('abort', stop);
+            controller.signal.removeEventListener('abort', cancel);
+        }
     }
     async function run(input) {
         configured();
@@ -404,19 +421,25 @@ function createXPushGateway(db, options = {}) {
                     // No ACK is sent; persisted IDs are replayed on reconnect.
                     if (chromeEstablished && !renewalFailure && !input.signal?.aborted
                         && ['X_PUSH_SOCKET_FAILED', 'X_PUSH_SOCKET_CLOSED', 'X_PUSH_SEND_TIMEOUT', 'X_PUSH_BACKPRESSURE', 'X_PUSH_PROTOCOL_INVALID'].includes(error?.code)) {
-                        const frames = transport.takeBufferedAfterDisconnect();
+                        const frames = transport.takeBufferedAfterDisconnect(); let recoveryError = null, recovered = false;
                         try {
                             if (frames.length) session.beginRecovery();
                             for (const frame of frames) {
                                 if (renewalFailure || input.signal?.aborted) throw renewalFailure || fault('X_PUSH_STOPPED');
                                 await assertAuthorized();
-                                await deadline(session.recover(frame), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                                const result = await deadline(session.recover(frame), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                                if (result.state === 'received' && result.inbox?.status === 'received') recovered = true;
                                 await assertAuthorized();
                             }
-                        } catch (recoveryError) {
-                            if (['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(recoveryError?.code)) throw recoveryError;
-                            throw fault('X_PUSH_BUFFERED_RECOVERY_FAILED');
+                        } catch (cause) {
+                            recoveryError = ['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(cause?.code)
+                                ? cause : fault('X_PUSH_BUFFERED_RECOVERY_FAILED');
                         } finally { for (const frame of frames) frame.payload.fill(0); }
+                        if (recovered && !renewalFailure && !input.signal?.aborted && !['X_PUSH_LEASE_LOST', 'X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT', 'X_PUSH_STOPPED'].includes(recoveryError?.code)) {
+                            await assertAuthorized();
+                            await notifyRecovery(input.onRecovery, lease, input.signal);
+                        }
+                        if (recoveryError) throw recoveryError;
                     }
                     throw error;
                 } finally { session.close(); }
@@ -523,6 +546,9 @@ function createXPushGateway(db, options = {}) {
             clearInterval(renewal);
             clearTimeout(expiryTimer);
             input.signal?.removeEventListener('abort', aborted);
+            // End session-owned routing before releasing its receiver lease.
+            // This callback is synchronous; it cannot delay shutdown.
+            try { if (typeof input.onStopping === 'function') input.onStopping(); } catch { /* Shutdown still releases the lease. */ }
             if (checkinRunner) try { await deadline(checkinRunner.stop(), timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* A stale worker is fenced by its lease. */ }
             await transport?.close();
             try { await deadline(renewalWork, timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* A stalled DB cannot hold shutdown indefinitely. */ }

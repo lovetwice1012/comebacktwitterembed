@@ -133,8 +133,8 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = _
                 if (!message.persistentId) throw error('X_CHROME_SESSION_ID_MISSING');
                 const encrypted = protocol.encryptedPayload(message);
                 if (typeof store.recover !== 'function') throw error('X_CHROME_SESSION_RECOVERY_UNAVAILABLE');
-                await store.recover({ ...message, encrypted });
-                return { state: 'received' };
+                const inbox = await store.recover({ ...message, encrypted });
+                return { state: 'received', inbox };
             } catch (cause) { state = 'failed'; throw cause; }
             finally { busy = false; }
         },

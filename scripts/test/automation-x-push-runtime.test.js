@@ -66,7 +66,7 @@ function fixture(t, options = {}) {
         },
     };
     const router = { hasRealtimeTargets: async () => requestedMode === 'realtime' && realtimeEnabled, hasBatchTargets: async () => requestedMode !== 'realtime' || !realtimeEnabled, routeReceived: async input => {
-        routed.push({ id: input.inbox.id, windowAtMs: window, atMs: now, processingMode: input.processingMode });
+        routed.push({ id: input.inbox.id, windowAtMs: window, atMs: now, processingMode: input.processingMode, hasRecoveryGuard: !!input.recoveryGuard });
         if (routeFailure) throw routeFailure;
         return { state: options.pendingIds?.has(input.inbox.id) ? 'pending' : 'routed' };
     } };
@@ -102,6 +102,35 @@ test('a persisted receipt with no callback is recovered through onSession and a 
     await f.runtime.tick(); await f.runtime.tick();
     assert.equal(f.counters.run, 1); assert.deepEqual(f.routed.map(row => row.id), ['1']);
     assert.equal(f.rows[0].status, 'routed'); assert.equal(f.runtime.status().sessions, 1);
+});
+test('recovery wake respects the current batch interval and fences the due route', async t => {
+    const f = fixture(t); await f.runtime.tick(); await f.runtime.drain(f.lease); f.add();
+    const controller = new AbortController();
+    await f.callbacks().onRecovery({ lease: f.lease, signal: controller.signal });
+    assert.equal(f.routed.length, 0); assert.equal(f.state().lastProcess, 1000);
+    f.advance(300000); await f.callbacks().onRecovery({ lease: f.lease, signal: controller.signal });
+    assert.equal(f.routed.length, 1); assert.equal(f.routed[0].processingMode, 'batch');
+    assert.equal(f.routed[0].hasRecoveryGuard, true); assert.equal(f.rows[0].status, 'routed');
+});
+test('recovery wake can route eligible realtime and cancellation stops late decryption', { timeout: 3000 }, async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true }); await f.runtime.tick(); f.add();
+    const controller = new AbortController(), gate = deferred(); f.setDecryptGate(gate);
+    const work = f.callbacks().onRecovery({ lease: f.lease, signal: controller.signal });
+    while (f.counters.decrypt === 0) await new Promise(resolve => setImmediate(resolve));
+    controller.abort(); gate.resolve(); await work;
+    assert.equal(f.routed.length, 0); assert.equal(f.rows[0].status, 'received');
+    f.setDecryptGate(null); const next = new AbortController();
+    await f.callbacks().onRecovery({ lease: f.lease, signal: next.signal });
+    assert.equal(f.routed.length, 1); assert.equal(f.routed[0].processingMode, 'realtime');
+    assert.equal(f.routed[0].hasRecoveryGuard, true); assert.equal(f.state().lastProcess, null);
+});
+test('session shutdown cancels a previously started normal receipt drain', { timeout: 3000 }, async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true }); await f.runtime.tick(); const inbox = f.add();
+    const gate = deferred(); f.setDecryptGate(gate);
+    const work = f.callbacks().onReceived({ lease: f.lease, inbox });
+    while (f.counters.decrypt === 0) await new Promise(resolve => setImmediate(resolve));
+    f.callbacks().onStopping(); gate.resolve(); await work;
+    assert.equal(f.routed.length, 0); assert.equal(f.rows[0].status, 'received');
 });
 
 test('periodic mode snapshot is refreshed on every drain and receipt wakeups recheck realtime', async t => {

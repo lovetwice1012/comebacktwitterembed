@@ -133,6 +133,7 @@ function createQueue(db, evaluator, options = {}) {
     }
     async function route(kind, delivery, now = Date.now()) {
         if (kind === 'x' && !admittedXInputs.has(delivery)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知は受信記録から処理してください。');
+        if (delivery.recoveryGuard?.signal.aborted) fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
         const before = await snapshot(queryDB, kind, delivery.target_id, false, kind === 'x' ? delivery.owner_user_id : null);
         if (kind === 'x' && (!before || before.user_id !== delivery.owner_user_id || before.x_subscription_id !== delivery.subscription_id || !require('./x-event-router').matchesXMonitor(before, delivery.x_notification))) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
         let evaluation, bindings = {};
@@ -145,8 +146,9 @@ function createQueue(db, evaluator, options = {}) {
                 : evaluateWorkflow(newWorkflow(), event, { now });
         }
         return db.withDatabaseTransaction(async query => {
-            let source = null;
+            let source = null, recoveryLeaseExpiry;
             if (kind === 'x') await require('./entitlements').lockOwner(query, delivery.owner_user_id);
+            if (kind === 'x' && delivery.recoveryGuard) recoveryLeaseExpiry = await fenceRecovery(query, delivery.recoveryGuard);
             if (kind === 'price' && before?.user_id) await require('./entitlements').lockOwner(query, before.user_id);
             if (before?.user_id && kind === 'auto') await require('./entitlements').lockOwner(query, before.user_id);
             if (graphEnabled) await require('./flow-history').lockFlowWorkflows(query, [before.workflow_id]);
@@ -245,6 +247,7 @@ function createQueue(db, evaluator, options = {}) {
                 await graph.store.initializeInTransaction(query, { runId, context: flowContext, nodeId: require('./graph-plan').compileWorkflow(parse(target.definition_json)).startId, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
                 await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
+                if (kind === 'x' && delivery.recoveryGuard) finishRecoveryFence(delivery.recoveryGuard, recoveryLeaseExpiry);
                 return { state: 'routed', runId, execution: 'flow_v2' };
             }
             let plannedJobs = 0;
@@ -308,8 +311,30 @@ function createQueue(db, evaluator, options = {}) {
             }
             if (!plannedJobs || routingTrace.length !== evaluation.trace.length) await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [plannedJobs ? 'queued' : 'excluded', JSON.stringify(routingTrace), runId]);
             await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
+            if (kind === 'x' && delivery.recoveryGuard) finishRecoveryFence(delivery.recoveryGuard, recoveryLeaseExpiry);
             return { state: 'routed', runId };
         });
+    }
+    async function fenceRecovery(query, guard) {
+        if (guard.signal.aborted) fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
+        // The owner lock is already held by route(). Match the established
+        // owner -> subscription -> receiver order used by the inbox store.
+        const subscription = (await query('SELECT revision FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE',
+            [guard.subscriptionId, guard.ownerUserId]))[0];
+        const receiver = (await query('SELECT subscription_revision,lease_token,lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE',
+            [guard.subscriptionId]))[0];
+        if (guard.signal.aborted || !subscription || !receiver || Number(subscription.revision) !== guard.revision
+            || Number(receiver.subscription_revision) !== guard.revision || receiver.lease_token !== guard.token
+            || !Number.isSafeInteger(Number(receiver.lease_expires_at_ms))) fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
+        const expiresAtMs = Number(receiver.lease_expires_at_ms);
+        finishRecoveryFence(guard, expiresAtMs);
+        return expiresAtMs;
+    }
+    function finishRecoveryFence(guard, expiresAtMs) {
+        // The receiver row remains locked until COMMIT or ROLLBACK, so no
+        // successor can replace this lease during the transaction.
+        if (guard.signal.aborted || !Number.isSafeInteger(expiresAtMs) || expiresAtMs <= clock())
+            fail('X_PUSH_LEASE_LOST', '通知処理の所有権を確認できません。');
     }
     async function routeX(input, now = clock()) {
         if (!input || !/^\d{1,32}$/.test(String(input.ownerUserId || '')) || !/^[1-9]\d{0,19}$/.test(String(input.monitorId || ''))
@@ -319,8 +344,18 @@ function createQueue(db, evaluator, options = {}) {
         if (!inbox) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
         if (!require('./recovery-origin').inboxAllowed({ id: input.inboxEventId, subscriptionId: input.subscriptionId, revision: Number(inbox.subscription_revision), receivedAtMs: Number(inbox.received_at_ms) })) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
         const notification = require('./x-event-router').normalizeXNotification(input.payload, { receivedAtMs: Number(inbox.received_at_ms) });
+        let recoveryGuard;
+        if (input.recoveryGuard !== undefined) {
+            const guard = input.recoveryGuard, lease = guard?.lease;
+            if (!guard || !(guard.signal instanceof AbortSignal) || !lease || lease.subscriptionId !== input.subscriptionId
+                || lease.ownerUserId !== input.ownerUserId || !Number.isSafeInteger(lease.revision) || lease.revision < 1
+                || typeof lease.token !== 'string' || !/^[0-9a-f]{64}$/.test(lease.token)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知は受信記録から処理してください。');
+            recoveryGuard = Object.freeze({ subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
+                revision: lease.revision, token: lease.token, signal: guard.signal });
+        }
         const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
-            subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification, x_processing_mode: input.processingMode };
+            subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification,
+            x_processing_mode: input.processingMode, ...(recoveryGuard ? { recoveryGuard } : {}) };
         admittedXInputs.add(delivery);
         return route('x', delivery, now);
     }
