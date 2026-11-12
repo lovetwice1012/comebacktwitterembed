@@ -12,7 +12,7 @@ const { startChromeBroker: startEdgeBroker } = require('../../src/automation/edg
 const { captureFromBroker: captureFromEdgeBroker } = require('../../src/automation/edge-broker-client');
 const { randomBytes } = require('node:crypto');
 const expected = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'public', auth: 'auth' } };
-function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {}, product = 'Chrome/156.0.1.1' } = {}) {
+function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {}, product = 'Chrome/156.0.1.1', exitOnDetach = false, onEvaluate } = {}) {
     const chrome = new EventEmitter(); chrome.exitCode = null; chrome.pid = 12345;
     const output = new PassThrough();
     const input = new Writable({ write(chunk, _encoding, done) {
@@ -20,13 +20,14 @@ function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {}, produc
         if (request.method === 'Browser.getVersion') result = { product };
         else if (request.method === 'Target.getTargets') result = { targetInfos: targetInfos || [{ type: 'page', url: 'https://x.com/home', targetId: 'target' }] };
         else if (request.method === 'Target.attachToTarget') result = { sessionId: request.params.targetId };
-        else if (request.method === 'Runtime.evaluate') result = { result: { type: 'object', value: subscriptions[request.sessionId] || expected } };
+        else if (request.method === 'Runtime.evaluate') { onEvaluate?.(); result = { result: { type: 'object', value: subscriptions[request.sessionId] || expected } }; }
         else if (request.method === 'Target.detachFromTarget') result = {};
         else if (request.method === 'Browser.close') result = {};
         else return done(new Error('unexpected command'));
         done(); const respond = () => {
             output.write(Buffer.from(JSON.stringify({ id: request.id, result }) + '\0'));
             if (request.method === 'Browser.close') { chrome.exitCode = 0; chrome.emit('exit', 0); }
+            if (request.method === 'Target.detachFromTarget' && exitOnDetach) { chrome.exitCode = 0; chrome.emit('exit', 0); }
         };
         if (request.method === 'Runtime.evaluate' && evaluateDelay) setTimeout(respond, evaluateDelay); else queueMicrotask(respond);
     } });
@@ -139,6 +140,94 @@ test('private broker transports optional Edge key only when explicitly enabled',
             includeApplicationServerKey: true, pipeTimeoutMs, spawnChrome: () => { spawned = true; return fakeChrome(); } }), { code: 'X_CHROME_BROKER_INVALID' });
         assert.equal(spawned, false);
     }
+});
+test('Edge broker stop waits for an earlier asynchronous listener close', async t => {
+    const create = net.createServer; let signalStarted, allowClose;
+    const started = new Promise(resolve => { signalStarted = resolve; }), gate = new Promise(resolve => { allowClose = resolve; });
+    t.mock.method(net, 'createServer', (...args) => {
+        const server = create(...args), close = server.close.bind(server);
+        server.close = callback => close(error => { signalStarted(); gate.then(() => callback(error)); }); return server;
+    });
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1' });
+    const broker = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: () => chrome });
+    try {
+        chrome.kill(); await started;
+        let completed = false; const later = broker.stop().then(() => { completed = true; });
+        await Promise.resolve(); assert.equal(completed, false);
+        allowClose(); await later; assert.equal(completed, true);
+    } finally { allowClose(); await broker.stop(); }
+});
+test('Edge broker preserves a shared listener close failure', async t => {
+    const create = net.createServer;
+    t.mock.method(net, 'createServer', (...args) => {
+        const server = create(...args), close = server.close.bind(server);
+        server.close = callback => close(() => callback(Object.assign(new Error('synthetic private detail'), { code: 'EIO' }))); return server;
+    });
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1' });
+    const broker = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: () => chrome });
+    await assert.rejects(broker.stop(), { code: 'X_CHROME_BROKER_CLEANUP_FAILED', message: 'X_CHROME_BROKER_CLEANUP_FAILED' });
+    await assert.rejects(broker.stop(), { code: 'X_CHROME_BROKER_CLEANUP_FAILED' }); chrome.kill();
+});
+for (const failure of [false, true]) test(`Edge capture response survives a shared delayed stop${failure ? ' failure' : ''}`, async t => {
+    const create = net.createServer; let signalStarted, allowClose;
+    const started = new Promise(resolve => { signalStarted = resolve; }), gate = new Promise(resolve => { allowClose = resolve; });
+    t.mock.method(net, 'createServer', (...args) => {
+        const server = create(...args), close = server.close.bind(server);
+        server.close = callback => close(error => { signalStarted(); gate.then(() => callback(failure ? Object.assign(new Error('fixture'), { code: 'EIO' }) : error)); });
+        return server;
+    });
+    const value = { ...expected, applicationServerKey: randomBytes(65).toString('base64url') };
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1', subscriptions: { target: value } });
+    const broker = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: () => chrome });
+    try {
+        assert.deepEqual(await captureFromEdgeBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true }), value);
+        await started; let settled = false;
+        const later = broker.stop().then(() => { settled = true; return 'done'; }, error => { settled = true; return error.code; });
+        await Promise.resolve(); assert.equal(settled, false); allowClose();
+        assert.equal(await later, failure ? 'X_CHROME_BROKER_CLEANUP_FAILED' : 'done');
+    } finally { allowClose(); await broker.stop().catch(() => {}); }
+});
+test('Edge broker closes when the capture client disconnects and the browser exits during capture', async t => {
+    const create = net.createServer; let server;
+    t.mock.method(net, 'createServer', (...args) => { server = create(...args); return server; });
+    const value = { ...expected, applicationServerKey: randomBytes(65).toString('base64url') };
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1', evaluateDelay: 100, exitOnDetach: true, subscriptions: { target: value } });
+    const broker = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: () => chrome });
+    try {
+        await new Promise((resolve, reject) => {
+            const socket = net.connect({ host: '127.0.0.1', port: broker.port }); socket.on('error', reject);
+            socket.on('connect', () => { socket.write(JSON.stringify({ command: 'capture', token: broker.token }) + '\n');
+                setTimeout(() => { socket.destroy(); resolve(); }, 10); });
+        });
+        const closed = new Promise(resolve => server.once('close', () => resolve(true))); let timer;
+        const result = await Promise.race([closed, new Promise(resolve => { timer = setTimeout(() => resolve(false), 500); })]);
+        clearTimeout(timer); assert.equal(chrome.exitCode, 0); assert.equal(result, true, 'broker listener stayed open');
+    } finally { await broker.stop(); }
+});
+test('Edge broker closes after signal termination rejects a capture', async t => {
+    const create = net.createServer; let server, started;
+    const evaluateStarted = new Promise(resolve => { started = resolve; });
+    t.mock.method(net, 'createServer', (...args) => { server = create(...args); return server; });
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1', evaluateDelay: 100, onEvaluate: started });
+    const broker = await startEdgeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: () => chrome });
+    try {
+        const capture = captureFromEdgeBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true }).catch(() => null);
+        await evaluateStarted; const closed = new Promise(resolve => server.once('close', () => resolve(true)));
+        chrome.signalCode = 'SIGTERM'; chrome.emit('exit', null, 'SIGTERM');
+        let timer; const result = await Promise.race([closed, new Promise(resolve => { timer = setTimeout(() => resolve(false), 500); })]);
+        clearTimeout(timer); assert.equal(result, true, 'broker listener stayed open after signal exit'); await capture;
+    } finally { await broker.stop(); }
+});
+test('Edge pipe treats a signal-terminated browser as already closed', async () => {
+    const chrome = fakeChrome({ product: 'Edg/157.0.1.1' }); chrome.signalCode = 'SIGTERM';
+    const pipe = createEdgePipe(chrome, { browserMode: 'edge' }); let timer;
+    const result = await Promise.race([pipe.closeBrowser().then(() => 'closed'), new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 500); })]);
+    clearTimeout(timer); assert.equal(result, 'closed');
 });
 test('browser version handshake accepts only the selected browser family', async () => {
     assert.equal(await createEdgePipe(fakeChrome({ product: 'Edg/157.0.4341.42' }), { browserMode: 'edge' }).ready(), '157.0.4341.42');

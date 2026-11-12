@@ -65,10 +65,10 @@ jobs:
       - name: Build exact preview candidate in runner temp
         shell: pwsh
         run: |
-          $output = Join-Path $env:RUNNER_TEMP 'cbte-edge-preview-16.zip'
+          $output = Join-Path $env:RUNNER_TEMP 'cbte-edge-preview-18.zip'
           node scripts/build-edge-setup-package.cjs --output $output
           if ($LASTEXITCODE -ne 0) { throw 'Preview build failed' }
-          if ((Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash -ine '90e38fb2c879b0748cd5a3a9ab2a4f048836ad92c549358ded87253a800afbb4') { throw 'Preview hash mismatch' }
+          if ((Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash -ine 'a8f75fb017725e50515c141ffe5bac142540e7fd0e8364da0d6f5fd2f0129013') { throw 'Preview hash mismatch' }
       - name: Run signed Edge, packaged export, isolated DB and WNS
         shell: powershell
         run: |

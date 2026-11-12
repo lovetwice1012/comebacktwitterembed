@@ -98,7 +98,7 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
         return selected;
     }
     async function closeBrowser() {
-        if (chrome.exitCode !== null) return;
+        if (chrome.exitCode !== null || chrome.signalCode != null) return;
         const exited = new Promise(resolve => chrome.once('exit', resolve));
         await call('Browser.close').catch(() => {});
         let timer;

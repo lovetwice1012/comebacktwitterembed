@@ -26,9 +26,10 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
         '--no-first-run', '--no-default-browser-check', ...extraArgs, `${origin}/`],
     { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
     const pipe = createChromePipe(chrome, { origin, includeApplicationServerKey, browserMode, timeoutMs: pipeTimeoutMs });
+    const hasExited = () => chrome.exitCode !== null || chrome.signalCode != null;
     let engineVersion;
-    try { engineVersion = await pipe.ready(); } catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
-    let busy = false, stopped = false;
+    try { engineVersion = await pipe.ready(); } catch (error) { if (!hasExited()) chrome.kill(); throw error; }
+    let busy = false, stopped = false, stopPromise;
     const clients = new Set();
     const server = net.createServer(socket => {
         if (stopped || clients.size >= 8 || socket.remoteAddress !== '127.0.0.1') { socket.destroy(); return; }
@@ -52,33 +53,45 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
                 const subscription = await pipe.capture();
                 // If the requesting helper went away while Chrome was being
                 // inspected, keep the browser open and allow a later retry.
-                if (socket.destroyed) { busy = false; return; }
+                if (socket.destroyed) {
+                    busy = false;
+                    if (hasExited()) await stop();
+                    return;
+                }
                 await pipe.closeBrowser();
                 if (socket.destroyed) { busy = false; await stop(); return; }
-                socket.once('finish', () => { void stop(); });
+                socket.once('finish', () => { void stop().catch(() => {}); });
                 socket.end(JSON.stringify({ ok: true, subscription }) + '\n');
             }).catch(error => {
                 const code = /^X_CHROME_CAPTURE_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_CHROME_CAPTURE_UNAVAILABLE';
                 socket.end(JSON.stringify({ ok: false, errorCode: code }) + '\n');
                 busy = false;
-                if (chrome.exitCode !== null) void stop();
+                if (hasExited()) void stop().catch(() => {});
             });
         });
     });
-    async function stop() {
-        if (stopped) return; stopped = true;
-        token.fill(0);
-        for (const client of clients) client.destroy();
-        await new Promise(resolve => server.close(resolve));
+    function stop() {
+        if (stopPromise) return stopPromise;
+        stopped = true;
+        stopPromise = Promise.resolve().then(() => {
+            token.fill(0);
+            for (const client of clients) client.destroy();
+            return new Promise((resolve, reject) => {
+                try { server.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING'
+                    ? reject(fault('X_CHROME_BROKER_CLEANUP_FAILED')) : resolve()); }
+                catch (error) { if (error?.code === 'ERR_SERVER_NOT_RUNNING') resolve(); else reject(fault('X_CHROME_BROKER_CLEANUP_FAILED')); }
+            });
+        });
+        return stopPromise;
     }
-    chrome.once('exit', () => { if (!busy) void stop(); });
+    chrome.once('exit', () => { if (!busy) void stop().catch(() => {}); });
     try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen({ port: 0, host: '127.0.0.1' }, () => resolve(undefined)); }); }
-    catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
-    if (chrome.exitCode !== null) { await stop(); throw fault('X_CHROME_BROKER_INVALID'); }
+    catch (error) { if (!hasExited()) chrome.kill(); throw error; }
+    if (hasExited()) { await stop(); throw fault('X_CHROME_BROKER_INVALID'); }
     const address = server.address();
     if (!address || typeof address === 'string') {
         await stop();
-        if (chrome.exitCode === null) chrome.kill();
+        if (!hasExited()) chrome.kill();
         throw fault('X_CHROME_BROKER_INVALID');
     }
     return { port: address.port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion, stop, chrome };
