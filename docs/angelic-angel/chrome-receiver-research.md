@@ -82,3 +82,7 @@ Windowsの署名済みBrave 157.1.99.56と候補ZIP `chrome-setup-0.1.0-chrome-p
 最終コードを使う隔離MariaDBの76件が成功した。実際の監視更新APIによる最後の監視無効化、別の監視が残る場合、再有効化と通知設定・枠の維持、受信保存後の無効化によるACK抑止を含む。guardian失効は資格照会・claim後・HELLO応答待ち・INSERT中・commit後ACK前で確認し、Chromeのcheck-in拒否とFirefoxのUAID不一致は、有効な監視では既存の再登録要求を維持し、無効化や失権時には誤って再登録要求を残さないことを確認した。送信直前のguardian失効はFirefox・Chrome・Edgeの合成transportでも確認した。正常受信・再送・復旧を含む単体試験109件も成功し、実際のプロバイダーや本番DBには接続していない。
 
 これらはDB確認と外部socket操作を原子的にするものではない。DB確認commit直後の監視変更・資格失効や、guardian確認直後の復号・送信との狭い競合、既に送信したDB commitやACKの結果は完全に取り消せない。新着payloadはguardianの同期確認後に復号するが、monitorやdonorのDB確認はその後の保存前であり、取消後に一時的な復号が起こり得る。この順序の変更は追加DB往復と大量接続時の負荷を含め未決定である。claim timeout後もサーバー側の長時間SQLとロックが直ちに解放される保証はない。これらを含む実DB高負荷・実FCMでの運用容量は未検証。
+
+commit `f33ad3c` の [Mac DB CI 43193304429](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43193304429) では、Apple Siliconの使い捨てMariaDBで互換・監視・資格・停止競合とスケジューラなど122件、および合成ファイルの受付・暗号保存3件が成功した。同じ実行の使い捨てChromeプロフィールと実FCMによる合成通知では、暗号化DB保存と通知job 1件まで成功した。実X・実Discord、本番環境、長時間運用の確認ではない。
+
+同じcommitの [Mac Brave CI 43193304409](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43193304409) も、Intel・Apple Siliconの両方で成功した。各環境でSQL・互換37件、合成受付3件、HTTP受付から暗号化DBとqueueまでの1件、署名済みBraveと実FCMを使う合成試験を含む23件が成功した。設定用Brave側では同じ合成通知の受信が観測されず、MCS側の受信とjob作成を確認した。これも実X・実Discord、正式配布や長時間の受信抑止を確認した結果ではない。
