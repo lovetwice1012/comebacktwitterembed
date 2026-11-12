@@ -6,11 +6,16 @@ const path = require('node:path');
 const os = require('node:os');
 const { randomBytes } = require('node:crypto');
 const { fork } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 const { ClassicLevel } = require('classic-level');
+const webpush = require('web-push');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 const { partitionStoreRecords, selectDeviceRecord } = require('../../src/automation/edge-wns-record');
 const { buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-snapshot');
 const { selectSyntheticEdgeRecord, rewriteSyntheticOrigin } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
+const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
+const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 
 test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -86,6 +91,33 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
                 assert.equal(output.file.push.connectVersion || '1', result.connectVersion);
                 assert.equal(output.unclassifiedRecordCount, partition.unknownCount);
                 assert.equal(output.otherNotificationsPossible, partition.unknownCount > 0 || output.otherSubscriptionCount > 0);
+                const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+                let stored, rotated = false;
+                const store = { async assertLease(_lease, { authorize }) { await authorize(); },
+                    async recordFrame(_lease, frame, { authorize }) { await authorize(); stored = frame;
+                        return { ...lease, ...frame, id: '1', duplicate: false }; } };
+                await withEdgeWnsCredentials(output.file, async credentials => {
+                    const transport = createEdgeWnsTransport({ timeoutMs: 15000 }); let session;
+                    try {
+                        session = createEdgeWnsSession({ ...credentials, transport, store, lease, authorize: async () => {},
+                            saveRotatedToken: async token => { assert(token.length > 0); rotated = true; } });
+                        assert.equal((await session.start()).state, 'ready'); assert.equal(rotated, true);
+                        webpush.setVapidDetails('mailto:fixture@example.com', result.vapid.publicKey, result.vapid.privateKey);
+                        await webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, JSON.stringify({ text: 'mac-edge-synthetic' }), { TTL: 60, timeout: 15000 });
+                        const deadline = Date.now() + 30000; let received = false;
+                        while (Date.now() < deadline && !received) {
+                            const event = await session.next(Math.min(3000, Math.max(1, deadline - Date.now())));
+                            received = event.state === 'persisted';
+                        }
+                        assert(received && stored, 'synthetic push was not persisted');
+                        const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                        const push = output.file.push, keys = { public_key: [...Buffer.from(push.p256dhPublicKey, 'base64url')],
+                            private_key: [...Buffer.from(push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(push.authenticationSecret, 'base64url')] };
+                        try { assert.equal(decryptNotification(stored.data, stored.headers, keys)?.text, 'mac-edge-synthetic'); }
+                        finally { Object.values(keys).forEach(value => value.fill(0)); }
+                    } finally { session?.close(); transport.close(); }
+                });
+                t.diagnostic('synthetic Mac Edge push received and decrypted through WNS; credentials omitted');
             } finally {
                 for (const value of [expected.publicKey, expected.auth, expected.applicationServerKey, rewritten]) value?.fill(0);
                 if (selected) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0);

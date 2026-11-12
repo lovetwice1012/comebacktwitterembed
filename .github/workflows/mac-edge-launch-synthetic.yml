@@ -49,6 +49,10 @@ jobs:
         run: sudo xattr -cr '/Applications/Microsoft Edge.app'
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build notification decryptor
+        run: |
+          npm ci --prefix packages/angelic-angel --ignore-scripts --no-audit --no-fund
+          npm --prefix packages/angelic-angel run build
       - name: Build isolated peer verification helpers
         run: |
           clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"

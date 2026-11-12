@@ -7,17 +7,20 @@ if (process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1'
     || typeof process.send !== 'function') process.exit(1);
 const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
+const webpush = require('web-push');
 // Capture only the local synthetic subscription over the existing private
 // DevTools pipe. This wrapper is loaded only in this isolated CI process.
-const pipeId = require.resolve('../../src/automation/edge-cdp-pipe'), original = require(pipeId); let subscription;
+const pipeId = require.resolve('../../src/automation/edge-cdp-pipe'), original = require(pipeId);
+const vapid = webpush.generateVAPIDKeys(); let subscription;
 require.cache[pipeId].exports = { ...original, createChromePipe(...args) {
     const pipe = original.createChromePipe(...args);
     if (!pipe.prepareCalibration) return pipe;
-    return { ...pipe, async prepareCalibration(applicationServerKey) {
-        const result = await pipe.prepareCalibration(applicationServerKey);
+    return { ...pipe, async prepareCalibration(_applicationServerKey) {
+        // Only this disposable subscription uses a test-owned VAPID key.
+        const result = await pipe.prepareCalibration(vapid.publicKey);
         const captured = await pipe.capture();
         if (!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(captured.scope) || subscription) throw new Error('FIXTURE_SCOPE_INVALID');
-        subscription = { ...captured, applicationServerKey }; return result;
+        subscription = { ...captured, applicationServerKey: vapid.publicKey }; return result;
     } };
 } };
 const { runMacEdgeCalibrationWithEphemeralCertificate } = require('../../src/automation/edge-mac-calibration');
@@ -32,7 +35,7 @@ process.once('message', async input => {
             peerPath: input.peerPath, peerSha256: await hash(input.peerPath) });
         if (!result || !['1', '2'].includes(result.connectVersion) || !result.agent || !result.client || !subscription) throw new Error();
         process.send({ ok: true, connectVersion: result.connectVersion, browserVersion: result.browserVersion,
-            agent: result.agent, client: result.client, subscription }, () => process.disconnect());
+            agent: result.agent, client: result.client, subscription, vapid }, () => process.disconnect());
     } catch (error) {
         const code = /^X_(?:EDGE_MAC|EDGE_CALIBRATION)_[A-Z_]+$/.test(error?.code || '') ? error.code : 'FIXTURE_FAILED';
         process.send({ ok: false, code }, () => { process.exitCode = 1; process.disconnect(); });
