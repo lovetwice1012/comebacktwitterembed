@@ -22,6 +22,7 @@ const { decryptMacChromiumDeviceToken } = require('../../src/automation/chrome-m
 const { readEncryptionData } = require('../../src/automation/chrome-mcs-protobuf');
 const { receiveSyntheticMacPush } = require('./chrome-mac-synthetic-receive.cjs');
 const { classifyPushError } = require('./chrome-mac-push-error.cjs');
+const { probeAfterGone } = require('./chrome-mac-push-probe.cjs');
 
 function fixturePipe(child) {
     let id = 0, buffer = Buffer.alloc(0); const pending = new Map();
@@ -78,7 +79,7 @@ test('FCM accepts a synthetic subscription before shutdown, before MCS and after
         assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
         const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-mac-fcm-transition-'));
         const vapid = webpush.generateVAPIDKeys(); let child, closed = false, closedPromise, resolveClosed, profile;
-        let cleanupSafe = true, beforeMcs, afterMcs = 'not_attempted';
+        let cleanupSafe = true, initialSendFailed = false, beforeMcs, afterMcs = 'not_attempted';
         const spawnOwned = (file, args, options) => {
             closed = false; closedPromise = new Promise(resolve => { resolveClosed = resolve; });
             child = spawn(file, args, { ...options, detached: true });
@@ -127,7 +128,21 @@ test('FCM accepts a synthetic subscription before shutdown, before MCS and after
         webpush.setVapidDetails('mailto:fixture@example.com', vapid.publicKey, vapid.privateKey);
         const since = performance.now(), ms = () => Math.max(0, Math.round(performance.now() - since));
         try { await webpush.sendNotification(subscription, 'fixture-preflight', { TTL: 60, timeout: 15000 }); t.diagnostic(`phase=browser send=accepted elapsedMs=${ms()}`); }
-        catch (error) { throw new Error(`FIXTURE_BROWSER_SEND_${classifyPushError(error)}`); }
+        catch (error) {
+            const original = classifyPushError(error);
+            t.diagnostic(`phase=browser initialSend=${original} elapsedMs=${ms()}`);
+            if (!original.startsWith('410_')) throw new Error(`FIXTURE_BROWSER_SEND_${original}`);
+            initialSendFailed = true;
+            // Continue the independent phase comparison only after a bounded
+            // 410-only diagnostic accepts the same synthetic preflight. The
+            // initial failure remains a failing final result regardless.
+            const diagnostic = await probeAfterGone({
+                send: () => webpush.sendNotification(subscription, 'fixture-preflight', { TTL: 60, timeout: 15000 }),
+                sleep: wait => new Promise(resolve => setTimeout(resolve, wait)), elapsedMs: ms,
+                report: event => t.diagnostic(`phase=browser diagnosticAttempt=${event.attempt} elapsedMs=${event.sinceSubscriptionMs} durationMs=${event.durationMs} send=${event.result}`),
+            });
+            if (!diagnostic.accepted) throw new Error('FIXTURE_BROWSER_RECHECK_FAILED');
+        }
         for (let attempt = 0; attempt < 100 && !seenPreflight; attempt++) await new Promise(resolve => setTimeout(resolve, 200));
         assert.equal(seenPreflight, true, 'browser preflight was not received by synthetic worker');
         t.diagnostic('phase=browser workerReceived=true');
@@ -179,4 +194,5 @@ test('FCM accepts a synthetic subscription before shutdown, before MCS and after
         t.diagnostic(`phase=after_mcs send=${afterMcs} elapsedMs=${ms()} checkin=not_requested`);
         assert.equal(beforeMcs, 'accepted', 'synthetic pre-MCS send failed');
         assert.equal(afterMcs, 'accepted_and_received', 'synthetic post-MCS send failed or was not received');
+        assert.equal(initialSendFailed, false, 'initial synthetic preflight failed despite later diagnostic acceptance');
     });
