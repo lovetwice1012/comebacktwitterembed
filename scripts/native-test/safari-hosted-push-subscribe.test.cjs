@@ -10,9 +10,23 @@ const { spawn, spawnSync } = require('node:child_process');
 const { createECDH } = require('node:crypto');
 const http = require('node:http');
 const net = require('node:net');
+const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const enabled = process.platform === 'darwin' && process.env.CBTE_SAFARI_PUSH_HOSTED === '1';
+const axProbePath = path.join(__dirname, 'safari-hosted-ax-probe.swift');
+
+function axProbe(mode) {
+  const probe = spawnSync('/usr/bin/swift', [axProbePath, mode], {
+    encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (probe.status !== 0) return 'unknown';
+  const output = (probe.stdout || '').trim();
+  if (mode === 'baseline' && output === 'baseline=clean') return 'clean';
+  if (mode === 'baseline' && output === 'baseline=not_clean') return 'not_clean';
+  if (mode === 'inspect' && output === 'diagnostic=notification_prompt_present') return 'notification_prompt_present';
+  return 'unknown';
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -85,6 +99,10 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
   const key = createECDH('prime256v1');
   const publicKey = [...key.generateKeys()];
+  // Do not inspect a Safari process that predates this synthetic session.
+  const baseline = axProbe('baseline');
+  console.log(`Safari synthetic AX baseline: ${baseline}`);
+  assert.notEqual(baseline, 'not_clean', 'Safari was already running on the hosted runner');
   let driver, driverPort, session, listening = false, attempted = false, clean = false;
   const page = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
@@ -170,12 +188,19 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     await command(driverPort, 'POST', `/session/${session}/element/${elementId}/click`, {}, 'synthetic button click', 30000);
     const subscriptionDeadline = Date.now() + 45000;
     let clickDiagnosticsReported = false;
+    let axDiagnosticsReported = false;
     do {
       status = await exec('return window.fixtureStatus();', 'subscription status');
       if (!clickDiagnosticsReported && typeof status?.trustedClick === 'boolean' &&
           typeof status.activationAvailable === 'boolean' && typeof status.activationActive === 'boolean') {
         console.log(`Safari synthetic click: trusted=${status.trustedClick} activationAvailable=${status.activationAvailable} activationActive=${status.activationActive}`);
         clickDiagnosticsReported = true;
+      }
+      if (!axDiagnosticsReported && status?.state === 'pending') {
+        // A failed baseline prevents all inspection; no permissions are requested.
+        const result = baseline === 'clean' ? axProbe('inspect') : 'unknown';
+        console.log(`Safari synthetic notification UI: ${result}`);
+        axDiagnosticsReported = true;
       }
       if (status?.state !== 'pending') break;
       await delay(500);
