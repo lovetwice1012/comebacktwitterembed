@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/mac-safari-apsd-enabled-synthetic.yml
       - scripts/native-test/safari-apsd-ci-experiment.cjs
+      - scripts/native-test/safari-hosted-push-subscribe.test.cjs
+      - scripts/native-test/safari-hosted-ax-probe.swift
       - scripts/test/safari-apsd-ci-experiment.test.js
 
 permissions:
