@@ -31,6 +31,18 @@ async function fixture(t, queryTimeoutMs = 15000) {
     return { db, pool, control, background };
 }
 
+test('one real pool cannot acquire two independent reservation quotas', { skip: !port, timeout: 30000 }, async t => {
+    const f = await fixture(t);
+    assert.throws(() => createReservedDbExperiment({ pool: f.pool, connectionLimit: 4, reservedConnections: 1 }),
+        { code: 'RESERVED_DB_POOL_IN_USE' });
+    assert.equal(Number((await f.background.runBackground(() => f.background.queryDatabase('SELECT 1 AS n')))[0].n), 1);
+    f.background.stop();
+    const replacement = createReservedDbExperiment({ pool: f.pool, connectionLimit: 4, reservedConnections: 1 });
+    try {
+        assert.equal(Number((await replacement.runBackground(() => replacement.queryDatabase('SELECT 2 AS n')))[0].n), 2);
+    } finally { replacement.stop(); }
+});
+
 test('same pool reserves one client connection when three background SQL calls are stalled', { skip: !port, timeout: 30000 }, async t => {
     const f = await fixture(t), names = Array.from({ length: 3 }, (_, i) => `reserved-${i}-${f.db.schema}`), jobs = [];
     const controller = new AbortController();
