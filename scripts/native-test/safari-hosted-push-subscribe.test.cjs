@@ -151,14 +151,24 @@ const webPushMessages = Object.freeze({
   known_public_token: 'Received expected public token',
   public_token_changed: 'Public token changed; invalidated all existing push subscriptions',
 });
+// These public WebKit messages contain variable/sensitive suffixes. Match
+// their fixed prefixes in memory and report only aggregate booleans. They
+// are not attributed to the fixture unless separately corroborated.
+const webPushPrefixes = Object.freeze({
+  any_decoded: 'Decoded incoming push message for ',
+  any_unknown_topic: 'Dropping incoming push sent to unknown topic: ',
+  any_decryption_error: 'Dropping incoming push due to decryption error for topic ',
+});
 
 function classifyWebPushLogs(output) {
   let entries;
   try { entries = JSON.parse(output); } catch { return { status: 'unknown' }; }
   if (!Array.isArray(entries) || entries.length > 1000) return { status: 'unknown' };
-  const flags = Object.fromEntries(Object.keys(webPushMessages).map(name => [name, false]));
+  const flags = Object.fromEntries([...Object.keys(webPushMessages), ...Object.keys(webPushPrefixes)].map(name => [name, false]));
   for (const entry of entries) {
-    const key = Object.keys(webPushMessages).find(name => webPushMessages[name] === entry?.eventMessage);
+    const value = entry?.eventMessage;
+    const key = Object.keys(webPushMessages).find(name => webPushMessages[name] === value)
+      || (typeof value === 'string' && Object.keys(webPushPrefixes).find(name => value.startsWith(webPushPrefixes[name])));
     if (!key) return { status: 'unknown' };
     flags[key] = true;
   }
@@ -180,7 +190,8 @@ function recordWebPushLogs(startedAt, endedAt) {
       console.log('Safari hosted WebPush log evidence: unknown');
       return;
     }
-    const matches = Object.values(webPushMessages).map(message => `eventMessage == "${message}"`).join(' OR ');
+    const matches = [...Object.values(webPushMessages).map(message => `eventMessage == "${message}"`),
+      ...Object.values(webPushPrefixes).map(prefix => `eventMessage BEGINSWITH "${prefix}"`)].join(' OR ');
     const predicate = `process == "webpushd" AND (${matches})`;
     const args = ['show', '--style', 'json', '--no-pager', '--info', '--start', utcLogTime(start),
       '--end', utcLogTime(end), '--predicate', predicate];
@@ -386,12 +397,19 @@ test('hosted macOS records apsd state without changing it', { skip: !enabled, ti
 
 test('WebPush logs classify only known messages and reject malformed output', () => {
   assert.deepEqual(classifyWebPushLogs('[]'), { status: 'no_matches', service_unavailable: false,
-    database_error: false, known_public_token: false, public_token_changed: false });
+    database_error: false, known_public_token: false, public_token_changed: false,
+    any_decoded: false, any_unknown_topic: false, any_decryption_error: false });
   const result = classifyWebPushLogs(JSON.stringify([{ eventMessage: webPushMessages.database_error,
     unrelatedSensitiveField: 'must not appear' }]));
   assert.equal(result.status, 'matched');
   assert.equal(result.database_error, true);
   assert.equal(JSON.stringify(result).includes('must not appear'), false);
+  const decoded = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decoded}private-scope` }]));
+  assert.equal(decoded.any_decoded, true); assert.equal(JSON.stringify(decoded).includes('private-scope'), false);
+  const dropped = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_decryption_error}private-topic` }]));
+  assert.equal(dropped.any_decryption_error, true); assert.equal(JSON.stringify(dropped).includes('private-topic'), false);
+  const unknown = classifyWebPushLogs(JSON.stringify([{ eventMessage: `${webPushPrefixes.any_unknown_topic}private-topic` }]));
+  assert.equal(unknown.any_unknown_topic, true); assert.equal(JSON.stringify(unknown).includes('private-topic'), false);
   assert.deepEqual(classifyWebPushLogs('[{"eventMessage":"unexpected"}]'), { status: 'unknown' });
   assert.deepEqual(classifyWebPushLogs('invalid'), { status: 'unknown' });
 });
