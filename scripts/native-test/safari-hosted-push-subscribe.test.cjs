@@ -233,6 +233,14 @@ function axProbe(mode) {
   return result.value;
 }
 
+function inspectClickFailure(error, inspect) {
+  if (error?.message !== 'Safari synthetic button click: timeout') return 'not_attempted';
+  try {
+    // Read-only: never press a control while the WebDriver command is pending.
+    return inspect('inspect') === 'notification_prompt_present' ? 'notification_prompt_present' : 'unknown';
+  } catch { return 'unknown'; }
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -287,6 +295,13 @@ function outcome(state, permission) {
   return 'subscription_timeout_permission_unknown';
 }
 
+function fixturePushStatus(value) {
+  const names = ['event', 'showResolved', 'showRejected', 'fetchFailed'];
+  if (!value || typeof value !== 'object' || names.some(name => typeof value[name] !== 'boolean'))
+    throw new Error('FIXTURE_SAFARI_PUSH_STATUS_INVALID');
+  return Object.fromEntries(names.map(name => [name, value[name]]));
+}
+
 test('subscription result categories do not turn pending or refusal into success', () => {
   assert.equal(outcome('subscribed', 'granted'), 'subscribed');
   assert.equal(outcome('denied', 'default'), 'denied');
@@ -296,6 +311,12 @@ test('subscription result categories do not turn pending or refusal into success
   assert.equal(outcome('error', 'default'), 'subscription_error');
 });
 
+test('synthetic push status reports only fixed boolean stages', () => {
+  assert.deepEqual(fixturePushStatus({ event: true, showResolved: false, showRejected: false, fetchFailed: true, private: 'not-logged' }),
+    { event: true, showResolved: false, showRejected: false, fetchFailed: true });
+  assert.throws(() => fixturePushStatus({ event: true }), /FIXTURE_SAFARI_PUSH_STATUS_INVALID/);
+});
+
 test('AX helper classifies failures without exposing raw output', () => {
   assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'baseline=clean\n' }, 'baseline'), { value: 'clean', reason: 'ok' });
   assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'baseline=not_clean\n' }, 'baseline'), { value: 'not_clean', reason: 'ok' });
@@ -303,6 +324,14 @@ test('AX helper classifies failures without exposing raw output', () => {
   assert.deepEqual(classifyAxProbe({ status: null, signal: 'SIGTERM' }, 'allow'), { value: 'unknown', reason: 'terminated' });
   assert.deepEqual(classifyAxProbe({ status: 1, stderr: 'private' }, 'allow'), { value: 'unknown', reason: 'execution_failed' });
   assert.deepEqual(classifyAxProbe({ status: 0, stdout: 'private' }, 'baseline'), { value: 'unknown', reason: 'unexpected_output' });
+});
+
+test('click-timeout diagnostic only inspects and never converts a failure to success', () => {
+  const modes = [];
+  assert.equal(inspectClickFailure(new Error('Safari synthetic button click: timeout'), mode => { modes.push(mode); return 'notification_prompt_present'; }), 'notification_prompt_present');
+  assert.deepEqual(modes, ['inspect']);
+  assert.equal(inspectClickFailure(new Error('Safari synthetic button click: timeout'), () => { throw new Error('private'); }), 'unknown');
+  assert.equal(inspectClickFailure(new Error('other failure'), () => { throw new Error('must not run'); }), 'not_attempted');
 });
 
 test('fixture host and localhost DNS are restricted to the expected loopback addresses', () => {
@@ -410,8 +439,20 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   const handler = (req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
       res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
-      // WebKit requires every push to show a user-visible notification.
-      res.end("self.addEventListener('push',e=>e.waitUntil((async()=>{const value=e.data?e.data.text():'';await self.registration.showNotification('Synthetic fixture');await fetch('/fixture-received?tag='+encodeURIComponent(value));})()));");
+      // Start showNotification immediately, then report its completion and
+      // the Push event independently to same-origin fixture clients.
+      res.end(`self.addEventListener('push', e => e.waitUntil((async () => {
+        const value = e.data ? e.data.text() : '';
+        const notify = async stage => { const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
+          for (const client of clients) client.postMessage({fixtureMarker:value, stage}); };
+        let showing; try { showing = self.registration.showNotification('Synthetic fixture').then(() => true, () => false); }
+        catch { showing = Promise.resolve(false); }
+        await notify('event');
+        const shown = await showing; await notify(shown ? 'showResolved' : 'showRejected');
+        if (!shown) return;
+        try { await fetch('/fixture-received?tag=' + encodeURIComponent(value)); }
+        catch { await notify('fetchFailed'); }
+      })()));`);
     } else if (req.method === 'GET' && req.url === `/fixture-received?tag=${pushMarker}`) {
       pushDelivered = true; res.writeHead(200, { 'cache-control': 'no-store' }).end('ok');
     } else if (req.method === 'GET' && req.url === '/') {
@@ -420,6 +461,12 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         <button id="subscribe" disabled>Subscribe</button><script>
         let registration, subscription, cancelled = false;
         let state = 'loading', trustedClick = false, activationAvailable = false, activationActive = false;
+        const pushStages = {event:false, showResolved:false, showRejected:false, fetchFailed:false};
+        window.fixturePushStatus = () => ({...pushStages});
+        navigator.serviceWorker.addEventListener('message', event => {
+          if (event.data?.fixtureMarker !== ${JSON.stringify(pushMarker)}) return;
+          if (Object.hasOwn(pushStages, event.data.stage)) pushStages[event.data.stage] = true;
+        });
         window.fixtureStatus = () => ({state, permission: typeof Notification === 'undefined' ? 'unknown' : Notification.permission,
           trustedClick, activationAvailable, activationActive});
         window.fixtureSubscription = () => state === 'subscribed' && subscription ? subscription.toJSON() : null;
@@ -532,7 +579,12 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     assert.match(elementId || '', /^[A-Za-z0-9-]{1,128}$/, 'Invalid synthetic button reference');
     console.log('Safari subscription fixture: clicking synthetic button');
     attempted = true;
-    await command(driverPort, 'POST', `/session/${session}/element/${elementId}/click`, {}, 'synthetic button click', 30000);
+    try { await command(driverPort, 'POST', `/session/${session}/element/${elementId}/click`, {}, 'synthetic button click', 30000); }
+    catch (error) {
+      const diagnostic = inspectClickFailure(error, axProbe);
+      if (diagnostic !== 'not_attempted') console.log(`Safari synthetic click timeout UI: ${diagnostic}`);
+      throw error;
+    }
     const subscriptionDeadline = Date.now() + 90000;
     let clickDiagnosticsReported = false;
     let axDiagnosticsReported = false;
@@ -590,9 +642,14 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       try { await sendHostedSafariFixturePush({ subscription: captured, publicKey: vapidPublic, privateKey: vapidPrivate, marker: pushMarker }); }
       finally { vapidPublic.fill(0); vapidPrivate.fill(0); }
       console.log('Safari synthetic push: provider accepted');
-      const pushDeadline = Date.now() + 45000;
-      while (!pushDelivered && Date.now() < pushDeadline) await delay(250);
-      assert.equal(pushDelivered, true, 'Synthetic Safari push was not observed by the fixture service worker');
+      const pushDeadline = Date.now() + 45000; let stages = { event: false, showResolved: false, showRejected: false, fetchFailed: false };
+      while (Date.now() < pushDeadline) {
+        stages = fixturePushStatus(await exec('return window.fixturePushStatus();', 'synthetic push status'));
+        if (pushDelivered || stages.event && stages.showResolved || stages.showRejected) break;
+        await delay(500);
+      }
+      console.log(`Safari synthetic push stages: ${JSON.stringify({ ...stages, loopbackReport: pushDelivered })}`);
+      if (!pushDelivered && !(stages.event && stages.showResolved)) throw new Error('FIXTURE_SAFARI_PUSH_NOT_CONFIRMED');
       // The service worker's showNotification promise resolved; the test does
       // not assert that a human actually saw an OS notification banner.
       console.log('Safari synthetic push: showNotification resolved and fixture acknowledged');

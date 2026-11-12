@@ -11,11 +11,11 @@ const source = fs.readFileSync(path.join(__dirname, '../native-test/safari-apsd-
 function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, processStatus = 1, finalProcessStatus = processStatus,
     initialLoaded = false, bootoutFails = false, bootoutAbsent = false, unknownService = false, unknownAfterBootout = false,
     platform = 'darwin', env = validEnv } = {}) {
-    let disabled = true, loaded = initialLoaded, processChecks = 0, afterBootout = false; const calls = [], reports = [];
+    let disabled = true, loaded = initialLoaded, processChecks = 0, afterBootout = false, childOptions; const calls = [], reports = [];
     const fakeNode = '/fixture/node';
-    const execute = (file, args) => {
+    const execute = (file, args, options) => {
         calls.push([file, ...args]);
-        if (file === fakeNode) return { status: testStatus };
+        if (file === fakeNode) { childOptions = options; return { status: testStatus }; }
         if (args.includes('/usr/bin/pgrep')) return { status: processChecks++ === 0 ? processStatus : finalProcessStatus };
         if (args.includes('print-disabled')) return { status: 0, stdout: `"com.apple.apsd" => ${disabled ? 'disabled' : 'enabled'}\n` };
         if (args.includes('print')) return loaded ? { status: 0 } : unknownService || afterBootout && unknownAfterBootout ? { status: 1, stderr: 'private permission error' }
@@ -38,7 +38,7 @@ function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, proc
     };
     vm.runInNewContext(source, { module, exports: module.exports, require: fakeRequire, __dirname: '/fixture',
         process: { platform, env, execPath: fakeNode, stdout: { write: value => reports.push(value) } } });
-    return { run: module.exports.runExperiment, calls, reports, state: () => ({ disabled, loaded }) };
+    return { run: module.exports.runExperiment, calls, reports, childOptions: () => childOptions, state: () => ({ disabled, loaded }) };
 }
 
 test('apsd disabled-state parser rejects missing and duplicate labels', () => {
@@ -92,6 +92,8 @@ test('only a disabled and stopped hosted service is temporarily enabled and rest
     assert.deepEqual(f.state(), { disabled: true, loaded: false });
     assert.equal(f.calls.filter(call => call.includes('enable')).length, 1);
     assert.equal(f.calls.filter(call => call.includes('disable')).length, 1);
+    assert.equal(f.childOptions().env.CBTE_SAFARI_SYNTHETIC_DB_PROBE, '1');
+    assert.equal(f.childOptions().env.CBTE_SAFARI_SYNTHETIC_PUSH_PROBE, '1');
 });
 test('test or enable failures still restore the fixed service', () => {
     for (const options of [{ testStatus: 1 }, { failEnable: true }, { bootstrapStatus: 1 }]) {
