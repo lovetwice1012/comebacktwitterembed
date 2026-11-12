@@ -19,9 +19,9 @@ const { fixture: firefoxTransfer } = require('../../scripts/test/helpers/x-push-
 const root = path.resolve(__dirname, '../..'), dashboard = path.join(root, 'dashboard');
 const localRequire = createRequire(path.join(dashboard, 'package.json'));
 async function captureCandidateTransfer() {
-    const archive = path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.8.zip');
+    const archive = path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.9.zip');
     const bytes = await fs.readFile(archive);
-    assert.equal(createHash('sha256').update(bytes).digest('hex'), '902a52e869b7071eceed76712f0d8cf172beb4d4b205bee0ecb32475dcf2cda0');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), '9276517742cebeb75a95b7ad4b535ff67ee050a858e280c9d84dd3a1059582e8');
     const env = { ...process.env };
     for (const name of Object.keys(env)) if (name.startsWith('CHROME_FIXTURE_') || name === 'CHROMIUM_PROBE_BROWSER') delete env[name];
     env.CHROME_SETUP_ZIP = archive; env.CHROME_FIXTURE_SYNTHETIC_IPC = '1';
