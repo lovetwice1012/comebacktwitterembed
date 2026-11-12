@@ -11,6 +11,7 @@ const http = require('node:http');
 const vm = require('node:vm');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
+const { spawnSync } = require('node:child_process');
 const { createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
 
@@ -57,9 +58,20 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                         child.fixtureClosed = new Promise(resolve => child.once('close', resolve)); children.push(child); return child;
                     } }) };
             } });
+        let inspectStatus = 'not_called';
         const openPath = path.resolve(__dirname, '../../src/automation/edge-mac-open.js'), openRequire = createRequire(openPath), openModule = { exports: {} };
         vm.runInNewContext(await fs.readFile(openPath, 'utf8'), { module: openModule, exports: openModule.exports, process, Buffer, Promise,
-            require(name) { return name === './edge-mac-broker' ? brokerModule.exports : openRequire(name); } });
+            require(name) {
+                if (name === './edge-mac-broker') return brokerModule.exports;
+                if (name === './edge-wns-snapshot-io') {
+                    const original = openRequire(name);
+                    return { ...original, async inspectEdgeSnapshot(options) {
+                        try { const result = await original.inspectEdgeSnapshot(options); inspectStatus = 'success'; return result; }
+                        catch { inspectStatus = 'failed'; throw Object.assign(new Error('fixture inspection failed'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' }); }
+                    } };
+                }
+                return openRequire(name);
+            } });
         const args = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath, expectedSha256 };
         const first = await openModule.exports.openMacEdgeForSetup(args); brokers.push(first);
         assert.equal(first.chrome.kill('SIGTERM'), true); assert.equal(await first.releaseComplete, true); await first.stop();
@@ -72,8 +84,38 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
         let second;
         try { second = await openModule.exports.openMacEdgeForSetup(args); }
         catch (error) {
-            const code = /^X_[A-Z_]+$/.test(error?.code || '') ? error.code : 'OTHER';
-            t.diagnostic(`synthetic reopen failure code=${code}`); throw new Error('FIXTURE_EDGE_REOPEN_FAILED');
+            const known = new Set(['X_CHROME_MAC_LOCK_FAILED', 'X_CHROME_MAC_LOCK_BUSY', 'X_CHROME_MAC_LOCK_INVALID',
+                'X_CHROME_MAC_LOCK_LOST', 'X_CHROME_MAC_SNAPSHOT_INVALID', 'X_CHROME_MAC_SNAPSHOT_CLEANUP_FAILED',
+                'X_EDGE_MAC_BROKER_INVALID', 'X_EDGE_MAC_BROKER_BUSY', 'X_EDGE_MAC_BROKER_CLEANUP_PENDING']);
+            const code = known.has(error?.code) ? error.code : 'OTHER';
+            let lockState = 'unknown', helperState = 'not_run'; const lockPath = path.join(store, 'LOCK');
+            try {
+                async function verifyParents() {
+                    for (const directory of [base, profile.rootPath, profile.profilePath, path.join(profile.profilePath, 'Default'), store]) {
+                        const info = await fs.lstat(directory);
+                        if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()
+                            || await fs.realpath(directory) !== directory) throw new Error('fixture path changed');
+                    }
+                }
+                await verifyParents();
+                const lock = await fs.lstat(lockPath);
+                lockState = lock.isFile() && !lock.isSymbolicLink() && lock.uid === process.getuid() && lock.nlink === 1 ? 'owned_file' : 'unsafe';
+                if (lockState === 'owned_file') {
+                    // Probe only the fixture's lock. Output is reduced to the
+                    // helper's fixed single-character status and never logs a path.
+                    const helper = await fs.lstat(helperPath), current = await fs.lstat(lockPath);
+                    if (!helper.isFile() || helper.isSymbolicLink() || ![0, process.getuid()].includes(helper.uid)
+                        || helper.nlink !== 1 || (helper.mode & 0o022) || !(helper.mode & 0o111)
+                        || await fs.realpath(helperPath) !== helperPath || createHash('sha256').update(await fs.readFile(helperPath)).digest('hex') !== expectedSha256
+                        || current.isSymbolicLink() || current.dev !== lock.dev || current.ino !== lock.ino
+                        || current.uid !== lock.uid || current.nlink !== 1) throw new Error('fixture identity changed');
+                    await verifyParents();
+                    const probe = spawnSync(helperPath, [lockPath], { input: '', timeout: 5000, encoding: 'ascii', stdio: ['pipe', 'pipe', 'ignore'] });
+                    helperState = ['R', 'B', 'E'].includes(probe.stdout) ? probe.stdout : 'unknown';
+                }
+            } catch (reason) { lockState = reason?.code === 'ENOENT' ? 'missing' : 'unknown'; }
+            t.diagnostic(`synthetic reopen failure code=${code} lock=${lockState} helper=${helperState} reader=${inspectStatus}`);
+            throw new Error('FIXTURE_EDGE_REOPEN_FAILED');
         }
         brokers.push(second); assert.equal(second.chrome.kill('SIGTERM'), true);
         assert.equal(await second.releaseComplete, true); await second.stop();
