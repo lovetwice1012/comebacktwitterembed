@@ -19,6 +19,8 @@ on:
       - src/automation/edge-mac-calibration.js
       - src/automation/edge-mac-peer.js
       - src/automation/edge-calibration-*.js
+      - src/automation/edge-wns-*.js
+      - scripts/test/edge-wns-*.test.js
       - client/angelic-setup/mac/edge-process-identity.c
       - client/angelic-setup/mac/edge-socket-owner.c
       - package-lock.json
@@ -90,4 +92,4 @@ jobs:
             done
             test "$ready" = 1
           fi
-          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js scripts/test/edge-mac-calibration.test.js scripts/test/edge-mac-calibration-runner.test.js scripts/test/edge-wns-gateway.test.js scripts/test/edge-wns-session.test.js scripts/test/edge-wns-transport.test.js
