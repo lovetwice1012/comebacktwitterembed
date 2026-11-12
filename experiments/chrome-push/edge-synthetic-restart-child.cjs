@@ -15,7 +15,9 @@ process.once('message', async input => {
             || input.expectedText !== undefined && !['synthetic-after-process-restart', 'synthetic-offline-queued'].includes(input.expectedText)
             || input.batch !== undefined && typeof input.batch !== 'boolean'
             || input.versionTwo !== undefined && typeof input.versionTwo !== 'boolean') throw new Error();
-        pool = mysql.createPool({ host: '127.0.0.1', port: 33621, user: 'root', password: '', database: input.schema,
+        // Matches the isolated parent fixture; hosted CI uses a temporary DB
+        // password and the local disposable DB may intentionally use none.
+        pool = mysql.createPool({ host: '127.0.0.1', port: 33621, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', database: input.schema,
             connectionLimit: 4, supportBigNumbers: true, bigNumberStrings: true });
         const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
         const queryOn = connection => (sql, params = []) => new Promise((resolve, reject) => connection.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
