@@ -29,18 +29,38 @@ function close(server) {
   });
 }
 
-async function webdriver(port, path, method = 'GET', payload) {
-  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method,
-    headers: payload === undefined ? {} : { 'content-type': 'application/json' },
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-    signal: AbortSignal.timeout(5000),
-  });
-  const data = await response.json();
-  return { status: response.status, value: data.value };
+async function webdriver(port, path, method = 'GET', payload, options = {}) {
+  const { stage = 'request', timeoutMs = 5000 } = options;
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method,
+      headers: payload === undefined ? {} : { 'content-type': 'application/json' },
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const data = await response.json();
+    return { status: response.status, value: data.value };
+  } catch (error) {
+    // Do not echo request URLs, session IDs, or raw driver responses into CI logs.
+    const category = error?.name === 'TimeoutError' ? 'timeout' : 'transport or invalid response';
+    throw new Error(`Safari WebDriver ${stage}: ${category} after at most ${timeoutMs} ms`);
+  }
 }
 
-test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, timeout: 90000 }, async () => {
+test('WebDriver timeout identifies the operation without exposing its URL', async () => {
+  const server = http.createServer(() => {});
+  const port = await listen(server);
+  try {
+    await assert.rejects(webdriver(port, '/synthetic-secret', 'GET', undefined, {
+      stage: 'synthetic operation', timeoutMs: 100,
+    }), (error) => error.message === 'Safari WebDriver synthetic operation: timeout after at most 100 ms');
+  } finally {
+    server.closeAllConnections();
+    await close(server);
+  }
+});
+
+test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, timeout: 240000 }, async () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
 
@@ -68,10 +88,12 @@ test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, time
     driver.on('error', (error) => { spawnError = error; });
 
     let ready = false;
-    for (let attempt = 0; attempt < 80 && !ready; attempt++) {
+    console.log('Safari WebDriver: waiting for driver readiness');
+    const readyDeadline = Date.now() + 20000;
+    while (Date.now() < readyDeadline && !ready) {
       if (spawnError || driver.exitCode !== null || driver.signalCode !== null) break;
       try {
-        const status = await webdriver(driverPort, '/status');
+        const status = await webdriver(driverPort, '/status', 'GET', undefined, { stage: 'readiness', timeoutMs: 2000 });
         ready = status.status === 200 && status.value?.ready === true;
       } catch {
         // The driver may not yet be listening.
@@ -79,28 +101,37 @@ test('hosted Safari WebDriver visits a loopback fixture', { skip: !enabled, time
       if (!ready) await delay(250);
     }
     assert.ok(ready, 'Safari WebDriver did not become ready');
+    console.log('Safari WebDriver: driver ready; creating session');
 
     const created = await webdriver(driverPort, '/session', 'POST', {
       capabilities: { alwaysMatch: { browserName: 'safari' } },
-    });
+    }, { stage: 'session creation', timeoutMs: 90000 });
     assert.equal(created.status, 200, 'Could not create Safari WebDriver session');
     assert.match(created.value?.sessionId || '', /^[A-Za-z0-9-]{1,128}$/, 'Invalid WebDriver session ID');
     sessionId = created.value.sessionId;
     assert.equal(created.value.capabilities?.browserName?.toLowerCase(), 'safari', 'Unexpected browser');
+    console.log('Safari WebDriver: session created; navigating to fixture');
 
     const url = `http://127.0.0.1:${pagePort}/`;
-    const navigated = await webdriver(driverPort, `/session/${sessionId}/url`, 'POST', { url });
+    const navigated = await webdriver(driverPort, `/session/${sessionId}/url`, 'POST', { url }, {
+      stage: 'fixture navigation', timeoutMs: 30000,
+    });
     assert.equal(navigated.status, 200, 'Could not open the synthetic page');
+    console.log('Safari WebDriver: fixture opened; reading document');
     const result = await webdriver(driverPort, `/session/${sessionId}/execute/sync`, 'POST', {
       script: 'return { title: document.title, origin: location.origin, marker: document.querySelector("#marker").textContent };',
       args: [],
-    });
+    }, { stage: 'fixture inspection', timeoutMs: 30000 });
     assert.equal(result.status, 200, 'Could not read the synthetic page');
     assert.deepEqual(result.value, { title: 'CBTE local fixture', origin: `http://127.0.0.1:${pagePort}`, marker });
 
-    const deleted = await webdriver(driverPort, `/session/${sessionId}`, 'DELETE');
+    console.log('Safari WebDriver: fixture verified; closing session');
+    const deleted = await webdriver(driverPort, `/session/${sessionId}`, 'DELETE', undefined, {
+      stage: 'session closure', timeoutMs: 15000,
+    });
     sessionId = undefined;
     assert.equal(deleted.status, 200, 'Could not close Safari WebDriver session');
+    console.log('Safari WebDriver: session closed');
   } finally {
     if (sessionId && driver && driver.exitCode === null && driver.signalCode === null) {
       // Limit cleanup to the automation session created by this test.
