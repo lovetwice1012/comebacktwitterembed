@@ -10,6 +10,8 @@ on:
       - scripts/native-test/safari-hosted-push-subscribe.test.cjs
       - scripts/native-test/safari-hosted-ax-probe.swift
       - scripts/test/safari-apsd-ci-experiment.test.js
+      - scripts/native-test/safari-synthetic-db-probe.cjs
+      - scripts/test/safari-synthetic-db-probe.test.js
 
 permissions:
   contents: read
@@ -40,4 +42,5 @@ jobs:
           CBTE_SAFARI_APSD_EXPERIMENT: '1'
         run: |
           node --test scripts/test/safari-apsd-ci-experiment.test.js
+          node --test scripts/test/safari-synthetic-db-probe.test.js
           node scripts/native-test/safari-apsd-ci-experiment.cjs

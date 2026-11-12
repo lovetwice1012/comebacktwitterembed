@@ -36,8 +36,11 @@ function createExecutor(spawn) {
 }
 const defaultExecute = createExecutor(spawnSync);
 
-function runExperiment({ platform = process.platform, env = process.env, execute = defaultExecute,
-    report = message => process.stdout.write(`${message}\n`) } = {}) {
+function runExperiment() {
+    // The operation can alter a system service. Its caller cannot override
+    // the real process environment or provide an alternative executor.
+    const platform = process.platform, env = process.env, execute = defaultExecute;
+    const report = message => process.stdout.write(`${message}\n`);
     if (platform !== 'darwin' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted'
         || env.CBTE_SAFARI_APSD_EXPERIMENT !== '1' || typeof env.RUNNER_TEMP !== 'string'
         || !path.isAbsolute(env.RUNNER_TEMP) || typeof execute !== 'function' || typeof report !== 'function')
@@ -80,7 +83,8 @@ function runExperiment({ platform = process.platform, env = process.env, execute
         const test = checked(execute(process.execPath, ['--test', '--test-name-pattern=hosted Safari attempts a synthetic push subscription',
             path.join(__dirname, 'safari-hosted-push-subscribe.test.cjs')], { timeout: 420000, inherit: true,
             env: { ...env, CBTE_SAFARI_PUSH_HOSTED: '1', CBTE_SAFARI_SYNTHETIC_ALLOW: '1',
-                CBTE_SAFARI_FIXTURE_HOST: '127.0.0.1', CBTE_SAFARI_FIXTURE_SCHEME: 'https' } }), 'FIXTURE_SAFARI_TEST_FAILED');
+                CBTE_SAFARI_FIXTURE_HOST: '127.0.0.1', CBTE_SAFARI_FIXTURE_SCHEME: 'https',
+                CBTE_SAFARI_SYNTHETIC_DB_PROBE: '1' } }), 'FIXTURE_SAFARI_TEST_FAILED');
         resultCode = test.status === 0 ? 'FIXTURE_SAFARI_TEST_PASSED' : 'FIXTURE_SAFARI_TEST_FAILED';
     } catch (cause) {
         resultCode = typeof cause?.code === 'string' && /^FIXTURE_[A-Z_]+$/.test(cause.code) ? cause.code : 'FIXTURE_APSD_EXPERIMENT_FAILED';

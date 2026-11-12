@@ -1,15 +1,21 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const { createExecutor, disabledState, serviceState, runExperiment } = require('../native-test/safari-apsd-ci-experiment.cjs');
 
 const validEnv = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CBTE_SAFARI_APSD_EXPERIMENT: '1', RUNNER_TEMP: '/tmp/runner' };
+const source = fs.readFileSync(path.join(__dirname, '../native-test/safari-apsd-ci-experiment.cjs'), 'utf8');
 function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, processStatus = 1, finalProcessStatus = processStatus,
-    initialLoaded = false, bootoutFails = false, bootoutAbsent = false, unknownService = false, unknownAfterBootout = false } = {}) {
+    initialLoaded = false, bootoutFails = false, bootoutAbsent = false, unknownService = false, unknownAfterBootout = false,
+    platform = 'darwin', env = validEnv } = {}) {
     let disabled = true, loaded = initialLoaded, processChecks = 0, afterBootout = false; const calls = [], reports = [];
+    const fakeNode = '/fixture/node';
     const execute = (file, args) => {
         calls.push([file, ...args]);
-        if (file === process.execPath) return { status: testStatus };
+        if (file === fakeNode) return { status: testStatus };
         if (args.includes('/usr/bin/pgrep')) return { status: processChecks++ === 0 ? processStatus : finalProcessStatus };
         if (args.includes('print-disabled')) return { status: 0, stdout: `"com.apple.apsd" => ${disabled ? 'disabled' : 'enabled'}\n` };
         if (args.includes('print')) return loaded ? { status: 0 } : unknownService || afterBootout && unknownAfterBootout ? { status: 1, stderr: 'private permission error' }
@@ -22,7 +28,17 @@ function fixture({ testStatus = 0, failEnable = false, bootstrapStatus = 0, proc
         if (args.includes('disable')) { disabled = true; return { status: 0 }; }
         throw new Error('unexpected command');
     };
-    return { execute, report: value => reports.push(value), calls, reports, state: () => ({ disabled, loaded }) };
+    // Every OS call in this VM is a local in-memory stub. Production exports
+    // no injectable executor, platform, or environment for the real operation.
+    const module = { exports: {} };
+    const fakeRequire = name => {
+        if (name === 'node:child_process') return { spawnSync: execute };
+        if (name === 'node:path') return path.posix;
+        throw new Error('unexpected module');
+    };
+    vm.runInNewContext(source, { module, exports: module.exports, require: fakeRequire, __dirname: '/fixture',
+        process: { platform, env, execPath: fakeNode, stdout: { write: value => reports.push(value) } } });
+    return { run: module.exports.runExperiment, calls, reports, state: () => ({ disabled, loaded }) };
 }
 
 test('apsd disabled-state parser rejects missing and duplicate labels', () => {
@@ -55,24 +71,24 @@ test('real executor pipes bounded stderr for classification without writing it t
 });
 test('disabled state is restored even if stopping the temporary service fails', () => {
     const f = fixture({ bootoutFails: true });
-    assert.throws(() => runExperiment({ platform: 'darwin', env: validEnv, execute: f.execute, report: f.report }),
+    assert.throws(() => f.run(),
         { code: 'FIXTURE_APSD_CLEANUP_FAILED' });
     assert.equal(f.state().disabled, true);
     assert(f.calls.some(call => call.includes('disable')));
 });
 test('nonzero bootout requires a verified absent service and an absent process', () => {
     const absent = fixture({ bootoutAbsent: true });
-    assert.deepEqual(runExperiment({ platform: 'darwin', env: validEnv, execute: absent.execute, report: absent.report }), { state: 'passed', restored: true });
+    assert.equal(JSON.stringify(absent.run()), JSON.stringify({ state: 'passed', restored: true }));
     for (const options of [{ bootoutAbsent: true, unknownAfterBootout: true }, { finalProcessStatus: 0 }, { finalProcessStatus: 2 }]) {
         const f = fixture(options);
-        assert.throws(() => runExperiment({ platform: 'darwin', env: validEnv, execute: f.execute, report: f.report }),
+        assert.throws(() => f.run(),
             { code: 'FIXTURE_APSD_CLEANUP_FAILED' });
         assert.equal(f.state().disabled, true);
     }
 });
 test('only a disabled and stopped hosted service is temporarily enabled and restored', () => {
     const f = fixture();
-    assert.deepEqual(runExperiment({ platform: 'darwin', env: validEnv, execute: f.execute, report: f.report }), { state: 'passed', restored: true });
+    assert.equal(JSON.stringify(f.run()), JSON.stringify({ state: 'passed', restored: true }));
     assert.deepEqual(f.state(), { disabled: true, loaded: false });
     assert.equal(f.calls.filter(call => call.includes('enable')).length, 1);
     assert.equal(f.calls.filter(call => call.includes('disable')).length, 1);
@@ -80,7 +96,7 @@ test('only a disabled and stopped hosted service is temporarily enabled and rest
 test('test or enable failures still restore the fixed service', () => {
     for (const options of [{ testStatus: 1 }, { failEnable: true }, { bootstrapStatus: 1 }]) {
         const f = fixture(options);
-        assert.throws(() => runExperiment({ platform: 'darwin', env: validEnv, execute: f.execute, report: f.report }), /^Error: FIXTURE_/);
+        assert.throws(() => f.run(), /^Error: FIXTURE_/);
         assert.deepEqual(f.state(), { disabled: true, loaded: false });
         assert(f.calls.some(call => call.includes('disable')));
     }
@@ -88,8 +104,15 @@ test('test or enable failures still restore the fixed service', () => {
 test('non-hosted, running, or already loaded services are never changed', () => {
     for (const [platform, env, options] of [['win32', validEnv, {}], ['darwin', { ...validEnv, RUNNER_ENVIRONMENT: 'self-hosted' }, {}],
         ['darwin', validEnv, { processStatus: 0 }], ['darwin', validEnv, { initialLoaded: true }], ['darwin', validEnv, { unknownService: true }]]) {
-        const f = fixture(options);
-        assert.throws(() => runExperiment({ platform, env, execute: f.execute, report: f.report }), /^Error: FIXTURE_/);
+        const f = fixture({ ...options, platform, env });
+        // Passing forged arguments is ignored; only the VM's process state is used.
+        assert.throws(() => f.run({ platform: 'darwin', env: validEnv, execute: () => ({ status: 0 }) }), /^Error: FIXTURE_/);
         assert(!f.calls.some(call => call.includes('enable') || call.includes('disable') || call.includes('kickstart')));
     }
+});
+test('real non-Mac process ignores forged environment and executor arguments', { skip: process.platform === 'darwin' }, () => {
+    let attempted = false;
+    assert.throws(() => runExperiment({ platform: 'darwin', env: validEnv, execute: () => { attempted = true; } }),
+        { code: 'FIXTURE_APSD_ENVIRONMENT_INVALID' });
+    assert.equal(attempted, false);
 });

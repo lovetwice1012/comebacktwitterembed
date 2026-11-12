@@ -418,6 +418,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         let state = 'loading', trustedClick = false, activationAvailable = false, activationActive = false;
         window.fixtureStatus = () => ({state, permission: typeof Notification === 'undefined' ? 'unknown' : Notification.permission,
           trustedClick, activationAvailable, activationActive});
+        window.fixtureSubscription = () => state === 'subscribed' && subscription ? subscription.toJSON() : null;
         navigator.serviceWorker.register('/sw.js', {scope:'/'}).then(async r => {
           registration = r; await navigator.serviceWorker.ready;
           state = 'ready'; document.querySelector('#subscribe').disabled = false;
@@ -563,6 +564,20 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     // a dialog appeared. Failure and timeout must never count as a subscription.
     assert.equal(result, 'subscribed', `Synthetic push subscription did not succeed: ${result}`);
     console.log('Safari subscription fixture: subscription confirmed');
+    if (process.env.CBTE_SAFARI_SYNTHETIC_DB_PROBE === '1') {
+      // Use only the newly-created synthetic subscription. WebDriver carries
+      // the endpoint and public/auth keys in memory; they are never logged.
+      const captured = await exec('return window.fixtureSubscription();', 'synthetic subscription inspection');
+      const { capturedFixture, inspectHostedSafariDatabase } = require('./safari-synthetic-db-probe.cjs');
+      const expected = capturedFixture(captured, Buffer.from(publicKey));
+      try {
+        const comparison = inspectHostedSafariDatabase(`${fixtureScheme}://${fixtureHost}:${pagePort}/`, expected);
+        console.log(`Safari synthetic subscription DB: ${JSON.stringify(comparison)}`);
+        if (!comparison.ownerSafari || !comparison.endpointMatches || !comparison.publicKeyMatches
+            || !comparison.authMatches || !comparison.vapidMatches)
+          throw new Error('FIXTURE_SAFARI_DB_COMPARISON_FAILED');
+      } finally { expected.publicKey.fill(0); expected.auth.fill(0); expected.vapid.fill(0); }
+    }
     await cleanup(true); clean = true;
     console.log('Safari subscription fixture: subscription and worker removed');
     await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session closure'); session = undefined;
