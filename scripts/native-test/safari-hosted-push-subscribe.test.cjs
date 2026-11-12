@@ -110,6 +110,59 @@ function recordApsdState(stage) {
   }
 }
 
+// Exact, non-parameterized messages from WebKit's public PushService.mm.
+// The system query and the in-memory classifier both enforce this allowlist.
+const webPushMessages = Object.freeze({
+  service_unavailable: 'Push service initialization failed because ApplePushService is unavailable',
+  database_error: 'Push service initialization failed with database error',
+  known_public_token: 'Received expected public token',
+  public_token_changed: 'Public token changed; invalidated all existing push subscriptions',
+});
+
+function classifyWebPushLogs(output) {
+  let entries;
+  try { entries = JSON.parse(output); } catch { return { status: 'unknown' }; }
+  if (!Array.isArray(entries) || entries.length > 1000) return { status: 'unknown' };
+  const flags = Object.fromEntries(Object.keys(webPushMessages).map(name => [name, false]));
+  for (const entry of entries) {
+    const key = Object.keys(webPushMessages).find(name => webPushMessages[name] === entry?.eventMessage);
+    if (!key) return { status: 'unknown' };
+    flags[key] = true;
+  }
+  // False only means no matching recorded event was returned; it does not rule
+  // out an issue, because log availability, versions and persistence differ.
+  return { status: entries.length ? 'matched' : 'no_matches', ...flags };
+}
+
+function utcLogTime(milliseconds) {
+  return new Date(milliseconds).toISOString().slice(0, 19).replace('T', ' ') + '+0000';
+}
+
+function recordWebPushLogs(startedAt, endedAt) {
+  try {
+    // Round inwards so the query never includes time outside the synthetic run.
+    const start = Math.ceil(startedAt / 1000) * 1000;
+    const end = Math.floor(endedAt / 1000) * 1000;
+    if (end <= start || end - start > 15 * 60 * 1000) {
+      console.log('Safari hosted WebPush log evidence: unknown');
+      return;
+    }
+    const matches = Object.values(webPushMessages).map(message => `eventMessage == "${message}"`).join(' OR ');
+    const predicate = `process == "webpushd" AND (${matches})`;
+    const args = ['show', '--style', 'json', '--no-pager', '--info', '--start', utcLogTime(start),
+      '--end', utcLogTime(end), '--predicate', predicate];
+    const options = { timeout: 15000, encoding: 'utf8', maxBuffer: 1048576, stdio: ['ignore', 'pipe', 'ignore'] };
+    let result = spawnSync('/usr/bin/log', args, options);
+    if (result.status !== 0) result = spawnSync('/usr/bin/sudo', ['-n', '/usr/bin/log', ...args], options);
+    const classified = result.status === 0 && typeof result.stdout === 'string'
+      ? classifyWebPushLogs(result.stdout) : { status: 'unknown' };
+    // Never print the original records, process metadata, URLs, IDs or keys.
+    console.log(`Safari hosted WebPush log evidence: ${JSON.stringify(classified)}`);
+  } catch {
+    console.log('Safari hosted WebPush log evidence: unknown');
+  }
+}
+
 async function recordApnsDiagnostics(stage) {
   try {
     const [provider, courier] = await Promise.all([
@@ -214,6 +267,18 @@ test('apsd diagnostics reject ambiguous service output and match exact process b
   assert.equal(parsePsApsdPresence(''), 'unknown');
 });
 
+test('WebPush logs classify only known messages and reject malformed output', () => {
+  assert.deepEqual(classifyWebPushLogs('[]'), { status: 'no_matches', service_unavailable: false,
+    database_error: false, known_public_token: false, public_token_changed: false });
+  const result = classifyWebPushLogs(JSON.stringify([{ eventMessage: webPushMessages.database_error,
+    unrelatedSensitiveField: 'must not appear' }]));
+  assert.equal(result.status, 'matched');
+  assert.equal(result.database_error, true);
+  assert.equal(JSON.stringify(result).includes('must not appear'), false);
+  assert.deepEqual(classifyWebPushLogs('[{"eventMessage":"unexpected"}]'), { status: 'unknown' });
+  assert.deepEqual(classifyWebPushLogs('invalid'), { status: 'unknown' });
+});
+
 test('hosted macOS checks UI inspection permissions without requesting them', { skip: !enabled, timeout: 90000 }, () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
@@ -237,6 +302,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   console.log(`Safari synthetic AX baseline: ${baseline}`);
   assert.equal(baseline, 'clean', 'Could not confirm that no Safari was running on the hosted runner');
   await recordApnsDiagnostics('before');
+  const syntheticRunStartedAt = Date.now();
   let driver, driverPort, session, listening = false, attempted = false, clean = false;
   const page = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
@@ -362,6 +428,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     console.log('Safari subscription fixture: subscription and worker removed');
     await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session closure'); session = undefined;
   } finally {
+    recordWebPushLogs(syntheticRunStartedAt, Date.now());
     // Collect while the synthetic session is still alive, even on timeout.
     await recordApnsDiagnostics('after');
     if (session && driver && driver.exitCode === null && driver.signalCode === null) {
