@@ -29,6 +29,8 @@ on:
       - scripts/native-test/edge-mac-synthetic-db.cjs
       - src/automation/edge-mac-calibration.js
       - src/automation/edge-mac-calibration-workspace.js
+      - src/automation/edge-mac-open.js
+      - src/automation/edge-mac-profile-rotation.js
       - src/automation/edge-mac-peer.js
       - src/automation/edge-calibration-*.js
       - src/automation/edge-wns-*.js
