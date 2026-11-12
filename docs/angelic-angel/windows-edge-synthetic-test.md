@@ -86,4 +86,6 @@ preview.16 を固定ハッシュで再構築した Windows hosted CI（Actions r
 
 broker の listener を閉じている間に別の stop が呼ばれても、同じ終了処理の完了または失敗を待つよう修正した。実 loopback の合成 capture で応答を保ったまま正常終了と close 失敗を検証した。Windows 未公開候補は preview.17 として別に作成し、35,994,603 bytes、SHA-256 は `262f00c7dc3fcff86fcff478e47adc3e911eb90c2f9102abde49bf04a31f20c1`。既存 preview.16 の ZIP は維持している。ローカルではパッケージの固定ハッシュ再構築と通常の設定試験を通過した。preview.17 の実 WNS 試験、停止中の通知欠落、実 X・Discord、本番への反映は未確認。
 
-その後、capture 中の client 切断と browser 終了が重なると listener が残るケースを修正した。signal による終了も通常終了と同様に扱う。合成 browser と実 loopback の試験では、切断時の listener 終了、signal 終了、capture 応答、同時 stop と close 失敗を確認した。修正版は preview.18 として別に作成し、35,994,650 bytes、SHA-256 は `a8f75fb017725e50515c141ffe5bac142540e7fd0e8364da0d6f5fd2f0129013`。preview.16・17 は保持している。preview.18 の実 Edge・WNS、実 X・Discord と停止中の通知欠落は引き続き未検証。
+その後、capture 中の client 切断と browser 終了が重なると listener が残るケースを修正した。signal による終了も通常終了と同様に扱う。合成 browser と実 loopback の試験では、切断時の listener 終了、signal 終了、capture 応答、同時 stop と close 失敗を確認した。修正版は preview.18 として別に作成し、35,994,650 bytes、SHA-256 は `a8f75fb017725e50515c141ffe5bac142540e7fd0e8364da0d6f5fd2f0129013`。preview.16・17 は保持している。
+
+[Actions run 43217586099](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43217586099) の preview.18 では、署名済み Edge・隔離 DB・実 WNS を使う通常受信と接続中 batch が成功した。停止中の default・status・cache はいずれも合成の 3 送信に対し受信フレームと通知が各 1 件、no-cache は各 0 件で、4 条件とも失敗した。status と cache の応答は disconnected/received、no-cache は disconnected/dropped、default は状態応答なし/received だった。停止中の通知欠落は解決しておらず、受付・公開 gate は無効のまま。実 X・Discord は試験しておらず、本番にも反映していない。
