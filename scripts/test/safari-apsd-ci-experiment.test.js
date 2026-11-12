@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { createExecutor, disabledState, serviceState, runExperiment } = require('../native-test/safari-apsd-ci-experiment.cjs');
+const { createExecutor, disabledState, serviceState, syntheticChildEnvironment, runExperiment } = require('../native-test/safari-apsd-ci-experiment.cjs');
 
 const validEnv = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CBTE_SAFARI_APSD_EXPERIMENT: '1', RUNNER_TEMP: '/tmp/runner' };
 const source = fs.readFileSync(path.join(__dirname, '../native-test/safari-apsd-ci-experiment.cjs'), 'utf8');
@@ -68,6 +68,16 @@ test('real executor pipes bounded stderr for classification without writing it t
     assert.equal(observed.options.maxBuffer, 262144);
     assert.equal(serviceState(result), 'not_loaded');
     assert.equal(serviceState({ ...result, status: 1, stderr: 'private error' }), 'unknown');
+});
+test('synthetic child does not inherit network debug or runtime injection variables', () => {
+    const input = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', NODE_DEBUG: 'http2',
+        NODE_DEBUG_NATIVE: 'secret', NODE_OPTIONS: '--inspect', NODE_EXTRA_CA_CERTS: 'secret', SSLKEYLOGFILE: 'secret',
+        DYLD_INSERT_LIBRARIES: 'secret', LD_PRELOAD: 'secret', DEBUG: '*', CBTE_SAFARI_FIXTURE_HOST: 'external' };
+    const child = syntheticChildEnvironment(input);
+    for (const name of ['NODE_DEBUG', 'NODE_DEBUG_NATIVE', 'NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'SSLKEYLOGFILE', 'DYLD_INSERT_LIBRARIES', 'LD_PRELOAD', 'DEBUG'])
+        assert.equal(Object.hasOwn(child, name), false);
+    assert.equal(child.CBTE_SAFARI_FIXTURE_HOST, '127.0.0.1');
+    assert.equal(child.CBTE_SAFARI_SYNTHETIC_GET_PROBE, '1'); assert.equal(input.NODE_DEBUG, 'http2');
 });
 test('disabled state is restored even if stopping the temporary service fails', () => {
     const f = fixture({ bootoutFails: true });

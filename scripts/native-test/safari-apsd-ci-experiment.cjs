@@ -36,6 +36,14 @@ function createExecutor(spawn) {
 }
 const defaultExecute = createExecutor(spawnSync);
 
+function syntheticChildEnvironment(source) {
+    const safe = Object.fromEntries(Object.entries(source).filter(([name]) =>
+        !/^(?:NODE_|DYLD_|LD_|SSLKEYLOGFILE$|DEBUG(?:_|$))/i.test(name)));
+    return { ...safe, CBTE_SAFARI_PUSH_HOSTED: '1', CBTE_SAFARI_SYNTHETIC_ALLOW: '1',
+        CBTE_SAFARI_FIXTURE_HOST: '127.0.0.1', CBTE_SAFARI_FIXTURE_SCHEME: 'https',
+        CBTE_SAFARI_SYNTHETIC_DB_PROBE: '1', CBTE_SAFARI_SYNTHETIC_PUSH_PROBE: '1', CBTE_SAFARI_SYNTHETIC_GET_PROBE: '1' };
+}
+
 function runExperiment() {
     // The operation can alter a system service. Its caller cannot override
     // the real process environment or provide an alternative executor.
@@ -82,10 +90,7 @@ function runExperiment() {
         report('Safari CI APNs service: start requested');
         const test = checked(execute(process.execPath, ['--test', '--test-name-pattern=hosted Safari attempts a synthetic push subscription',
             path.join(__dirname, 'safari-hosted-push-subscribe.test.cjs')], { timeout: 420000, inherit: true,
-            env: { ...env, CBTE_SAFARI_PUSH_HOSTED: '1', CBTE_SAFARI_SYNTHETIC_ALLOW: '1',
-                CBTE_SAFARI_FIXTURE_HOST: '127.0.0.1', CBTE_SAFARI_FIXTURE_SCHEME: 'https',
-                CBTE_SAFARI_SYNTHETIC_DB_PROBE: '1', CBTE_SAFARI_SYNTHETIC_PUSH_PROBE: '1',
-                CBTE_SAFARI_SYNTHETIC_GET_PROBE: '1' } }), 'FIXTURE_SAFARI_TEST_FAILED');
+            env: syntheticChildEnvironment(env) }), 'FIXTURE_SAFARI_TEST_FAILED');
         resultCode = test.status === 0 ? 'FIXTURE_SAFARI_TEST_PASSED' : 'FIXTURE_SAFARI_TEST_FAILED';
     } catch (cause) {
         resultCode = typeof cause?.code === 'string' && /^FIXTURE_[A-Z_]+$/.test(cause.code) ? cause.code : 'FIXTURE_APSD_EXPERIMENT_FAILED';
@@ -126,4 +131,4 @@ if (require.main === module) {
     try { runExperiment(); }
     catch (cause) { process.stderr.write(`${/^FIXTURE_[A-Z_]+$/.test(cause?.code || '') ? cause.code : 'FIXTURE_APSD_EXPERIMENT_FAILED'}\n`); process.exitCode = 1; }
 }
-module.exports = { createExecutor, disabledState, serviceState, runExperiment };
+module.exports = { createExecutor, disabledState, serviceState, syntheticChildEnvironment, runExperiment };

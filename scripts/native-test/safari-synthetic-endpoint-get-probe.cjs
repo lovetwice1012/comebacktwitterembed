@@ -4,6 +4,7 @@
 // material are never logged. A response alone does not prove push receipt.
 const { isApplePushEndpoint } = require('./safari-synthetic-push-probe.cjs');
 const fault = code => Object.assign(new Error(code), { code });
+const isFixedEndpoint = value => isApplePushEndpoint(value) && new URL(value).hostname === 'web.push.apple.com';
 
 function summarize(status) {
     return Number.isInteger(status) && status >= 100 && status <= 599
@@ -12,7 +13,7 @@ function summarize(status) {
 
 // Kept separate for synthetic tests; production paths do not import this file.
 function requestWith(factory, endpoint, authorization, timeoutMs = 8000) {
-    if (typeof factory !== 'function' || !isApplePushEndpoint(endpoint)
+    if (typeof factory !== 'function' || !isFixedEndpoint(endpoint)
         || authorization !== undefined && (typeof authorization !== 'string' || !authorization.startsWith('vapid '))
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 15000) throw fault('FIXTURE_SAFARI_GET_INPUT_INVALID');
     const url = new URL(endpoint);
@@ -29,7 +30,7 @@ function requestWith(factory, endpoint, authorization, timeoutMs = 8000) {
         try {
             // No redirect is followed and no response headers or bytes are
             // stored or printed; the URL is used only for this request.
-            session = factory(url.origin);
+            session = factory(url.origin, { rejectUnauthorized: true });
             session.on('error', () => finish({ state: 'transport_error' }));
             stream = session.request({ ':method': 'GET', ':path': url.pathname + url.search,
                 ...(authorization ? { authorization } : {}) });
@@ -45,7 +46,7 @@ async function probeHostedSyntheticEndpoint({ subscription, publicKey, privateKe
     if (process.platform !== 'darwin' || process.env.GITHUB_ACTIONS !== 'true'
         || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.env.CBTE_SAFARI_PUSH_HOSTED !== '1'
         || process.env.CBTE_SAFARI_SYNTHETIC_GET_PROBE !== '1') throw fault('FIXTURE_SAFARI_GET_ENVIRONMENT_INVALID');
-    if (!subscription || !isApplePushEndpoint(subscription.endpoint) || !Buffer.isBuffer(publicKey) || publicKey.length !== 65
+    if (!subscription || !isFixedEndpoint(subscription.endpoint) || !Buffer.isBuffer(publicKey) || publicKey.length !== 65
         || !Buffer.isBuffer(privateKey) || privateKey.length !== 32) throw fault('FIXTURE_SAFARI_GET_INPUT_INVALID');
     const url = new URL(subscription.endpoint), push = require('web-push');
     let auth;
@@ -55,7 +56,9 @@ async function probeHostedSyntheticEndpoint({ subscription, publicKey, privateKe
     } catch { throw fault('FIXTURE_SAFARI_GET_AUTH_INVALID'); }
     const connect = require('node:http2').connect;
     const anonymous = await requestWith(connect, subscription.endpoint, undefined);
-    const senderAuthorized = await requestWith(connect, subscription.endpoint, auth);
-    return { anonymous, senderAuthorized };
+    const withSenderVapid = await requestWith(connect, subscription.endpoint, auth);
+    return { anonymous, withSenderVapid };
 }
-module.exports = { summarize, requestWith, probeHostedSyntheticEndpoint };
+// Only the hosted-only network entry is exported. Tests instrument the
+// private transport routine inside a separate VM with a fake connection.
+module.exports = { probeHostedSyntheticEndpoint };
