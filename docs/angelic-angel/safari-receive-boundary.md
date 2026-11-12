@@ -19,3 +19,9 @@
 [購読セットの表示形式](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/push-api/PushSubscriptionIdentifier.cpp) には bundle identifier、任意の partition、および datastore ID の一部が含まれるが、scope は含まれない。将来、合成 DB から得た情報で照合する場合も、同じ購読セットに別 scope がないことや表示形式・ログの欠落を検証しなければ、fixture の到達証拠として扱えない。識別子・URL・鍵・通知内容をログに出さず、ユーザーの通常 DB は開かない。
 
 現時点の制約は、合成 Service Worker の配送が確認できないことと、既存購読の端末側受信権を別サーバーへ移す経路が確認できないことである。これらを解消するまでは、Safari 対応の完成・本番利用を主張しない。
+
+## 合成 endpoint の GET 検証
+
+[Actions run 43207395675](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43207395675) では、Intel・Apple Silicon の使い捨て Mac で新規に作った合成購読について、固定ホスト `web.push.apple.com` の送信用 endpoint に HTTP/2 の GET を行った。認証なしと、同じ合成購読の送信用 VAPID を付けた２条件の両方で、どちらの CPU も HTTP 405 を返した。この合成条件では送信用 endpoint を GET の受信口として使えなかった。送信用 VAPID は、受信側の資格を持つことの証拠ではない。HTTP/2 の結果は他の非公開経路や HTTP/1.1 の全挙動を証明しない。
+
+同じ試験では、合成 Push の provider 受付と Service Worker への制御メッセージは確認したが、45秒以内の Push イベントは確認できず、両ジョブは失敗した。一時的に起動した APNs サービスの初期状態への復元は両方で確認した。endpoint・鍵・認証ヘッダー・通知内容はログに出さず、実際の X 購読や利用者のデータは使っていない。端末側の受信権を移譲する別の手段の不存在まで、この結果から断定しない。
