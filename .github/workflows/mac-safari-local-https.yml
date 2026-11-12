@@ -1,0 +1,38 @@
+name: macOS Safari isolated HTTPS capability
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-wns-production-20261111]
+    paths:
+      - .github/workflows/mac-safari-local-https.yml
+      - scripts/native-test/safari-hosted-https.test.cjs
+
+permissions:
+  contents: read
+
+jobs:
+  safari-https:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9afbd3f7d6820020
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Enable WebDriver only on the disposable runner
+        run: |
+          test "${GITHUB_ACTIONS:-}" = true
+          test "${RUNNER_ENVIRONMENT:-}" = github-hosted
+          test "$(uname -s)" = Darwin
+          sudo /usr/bin/safaridriver --enable
+      - name: Verify isolated HTTPS without changing certificate trust
+        env:
+          CBTE_SAFARI_HTTPS_HOSTED: '1'
+        run: node --test scripts/native-test/safari-hosted-https.test.cjs
