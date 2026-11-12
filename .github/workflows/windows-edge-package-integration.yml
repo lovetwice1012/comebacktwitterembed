@@ -12,10 +12,12 @@ on:
       - scripts/native-test/edge-hosted-probe-mode.ps1
       - scripts/native-test/edge-hosted-probe-mode.test.cjs
       - scripts/native-test/edge-synthetic-restart-child.test.cjs
+      - scripts/native-test/edge-fixture-frame-count.test.cjs
       - scripts/native-test/edge-fixture-archive.test.cjs
       - experiments/chrome-push/edge-fixture-archive.cjs
       - experiments/chrome-push/edge-broker-pipe-probe.cjs
       - experiments/chrome-push/edge-synthetic-restart-child.cjs
+      - experiments/chrome-push/edge-fixture-frame-count.cjs
       - scripts/fixtures/edge-cdp-deps/package.json
       - scripts/fixtures/edge-cdp-deps/package-lock.json
       - scripts/build-edge-setup-package.cjs
@@ -55,7 +57,7 @@ jobs:
       - name: Verify immutable package reader
         shell: pwsh
         run: |
-          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs scripts/native-test/edge-hosted-probe-mode.test.cjs scripts/native-test/edge-synthetic-restart-child.test.cjs
+          node --test scripts/native-test/edge-fixture-archive.test.cjs scripts/native-test/edge-hosted-package-integration.test.cjs scripts/native-test/edge-hosted-node-selection.test.cjs scripts/native-test/edge-hosted-probe-mode.test.cjs scripts/native-test/edge-synthetic-restart-child.test.cjs scripts/native-test/edge-fixture-frame-count.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Pinned package test failed' }
       - name: Build exact preview candidate in runner temp
         shell: pwsh

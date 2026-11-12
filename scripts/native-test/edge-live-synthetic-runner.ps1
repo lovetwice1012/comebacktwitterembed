@@ -43,7 +43,7 @@ try {
     if (-not $write.Wait(5000) -or -not $read.Wait(5000)) { throw 'SYNTHETIC_PROBE_FAILED' }
     $outputBytes = $read.GetAwaiter().GetResult(); $text = [Text.Encoding]::UTF8.GetString($outputBytes)
     if ($job.ExitCode -ne 0) {
-        if ($text -match 'PROBE_STAGE wns (PROBE_BATCH_(?:TIMEOUT_[0-7]|DUPLICATE|SCAN_FAILED))') { throw $Matches[1] }
+        if ($text -match 'PROBE_STAGE wns (PROBE_BATCH_(?:TIMEOUT_[0-7]_NFYS_(?:0|[1-9][0-9]{0,2})|DUPLICATE|SCAN_FAILED))') { throw $Matches[1] }
         if ($text -match 'PROBE_STAGE wns (PROBE_TOPIC_SEND_REJECTED)') { throw $Matches[1] }
         throw 'SYNTHETIC_PROBE_FAILED'
     }

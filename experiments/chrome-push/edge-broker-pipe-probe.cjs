@@ -15,6 +15,7 @@ const { startChromeBroker } = require('../../src/automation/edge-private-broker'
 const { captureFromBroker } = require('../../src/automation/edge-broker-client');
 const { rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
 const { assertSuppressedTakeover } = require('./edge-fixture-assertions.cjs');
+const { batchTimeoutCode } = require('./edge-fixture-frame-count.cjs');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -54,11 +55,12 @@ async function verifyNewWorkerProcess({ schema, identity, privateKey, sendNotifi
             timeout = setTimeout(() => reject(new Error('PROBE_RESTART_TIMEOUT')), 45000);
             child.on('error', () => reject(new Error('PROBE_RESTART_FAILED')));
             child.on('message', message => {
-                const batchErrors = Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`batch-timeout-${index}`, `PROBE_BATCH_TIMEOUT_${index}`]));
-                batchErrors['batch-duplicate'] = 'PROBE_BATCH_DUPLICATE'; batchErrors['batch-scan-failed'] = 'PROBE_BATCH_SCAN_FAILED';
+                const timeoutCode = batchTimeoutCode(message?.state);
+                const batchErrors = { 'batch-duplicate': 'PROBE_BATCH_DUPLICATE', 'batch-scan-failed': 'PROBE_BATCH_SCAN_FAILED' };
                 if (message?.state === 'ready' && !ready) {
                     ready = true; Promise.resolve().then(sendNotification).catch(() => reject(new Error('PROBE_RESTART_FAILED')));
                 } else if (message?.state === 'received' && ready && !received) received = true;
+                else if (batch && timeoutCode) reject(new Error(timeoutCode));
                 else if (batch && Object.hasOwn(batchErrors, message?.state)) reject(new Error(batchErrors[message.state]));
                 else reject(new Error('PROBE_RESTART_FAILED'));
             });
@@ -586,5 +588,5 @@ async function main() {
         await fs.rm(actual, { recursive: true });
     }
 }
-main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7])$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
+main().catch(error => { const code = /^X_CHROME_[A-Z_]+$/.test(error?.code || '') ? error.code : /^(?:PROBE_[A-Z_]+|PROBE_BATCH_TIMEOUT_[0-7]_NFYS_(?:0|[1-9][0-9]{0,2}))$/.test(error?.message || '') ? error.message : 'PROBE_FAILED';
     console.error('PROBE_STAGE', stage, code); process.exitCode = 1; });

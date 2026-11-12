@@ -5,6 +5,7 @@ if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32' || typeof pr
 const mysql = require('mysql');
 const { createTransferPrivateWorkerVault, createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
+const { countNotifications, batchTimeoutState } = require('./edge-fixture-frame-count.cjs');
 
 process.once('message', async input => {
     let pool;
@@ -31,22 +32,24 @@ process.once('message', async input => {
         };
         const keyConfig = { activeKeyId: 'test', privateKeys: { test: input.privateKey } };
         let versionChecked = false;
-        const versionObserver = input.versionTwo ? { createEdgeTransport: ({ signal }) => {
+        let observedTransport;
+        const versionObserver = { createEdgeTransport: ({ signal }) => {
             const transport = require('../../src/automation/edge-wns-transport').createEdgeWnsTransport({ signal });
-            return { ...transport, async send(frame) {
+            observedTransport = countNotifications(transport);
+            return { ...observedTransport.transport, async send(frame) {
                 if (!versionChecked && frame.subarray(0, 4).toString('ascii') === 'CNT ') {
-                    if (!frame.includes(Buffer.from('<connect><ver>2</ver>'))) throw new Error();
+                    if (input.versionTwo && !frame.includes(Buffer.from('<connect><ver>2</ver>'))) throw new Error();
                     versionChecked = true;
                 }
                 return transport.send(frame);
             } };
-        } } : {};
+        } };
         const gateway = createXPushGateway(db, { enabled: true, edgeEnabled: true, edgeConnectV2Enabled: input.versionTwo === true, rolloutMode: 'public',
             privateWorkerVault: createTransferPrivateWorkerVault(keyConfig), edgeTokenVault: createWnsTokenWorkerVault(keyConfig), ...versionObserver });
         const controller = new AbortController();
         let received = false, timer, checking = false, allSeenAt = 0, scanFailed = false, observedMask = 0;
         const deadline = setTimeout(() => {
-            if (input.batch) process.send({ state: `batch-timeout-${observedMask}` });
+            if (input.batch) process.send({ state: batchTimeoutState(observedMask, observedTransport?.getCount() || 0) });
             controller.abort();
         }, 30000);
         const batchTexts = ['synthetic-offline-1', 'synthetic-offline-2', 'synthetic-offline-3'];
