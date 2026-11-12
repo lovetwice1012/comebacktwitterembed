@@ -6,7 +6,9 @@ import Foundation
 
 let env = ProcessInfo.processInfo.environment
 guard env["GITHUB_ACTIONS"] == "true", env["RUNNER_ENVIRONMENT"] == "github-hosted",
-      env["CBTE_SAFARI_PUSH_HOSTED"] == "1" else {
+      env["CBTE_SAFARI_PUSH_HOSTED"] == "1",
+      let fixtureHost = env["CBTE_SAFARI_FIXTURE_HOST"],
+      fixtureHost == "127.0.0.1" || fixtureHost == "localhost" else {
     print("diagnostic=unknown")
     exit(1)
 }
@@ -45,6 +47,12 @@ func children(_ element: AXUIElement) -> [AXUIElement] {
     guard let result = value as? [AXUIElement] else { incomplete = true; return [] }
     return result
 }
+func containsFixtureHost(_ text: String) -> Bool {
+    // Match a full host token, never a suffix or part of another hostname.
+    let hostPattern = fixtureHost == "localhost" ? "localhost" : "127\\.0\\.0\\.1"
+    let pattern = "(?<![a-z0-9._-])" + hostPattern + "(?![a-z0-9._-])"
+    return text.range(of: pattern, options: .regularExpression) != nil
+}
 
 guard let windows = attribute(app, kAXWindowsAttribute as String) as? [AXUIElement], windows.count == 1,
       let window = windows.first, text(window, kAXTitleAttribute as String) == "Push subscription fixture" else {
@@ -82,7 +90,7 @@ for dialog in candidateDialogs {
         var isAllow = false, isReject = false
         for piece in pieces {
             let value = piece.lowercased().replacingOccurrences(of: "’", with: "'")
-            origin = origin || value.contains("127.0.0.1")
+            origin = origin || containsFixtureHost(value)
             notification = notification || value.contains("notification")
             if role == "AXButton" {
                 isAllow = isAllow || value == "allow"

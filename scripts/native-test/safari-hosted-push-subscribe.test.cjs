@@ -8,7 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
 const { createECDH } = require('node:crypto');
-const { Resolver } = require('node:dns/promises');
+const { Resolver, lookup } = require('node:dns/promises');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -16,6 +16,15 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const enabled = process.platform === 'darwin' && process.env.CBTE_SAFARI_PUSH_HOSTED === '1';
 const axProbePath = path.join(__dirname, 'safari-hosted-ax-probe.swift');
+
+function isFixtureHost(host) {
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
+function isLoopbackResolution(entries) {
+  return Array.isArray(entries) && entries.length > 0 && entries.every(entry =>
+    entry?.address === '127.0.0.1' || entry?.address === '::1');
+}
 
 function isApprovedAppleIPv4(address) {
   // Apple documents 17/8 for APNs. Refuse other addresses rather than probing
@@ -201,6 +210,16 @@ function listen(server) {
   });
 }
 
+function listenIPv6Loopback(server, port) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '::1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+}
+
 function close(server) {
   return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }
@@ -242,6 +261,15 @@ test('subscription result categories do not turn pending or refusal into success
   assert.equal(outcome('pending', 'default'), 'permission_pending_timeout');
   assert.equal(outcome('pending', 'granted'), 'subscription_timeout_after_permission_granted');
   assert.equal(outcome('error', 'default'), 'subscription_error');
+});
+
+test('fixture host and localhost DNS are restricted to the expected loopback addresses', () => {
+  assert.equal(isFixtureHost('localhost'), true);
+  assert.equal(isFixtureHost('127.0.0.1'), true);
+  assert.equal(isFixtureHost('localhost.example'), false);
+  assert.equal(isLoopbackResolution([{ address: '127.0.0.1' }, { address: '::1' }]), true);
+  assert.equal(isLoopbackResolution([{ address: '127.0.0.1' }, { address: '192.0.2.1' }]), false);
+  assert.equal(isLoopbackResolution([]), false);
 });
 
 test('APNs diagnostics restrict addresses and classify socket errors', () => {
@@ -295,6 +323,17 @@ test('hosted macOS checks UI inspection permissions without requesting them', { 
 test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, timeout: 360000 }, async () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
+  const fixtureHost = process.env.CBTE_SAFARI_FIXTURE_HOST;
+  assert.equal(isFixtureHost(fixtureHost), true, 'A fixed loopback fixture host is required');
+  console.log(`Safari synthetic origin case: ${fixtureHost === 'localhost' ? 'localhost' : 'ipv4_loopback'}`);
+  // Never open localhost if the runner resolves it to a non-loopback address.
+  if (fixtureHost === 'localhost') {
+    const resolution = await Promise.race([
+      lookup('localhost', { all: true }),
+      delay(3000).then(() => { throw new Error('Localhost lookup timeout'); }),
+    ]);
+    assert.equal(isLoopbackResolution(resolution), true, 'Localhost did not resolve exclusively to loopback');
+  }
   const key = createECDH('prime256v1');
   const publicKey = [...key.generateKeys()];
   // Do not inspect a Safari process that predates this synthetic session.
@@ -303,8 +342,8 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   assert.equal(baseline, 'clean', 'Could not confirm that no Safari was running on the hosted runner');
   await recordApnsDiagnostics('before');
   const syntheticRunStartedAt = Date.now();
-  let driver, driverPort, session, listening = false, attempted = false, clean = false;
-  const page = http.createServer((req, res) => {
+  let driver, driverPort, session, listening = false, listeningIPv6 = false, attempted = false, clean = false;
+  const handler = (req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
       res.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' });
       res.end("self.addEventListener('install', () => {});");
@@ -345,7 +384,9 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
         };
         </script>`);
     } else res.writeHead(404).end();
-  });
+  };
+  const page = http.createServer(handler);
+  const pageIPv6 = http.createServer(handler);
   const exec = async (script, stage, timeout = 15000) => command(driverPort, 'POST', `/session/${session}/execute/sync`, { script, args: [] }, stage, timeout);
   const cleanup = async (requireSubscription = false) => {
     const result = await command(driverPort, 'POST', `/session/${session}/execute/async`, {
@@ -358,6 +399,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   };
   try {
     const pagePort = await listen(page); listening = true;
+    await listenIPv6Loopback(pageIPv6, pagePort); listeningIPv6 = true;
     const reservation = net.createServer(); driverPort = await listen(reservation); await close(reservation);
     driver = spawn('/usr/bin/safaridriver', ['-p', String(driverPort)], { stdio: 'ignore' });
     let spawnError; driver.on('error', error => { spawnError = error; });
@@ -373,7 +415,9 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     assert.match(created?.sessionId || '', /^[A-Za-z0-9-]{1,128}$/, 'Invalid WebDriver session ID');
     session = created.sessionId;
     assert.equal(created.capabilities?.browserName?.toLowerCase(), 'safari', 'Unexpected browser');
-    await command(driverPort, 'POST', `/session/${session}/url`, { url: `http://127.0.0.1:${pagePort}/` }, 'fixture navigation', 30000);
+    await command(driverPort, 'POST', `/session/${session}/url`, { url: `http://${fixtureHost}:${pagePort}/` }, 'fixture navigation', 30000);
+    const originMatches = await exec(`return location.origin === ${JSON.stringify(`http://${fixtureHost}:${pagePort}`)};`, 'fixture origin');
+    assert.equal(originMatches, true, 'Browser did not reach the selected synthetic origin');
     console.log('Safari subscription fixture: preparing worker');
     let status;
     const preparationDeadline = Date.now() + 30000;
@@ -439,6 +483,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
       try { await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session cleanup'); } catch { /* best effort */ }
     }
     if (driver && driver.exitCode === null && driver.signalCode === null) driver.kill('SIGTERM');
+    if (listeningIPv6) { pageIPv6.closeAllConnections(); await close(pageIPv6); }
     if (listening) { page.closeAllConnections(); await close(page); }
     // Once a timed-out attempt has started, a late provider reply cannot be
     // ruled out; disposal of the hosted runner is part of the isolation boundary.
