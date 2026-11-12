@@ -20,6 +20,7 @@ const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-creden
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 const { safeCalibrationError } = require('./edge-mac-fixture-error.cjs');
+const { formatVersionDiagnostics } = require('./edge-mac-version-diagnostic.cjs');
 
 const enabled = process.platform === 'darwin' && process.env.CBTE_MAC_EDGE_HOSTED === '1'
     && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted';
@@ -59,6 +60,7 @@ test('calibration metadata from one synthetic Mac Edge profile receives another 
                     if (code === 0 && received?.ok === true) { state.confirmed = true; resolve(received); }
                     else {
                         const code = safeCalibrationError(received?.code);
+                        t.diagnostic(`synthetic profile ${label} version verification: ${formatVersionDiagnostics(received?.versionDiagnostic)}`);
                         reject(new Error(`FIXTURE_CROSS_CALIBRATION_${label}_${code}`));
                     } });
                 child.send({ rootPath: root, token, identityPath, peerPath });

@@ -17,6 +17,7 @@ const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-creden
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
 const { safeCalibrationError } = require('./edge-mac-fixture-error.cjs');
+const { formatVersionDiagnostics } = require('./edge-mac-version-diagnostic.cjs');
 
 test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_EDGE_HOSTED !== '1', timeout: 600000 }, async t => {
@@ -46,7 +47,8 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
             child.on('message', message => { if (response) return; response = message; });
             child.once('error', () => { clearTimeout(timer); reject(new Error('FIXTURE_CHILD_FAILED')); });
             child.once('exit', code => { exited = true; clearTimeout(timer); if (code === 0 && response?.ok === true) { calibrationStopped = true; resolve(response); }
-                else reject(new Error(`FIXTURE_CALIBRATION_${safeCalibrationError(response?.code)}`)); });
+                else { t.diagnostic(`synthetic Edge version verification: ${formatVersionDiagnostics(response?.versionDiagnostic)}`);
+                    reject(new Error(`FIXTURE_CALIBRATION_${safeCalibrationError(response?.code)}`)); } });
             child.send({ rootPath, token, identityPath, peerPath });
         });
         assert(['1', '2'].includes(result.connectVersion));

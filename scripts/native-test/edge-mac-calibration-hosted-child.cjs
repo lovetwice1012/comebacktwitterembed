@@ -9,6 +9,7 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const webpush = require('web-push');
 const { safeCalibrationError } = require('./edge-mac-fixture-error.cjs');
+const { createHostedVersionDiagnostic } = require('./edge-mac-version-diagnostic.cjs');
 // Capture only the local synthetic subscription over the existing private
 // DevTools pipe. This wrapper is loaded only in this isolated CI process.
 const pipeId = require.resolve('../../src/automation/edge-cdp-pipe'), original = require(pipeId);
@@ -24,6 +25,10 @@ require.cache[pipeId].exports = { ...original, createChromePipe(...args) {
         subscription = { ...captured, applicationServerKey: vapid.publicKey }; return result;
     } };
 } };
+const versionDiagnostic = createHostedVersionDiagnostic();
+const versionId = require.resolve('../../src/automation/edge-mac-browser-version');
+const originalVersion = require(versionId);
+require.cache[versionId].exports = { ...originalVersion, readVerifiedMacEdgeVersion: versionDiagnostic.verify };
 const { runMacEdgeCalibrationWithEphemeralCertificate } = require('../../src/automation/edge-mac-calibration');
 
 process.once('message', async input => {
@@ -39,6 +44,6 @@ process.once('message', async input => {
             agent: result.agent, client: result.client, subscription, vapid }, () => process.disconnect());
     } catch (error) {
         const code = safeCalibrationError(error?.code);
-        process.send({ ok: false, code }, () => { process.exitCode = 1; process.disconnect(); });
+        process.send({ ok: false, code, versionDiagnostic: versionDiagnostic.snapshot() }, () => { process.exitCode = 1; process.disconnect(); });
     }
 });

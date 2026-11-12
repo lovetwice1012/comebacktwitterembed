@@ -58,7 +58,7 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                         child.fixtureClosed = new Promise(resolve => child.once('close', resolve)); children.push(child); return child;
                     } }) };
             } });
-        let inspectStatus = 'not_called';
+        let inspectStatus = 'not_called', inspectPhase = 'not_called', recordCount = 0;
         const openPath = path.resolve(__dirname, '../../src/automation/edge-mac-open.js'), openRequire = createRequire(openPath), openModule = { exports: {} };
         vm.runInNewContext(await fs.readFile(openPath, 'utf8'), { module: openModule, exports: openModule.exports, process, Buffer, Promise,
             require(name) {
@@ -66,7 +66,20 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                 if (name === './edge-wns-snapshot-io') {
                     const original = openRequire(name);
                     return { ...original, async inspectEdgeSnapshot(options) {
-                        try { const result = await original.inspectEdgeSnapshot(options); inspectStatus = 'success'; return result; }
+                        inspectPhase = 'before_db';
+                        const dbFactory = directory => {
+                            inspectPhase = 'factory'; const db = options.dbFactory(directory);
+                            return {
+                                async open() { inspectPhase = 'opening'; await db.open(); inspectPhase = 'opened'; },
+                                async *iterator(iteratorOptions) {
+                                    inspectPhase = 'iterating';
+                                    for await (const value of db.iterator(iteratorOptions)) { recordCount = Math.min(129, recordCount + 1); yield value; }
+                                    inspectPhase = 'scanned';
+                                },
+                                async close() { return db.close(); },
+                            };
+                        };
+                        try { const result = await original.inspectEdgeSnapshot({ ...options, dbFactory }); inspectStatus = 'success'; return result; }
                         catch { inspectStatus = 'failed'; throw Object.assign(new Error('fixture inspection failed'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' }); }
                     } };
                 }
@@ -75,12 +88,21 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
         const args = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath, expectedSha256 };
         const first = await openModule.exports.openMacEdgeForSetup(args); brokers.push(first);
         assert.equal(first.chrome.kill('SIGTERM'), true); assert.equal(await first.releaseComplete, true); await first.stop();
+        async function verifyFixtureDirectories(directories) {
+            for (const directory of directories) {
+                const info = await fs.lstat(directory);
+                if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()
+                    || await fs.realpath(directory) !== directory) throw new Error('fixture path changed');
+            }
+        }
+        const parents = [base, profile.rootPath, profile.profilePath, path.join(profile.profilePath, 'Default')];
+        await verifyFixtureDirectories(parents.slice(0, 3));
         assert.ok((await fs.readdir(profile.profilePath)).length > 0, 'first launch did not populate the synthetic profile');
         const store = path.join(profile.profilePath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
-        let storePresent = false;
-        try { const info = await fs.lstat(store); storePresent = info.isDirectory() && !info.isSymbolicLink(); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
-        t.diagnostic(`synthetic cancelled profile has Push store=${storePresent}`);
+        let storeState = 'unavailable';
+        try { await verifyFixtureDirectories([...parents, store]); storeState = 'present'; }
+        catch (error) { if (error.code === 'ENOENT') storeState = 'missing'; }
+        t.diagnostic(`synthetic cancelled profile Push store=${storeState}`);
         let second;
         try { second = await openModule.exports.openMacEdgeForSetup(args); }
         catch (error) {
@@ -88,16 +110,20 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                 'X_CHROME_MAC_LOCK_LOST', 'X_CHROME_MAC_SNAPSHOT_INVALID', 'X_CHROME_MAC_SNAPSHOT_CLEANUP_FAILED',
                 'X_EDGE_MAC_BROKER_INVALID', 'X_EDGE_MAC_BROKER_BUSY', 'X_EDGE_MAC_BROKER_CLEANUP_PENDING']);
             const code = known.has(error?.code) ? error.code : 'OTHER';
-            let lockState = 'unknown', helperState = 'not_run'; const lockPath = path.join(store, 'LOCK');
+            let lockState = 'unknown', helperState = 'not_run', filesScanned = false; const lockPath = path.join(store, 'LOCK');
+            const counts = { lock: 0, current: 0, manifest: 0, log: 0, table: 0, other: 0 };
             try {
-                async function verifyParents() {
-                    for (const directory of [base, profile.rootPath, profile.profilePath, path.join(profile.profilePath, 'Default'), store]) {
-                        const info = await fs.lstat(directory);
-                        if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()
-                            || await fs.realpath(directory) !== directory) throw new Error('fixture path changed');
-                    }
+                await verifyFixtureDirectories([...parents, store]);
+                const entries = await fs.readdir(store, { withFileTypes: true });
+                if (entries.length > 256) throw new Error('fixture store too large');
+                for (const entry of entries) {
+                    const kind = !entry.isFile() || entry.isSymbolicLink() ? 'other' : entry.name === 'LOCK' ? 'lock'
+                        : entry.name === 'CURRENT' ? 'current' : /^MANIFEST-[0-9]+$/.test(entry.name) ? 'manifest'
+                            : /^(?:LOG|LOG\.old|[0-9]+\.log)$/.test(entry.name) ? 'log'
+                                : /^[0-9]+\.(?:ldb|sst)$/.test(entry.name) ? 'table' : 'other';
+                    counts[kind]++;
                 }
-                await verifyParents();
+                filesScanned = true;
                 const lock = await fs.lstat(lockPath);
                 lockState = lock.isFile() && !lock.isSymbolicLink() && lock.uid === process.getuid() && lock.nlink === 1 ? 'owned_file' : 'unsafe';
                 if (lockState === 'owned_file') {
@@ -109,12 +135,15 @@ test('a fresh Edge setup cancelled before notifications can be reopened',
                         || await fs.realpath(helperPath) !== helperPath || createHash('sha256').update(await fs.readFile(helperPath)).digest('hex') !== expectedSha256
                         || current.isSymbolicLink() || current.dev !== lock.dev || current.ino !== lock.ino
                         || current.uid !== lock.uid || current.nlink !== 1) throw new Error('fixture identity changed');
-                    await verifyParents();
+                    await verifyFixtureDirectories([...parents, store]);
                     const probe = spawnSync(helperPath, [lockPath], { input: '', timeout: 5000, encoding: 'ascii', stdio: ['pipe', 'pipe', 'ignore'] });
                     helperState = ['R', 'B', 'E'].includes(probe.stdout) ? probe.stdout : 'unknown';
                 }
             } catch (reason) { lockState = reason?.code === 'ENOENT' ? 'missing' : 'unknown'; }
-            t.diagnostic(`synthetic reopen failure code=${code} lock=${lockState} helper=${helperState} reader=${inspectStatus}`);
+            const files = filesScanned ? `filesScan=complete filesLock=${counts.lock} filesCurrent=${counts.current} filesManifest=${counts.manifest} filesLog=${counts.log} filesTable=${counts.table} filesOther=${counts.other}`
+                : 'filesScan=unavailable';
+            const records = inspectPhase === 'scanned' ? String(recordCount) : 'unavailable';
+            t.diagnostic(`synthetic reopen failure code=${code} lock=${lockState} helper=${helperState} reader=${inspectStatus} phase=${inspectPhase} records=${records} ${files}`);
             throw new Error('FIXTURE_EDGE_REOPEN_FAILED');
         }
         brokers.push(second); assert.equal(second.chrome.kill('SIGTERM'), true);
