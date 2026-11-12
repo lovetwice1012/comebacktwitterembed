@@ -8,6 +8,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
 const { createECDH } = require('node:crypto');
+const { Resolver } = require('node:dns/promises');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -15,6 +16,68 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const enabled = process.platform === 'darwin' && process.env.CBTE_SAFARI_PUSH_HOSTED === '1';
 const axProbePath = path.join(__dirname, 'safari-hosted-ax-probe.swift');
+
+function isApprovedAppleIPv4(address) {
+  // Apple documents 17/8 for APNs. Refuse other addresses rather than probing
+  // a private or unexpected destination if DNS changes or is misconfigured.
+  return net.isIP(address) === 4 && address.startsWith('17.');
+}
+
+function socketErrorCategory(code) {
+  if (code === 'ECONNREFUSED') return 'refused';
+  if (code === 'ETIMEDOUT') return 'timeout';
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'unreachable';
+  return 'error';
+}
+
+async function probeApnsHost(host, port) {
+  const resolver = new Resolver({ timeout: 2500, tries: 1 });
+  const timer = setTimeout(() => resolver.cancel(), 3500);
+  let addresses;
+  try {
+    addresses = await resolver.resolve4(host);
+  } catch (error) {
+    return { dns: error?.code === 'ETIMEOUT' || error?.code === 'ECANCELLED' ? 'timeout' : 'error', tcp: 'not_attempted' };
+  } finally {
+    clearTimeout(timer);
+  }
+  const address = addresses.find(isApprovedAppleIPv4);
+  if (!address) return { dns: 'outside_documented_range', tcp: 'not_attempted' };
+  return new Promise(resolve => {
+    let settled = false;
+    const socket = net.createConnection({ host: address, port });
+    const finish = tcp => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve({ dns: 'resolved', tcp });
+    };
+    socket.setTimeout(3000, () => finish('timeout'));
+    socket.once('connect', () => finish('connected'));
+    socket.once('error', error => finish(socketErrorCategory(error?.code)));
+  });
+}
+
+function processPresence(name) {
+  const result = spawnSync('/usr/bin/pgrep', ['-x', name], { timeout: 3000, stdio: 'ignore' });
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  return 'unknown';
+}
+
+async function recordApnsDiagnostics(stage) {
+  try {
+    const [provider, courier] = await Promise.all([
+      probeApnsHost('api.push.apple.com', 443),
+      probeApnsHost('1-courier.push.apple.com', 5223),
+    ]);
+    // No address, DNS response, process ID, socket data or credentials are logged.
+    console.log(`Safari hosted APNs ${stage}: ${JSON.stringify({ providerIPv4: provider, courierIPv4: courier,
+      apsd: processPresence('apsd'), webpushd: processPresence('webpushd') })}`);
+  } catch {
+    console.log(`Safari hosted APNs ${stage}: diagnostic_error`);
+  }
+}
 
 function axProbe(mode) {
   const probe = spawnSync('/usr/bin/swift', [axProbePath, mode], {
@@ -82,6 +145,17 @@ test('subscription result categories do not turn pending or refusal into success
   assert.equal(outcome('error', 'default'), 'subscription_error');
 });
 
+test('APNs diagnostics restrict addresses and classify socket errors', () => {
+  assert.equal(isApprovedAppleIPv4('17.1.2.3'), true);
+  assert.equal(isApprovedAppleIPv4('127.0.0.1'), false);
+  assert.equal(isApprovedAppleIPv4('17.999.0.1'), false);
+  assert.equal(isApprovedAppleIPv4('::1'), false);
+  assert.equal(socketErrorCategory('ECONNREFUSED'), 'refused');
+  assert.equal(socketErrorCategory('ETIMEDOUT'), 'timeout');
+  assert.equal(socketErrorCategory('EHOSTUNREACH'), 'unreachable');
+  assert.equal(socketErrorCategory('anything else'), 'error');
+});
+
 test('hosted macOS checks UI inspection permissions without requesting them', { skip: !enabled, timeout: 90000 }, () => {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions is required');
   assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted', 'A disposable GitHub-hosted runner is required');
@@ -104,6 +178,7 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
   const baseline = axProbe('baseline');
   console.log(`Safari synthetic AX baseline: ${baseline}`);
   assert.equal(baseline, 'clean', 'Could not confirm that no Safari was running on the hosted runner');
+  await recordApnsDiagnostics('before');
   let driver, driverPort, session, listening = false, attempted = false, clean = false;
   const page = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/sw.js') {
@@ -228,6 +303,8 @@ test('hosted Safari attempts a synthetic push subscription', { skip: !enabled, t
     console.log('Safari subscription fixture: subscription and worker removed');
     await command(driverPort, 'DELETE', `/session/${session}`, undefined, 'session closure'); session = undefined;
   } finally {
+    // Collect while the synthetic session is still alive, even on timeout.
+    await recordApnsDiagnostics('after');
     if (session && driver && driver.exitCode === null && driver.signalCode === null) {
       if (!clean) {
         try { await cleanup(); console.log('Safari subscription fixture: cleanup completed'); }
