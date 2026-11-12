@@ -6,6 +6,10 @@ const { classifySendResponse, formatSendResponses } = require('../../experiments
 function fixtureFailure(stage) { return new Error(`FIXTURE_SUPPRESSION_${STAGES.has(stage) ? stage : 'UNKNOWN'}_FAILED`); }
 function sendCategory(error) { try { const value = error?.category; return CATEGORIES.has(value) ? value : 'OTHER'; } catch { return 'OTHER'; } }
 function freezeObserved(observed, marker) { return observed.has(marker) === true; }
+function fixtureBaselineOptions(mode) {
+    if (!['default', 'status'].includes(mode)) throw fixtureFailure('SETUP');
+    return { TTL: 60, timeout: 15000, ...(mode === 'status' ? { headers: { 'X-WNS-RequestForStatus': 'true' } } : {}) };
+}
 async function safeFixtureSend(send) {
     try {
         const response = await send();
@@ -17,4 +21,4 @@ async function safeFixtureSend(send) {
         throw result;
     }
 }
-module.exports = { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved };
+module.exports = { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved, fixtureBaselineOptions };

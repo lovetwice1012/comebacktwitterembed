@@ -21,7 +21,7 @@ const { buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-sn
 const { withEdgeWnsCredentials } = require('../../src/automation/edge-wns-credentials');
 const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
 const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
-const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved } = require('./edge-mac-suppression-errors.cjs');
+const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved, fixtureBaselineOptions } = require('./edge-mac-suppression-errors.cjs');
 const { withFixtureCdp } = require('./edge-mac-suppression-cdp.cjs');
 const { trackFixtureChild, runFixtureCleanup } = require('./edge-mac-suppression-cleanup.cjs');
 
@@ -69,6 +69,8 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
             } catch { throw new Error('FIXTURE_SUPPRESSION_CLEANUP_FAILED'); }
         });
         try {
+        const baselineMode = process.env.CBTE_MAC_EDGE_BASELINE_MODE || 'default';
+        const baselineOptions = fixtureBaselineOptions(baselineMode); t.diagnostic(`synthetic baseline mode=${baselineMode}`);
         const token = randomBytes(16).toString('hex'), root = path.join(base, `edge-calibration-${token}`), profile = path.join(root, 'profile');
         await fs.mkdir(root, { mode: 0o700 }); await fs.mkdir(profile, { mode: 0o700 });
         await fs.writeFile(path.join(root, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token }), { flag: 'wx', mode: 0o600 });
@@ -185,7 +187,7 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         stage = 'BASELINE_SEND';
         const baselineEventsBefore = pushEvents;
         const baselineSendStarted = Date.now();
-        const baselineSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, { TTL: 60, timeout: 15000 }));
+        const baselineSend = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, control, baselineOptions));
         t.diagnostic(`synthetic baseline send=${baselineSend}`);
         stage = 'BASELINE_WAIT'; let deadline = Date.now() + 30000; while (!observed.has(control) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200));
         const baselineObserved = freezeObserved(observed, control);

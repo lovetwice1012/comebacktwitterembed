@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved } = require('../native-test/edge-mac-suppression-errors.cjs');
+const { fixtureFailure, safeFixtureSend, sendCategory, freezeObserved, fixtureBaselineOptions } = require('../native-test/edge-mac-suppression-errors.cjs');
 test('fixture send and stages never expose external error fields', async () => {
     const error = Object.assign(new Error('SECRET_MESSAGE'), { endpoint: 'SECRET_ENDPOINT', body: 'SECRET_BODY', headers: { authorization: 'SECRET_HEADER' } });
     try { await safeFixtureSend(async () => { throw error; }); assert.fail('expected failure'); }
@@ -25,4 +25,9 @@ test('fixture send and stages never expose external error fields', async () => {
 test('late observer arrival cannot change the frozen baseline result', () => {
     const seen = new Set(), result = freezeObserved(seen, 'synthetic');
     seen.add('synthetic'); assert.equal(result, false); assert.equal(freezeObserved(seen, 'synthetic'), true);
+});
+test('status and default controls preserve TTL and differ only by the request status header', () => {
+    assert.deepEqual(fixtureBaselineOptions('default'), { TTL: 60, timeout: 15000 });
+    assert.deepEqual(fixtureBaselineOptions('status'), { TTL: 60, timeout: 15000, headers: { 'X-WNS-RequestForStatus': 'true' } });
+    assert.throws(() => fixtureBaselineOptions('other'), { message: 'FIXTURE_SUPPRESSION_SETUP_FAILED' });
 });

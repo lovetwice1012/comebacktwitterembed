@@ -23,6 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15, macos-15-intel]
+        mode: [default, status]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -52,6 +53,7 @@ jobs:
       - name: Test synthetic browser and receiver
         env:
           CBTE_MAC_EDGE_HOSTED: '1'
+          CBTE_MAC_EDGE_BASELINE_MODE: ${{ matrix.mode }}
           MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
           MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
         run: node --test scripts/test/edge-mac-suppression-errors.test.js scripts/test/edge-mac-suppression-cdp.test.js scripts/test/edge-mac-suppression-cleanup.test.js scripts/native-test/edge-mac-suppression-hosted.test.cjs
