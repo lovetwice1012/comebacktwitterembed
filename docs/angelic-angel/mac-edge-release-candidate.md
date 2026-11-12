@@ -22,3 +22,5 @@ node scripts/build-mac-edge-release-candidate.cjs \
 ３つの補助プログラムを署名してから manifest にハッシュを記録します。公証受理後にチケットを添付し、最終 ZIP を展開して署名・チケット・Gatekeeper とハッシュを検証します。失敗した場合は候補 ZIP を作らず、既存ファイルも上書きしません。署名・公証時の制約は [Mac Chrome 候補の手順](mac-chrome-release-candidate.md) と共通です。
 
 候補作成で配布設定は変わりません。Developer ID による正式署名、Apple 公証、Finder からの起動、候補 ZIP を使った実 Edge の一連の操作、実 X 通知と Discord 配送は未検証です。実 X の確認は利用者が後日行う方針です。停止中に送られた複数の通知をすべて受信できない問題も未解決のため、受付・公開 gate は無効のままにします。内部 manifest は `0.1.0-mac-edge-preview.1` を使い、ZIP に指定した版とは区別します。
+
+2026年11月12日の [Actions run 43203905870](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43203905870) では、Apple Silicon・Intel の両方で関連試験64件と Mac 専用試験5件が成功しました。Edge 候補 ZIP の組み立て、署名済み helper のハッシュ照合、同梱 Node と native addon の合成データ読み書き、初期ダイアログへの到達を確認しました。署名は ad-hoc、公証と Gatekeeper の応答は模擬です。正式な Developer ID 署名・Apple 公証・Finder の実操作や、実 X・Discord の通知はこの試験に含まれません。
