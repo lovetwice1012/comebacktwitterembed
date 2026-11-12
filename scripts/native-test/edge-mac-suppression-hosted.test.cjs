@@ -198,6 +198,14 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
         if (!baselineObserved) {
             let recovery = 'STOP_FAILED', recoveryStarted = 0;
             try {
+                // Match the setup application's normal capture-and-close path.
+                // The baseline result above remains frozen before this action.
+                recovery = 'CLOSE_CAPTURE_FAILED';
+                const closingSubscription = await captureFromBroker({ port: baseline.port, token: baseline.token, includeApplicationServerKey: true });
+                if (!(closingSubscription.endpoint === captured.endpoint && closingSubscription.keys?.p256dh === captured.keys.p256dh
+                    && closingSubscription.keys?.auth === captured.keys.auth && closingSubscription.applicationServerKey === captured.applicationServerKey)) {
+                    recovery = 'CLOSE_SUBSCRIPTION_CHANGED'; throw new Error('fixture subscription changed');
+                }
                 await stop(baseline, value => { recovery = value; }); recoveryStarted = Date.now(); recovery = 'CONNECT_FAILED';
                 let saved; const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
                 const store = { async assertLease(_lease, { authorize }) { await authorize(); }, async recordFrame(_lease, frame, { authorize }) {
@@ -214,6 +222,46 @@ test('synthetic Mac Edge suppression keeps an active WNS receiver in control',
                         const keys = { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')], private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] };
                         try { recovery = decryptNotification(saved.data, saved.headers, keys)?.raw === control ? 'MATCHED' : 'OTHER_FRAME'; }
                         finally { Object.values(keys).forEach(value => value.fill(0)); }
+                    }
+                    if (recovery === 'MATCHED') {
+                        // This separate diagnostic does not change the frozen baseline failure.
+                        let workerResult = 'OPEN_FAILED', browserObservation = 'NOT_RUN', browserState = 'UNKNOWN';
+                        let subscriptionResult = 'NOT_CHECKED', continuity = 'NOT_CHECKED', browser; saved = undefined;
+                        try {
+                            browser = await launch(true); workerResult = 'SEND_FAILED';
+                            const marker = `recovery-${randomBytes(16).toString('hex')}`, payload = JSON.stringify({ text: marker });
+                            const beforeEvents = pushEvents; markers.add(payload);
+                            const send = await safeFixtureSend(() => webpush.sendNotification({ endpoint: captured.endpoint, keys: captured.keys }, payload, { TTL: 60, timeout: 15000 }));
+                            t.diagnostic(`synthetic recovery trial send=${send}`); workerResult = 'NOT_OBSERVED';
+                            const deadline = Date.now() + 30000;
+                            while (Date.now() < deadline && !saved) await session.next(Math.min(3000, Math.max(1, deadline - Date.now())));
+                            if (saved) {
+                                workerResult = 'DECRYPT_FAILED';
+                                const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                                const keys = { public_key: [...Buffer.from(file.push.p256dhPublicKey, 'base64url')], private_key: [...Buffer.from(file.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(file.push.authenticationSecret, 'base64url')] };
+                                let matched;
+                                try { matched = decryptNotification(saved.data, saved.headers, keys)?.text === marker; }
+                                finally { Object.values(keys).forEach(value => value.fill(0)); }
+                                if (!matched) workerResult = 'OTHER_FRAME';
+                                else {
+                                    workerResult = 'MATCHED'; browserObservation = 'UNAVAILABLE'; await new Promise(resolve => setTimeout(resolve, 5000));
+                                    browserObservation = observed.has(payload) || pushEvents !== beforeEvents ? 'LOCALHOST_OBSERVED' : 'LOCALHOST_NOT_OBSERVED';
+                                    browserState = browser.chrome.exitCode === null && browser.chrome.signalCode === null ? 'ALIVE' : 'STOPPED';
+                                    try { continuity = (await session.next(1000)).state === 'idle' ? 'IDLE' : 'OTHER'; } catch { continuity = 'UNAVAILABLE'; }
+                                    if (browserState === 'ALIVE') {
+                                        try {
+                                            const again = await captureFromBroker({ port: browser.port, token: browser.token, includeApplicationServerKey: true });
+                                            subscriptionResult = again.endpoint === captured.endpoint && again.keys?.p256dh === captured.keys.p256dh
+                                                && again.keys?.auth === captured.keys.auth && again.applicationServerKey === captured.applicationServerKey ? 'SAME' : 'DIFFERENT';
+                                        } catch { subscriptionResult = 'UNAVAILABLE'; }
+                                    } else subscriptionResult = 'UNAVAILABLE';
+                                }
+                            }
+                        } catch { /* Fixed diagnostic only; preserve the original baseline failure. */ }
+                        finally {
+                            if (browser) try { await stop(browser); } catch { diagnosticCleanupUncertain = true; }
+                        }
+                        t.diagnostic(`synthetic recovery worker=${workerResult} browserLocal=${browserObservation} browser=${browserState} subscription=${subscriptionResult} session=${continuity} browserObserveSeconds=5 ttlSeconds=60`);
                     }
                 });
             } catch { /* Keep the fixed stage and never expose external error values. */ }
