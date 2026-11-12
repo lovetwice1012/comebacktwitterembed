@@ -49,4 +49,6 @@ node scripts/build-mac-edge-release-candidate.cjs \
 
 [Actions run 43215001240](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43215001240) では、Apple Silicon と Intel の両方で、固定 Node 24.21.0 から未署名の研究 addon を使い、合成ファイルの通常取得・競合・別 FD の close・所有プロセスの SIGKILL 後の再取得を確認しました。CLOEXEC フラグと Node spawn での非継承は別々に観測しています。負の試験では、inode の差替えによる排他回避と worker 終了後の lock 残留を両 CPU で再現しました。close 失敗は注入です。正式署名・公証や製品への接続は検証していません。
 
+[Actions run 43216074016](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43216074016) の未接続 v2 研究版は両 CPU で compile と合成試験 3 件が成功しました。worker の通常 cleanup と操作中終了時の lock 保持、別 addon 実体の競合、親 directory の差替え検出、実 registry／rotation の競合と旧プロフィール保持を確認しました。検査後の同一 UID による置換、進行中 filesystem 操作の異常終了、正式署名・公証、実アプリへの接続は未検証です。詳細は [排他の研究設計](mac-edge-lock-design.md) を参照してください。
+
 [Actions run 43212534451](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43212534451) の Apple Silicon と Intel の両方で、初回中止後に reader が確認できない合成 profile から、明示切替による旧 profile と index の保持、別の設定用 Edge の起動・停止を確認しました。[Actions run 43213032553](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43213032553) も両 CPU で成功し、同じ復旧に加えて、独立した helper の lock 競合・owner 強制終了後の解放を合成ファイルで確認しました。いずれも UI 全体や実 X の試験ではありません。

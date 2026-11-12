@@ -21,9 +21,17 @@ session lock は setup を実行する Node 本体内の Node-API addon が保�
 
 研究版は配布物に含めません。採用する場合は両 CPU 向けに固定 Node 24.21.0 と互換性のある addon をビルドし、実行時に検証できるよう署名済み addon の identity と hash を manifest に結び付けます。署名は manifest 作成前に行い、Node と addon を含む app 全体の署名、Apple 公証、ZIP 展開後の signature／manifest／Gatekeeper 検証を追加します。既存の `MacLevelDB.node` の検証を弱めず、ビルド元・architecture・Node-API の互換性も検査します。
 
-未接続の v2 研究版は、環境終了時に操作中でなければ lock を閉じ、追跡中の操作が残る場合はプロセス終了まで lock を保持して再取得を拒否します。親ディレクトリ descriptor と lock file の identity を開始・終了時に確認します。実装自体の Mac コンパイル・実行、両 CPU と署名はこれからの検証です。名前の検査と実際の変更の間の同一 UID による置換を防ぐものではなく、合成試験の成功もその競合窓を閉じた証明にはなりません。
+未接続の v2 研究版は、環境終了時に操作中でなければ lock を閉じ、追跡中の操作が残る場合はプロセス終了まで lock を保持して再取得を拒否します。親ディレクトリ descriptor と lock file の identity を開始・終了時に確認します。[Actions run 43216074016](https://github.com/lovetwice1012/comebacktwitterembed/actions/runs/43216074016) では Apple Silicon・Intel の両方で合成ファイルを使った compile と 3 試験が成功し、同一 process の別 addon 実体の競合、worker の通常 cleanup と操作中終了後の lock 保持、親 directory の差替え検出、実 registry／rotation を使った競合と旧プロフィール保持を確認しました。署名と実アプリへの接続は未検証です。名前の検査と実際の変更の間の同一 UID による置換を防ぐものではなく、合成試験の成功もその競合窓を閉じた証明にはなりません。
 
 研究 addon の filesystem syscall は同期実行です。OS 側で長時間停止した場合に JS のタイマーで復帰させる保証はなく、UI の応答性と停止時の扱いは未解決です。
+
+実験入口は、合成の registry／rotation を呼ぶ前に lock と操作 guard を取得し、操作が settle するまで保持します。応答しない作業に対して待機時間だけを理由に release しません。Mac の研究 workflow は addon を ad-hoc 署名してから hash を manifest に記録し、一致しないコピーを拒否します。正式な Developer ID 署名・Apple 公証の代わりにはなりません。署名／hash 検証と require の間の同一 UID による置換も残ります。
+
+実験入口が待つのは渡された Promise です。呼び出し側が未追跡の非同期作業を開始して先に Promise を完了させると、その作業は lock 解放後にも動きます。製品に接続する前に、子プロセス、非同期 filesystem 操作、callback と終了処理がすべてこの Promise に含まれ、未追跡の操作が残らないことを実装と試験で確認する必要があります。
+
+実アプリでは broker の起動失敗時に、子の close 後の lease 解放が後で実行される場合があります。校正で cleanup の確認が時間切れになったときも、後から起動した listener の停止処理は継続します。これらは上位 Promise が失敗しても作業がすべて終了した証拠にはなりません。実験入口は実行エラー時に lock を保持しますが、プロセス終了時に lock が OS に解放された後の子や遅延作業の収束は未解決です。private broker の複数 stop が同じ listener 終了を待つよう修正しましたが、残る経路の完了証明には別途対応が必要です。
+
+旧世代の設定ツールは新 lock に参加しないため、両者を同時実行するとこの排他は成立しません。旧世代の不在を安全に確認できる移行方式は未解決で、候補への接続条件に含めます。
 
 ## 実証条件
 

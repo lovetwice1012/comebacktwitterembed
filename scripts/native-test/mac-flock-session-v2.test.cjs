@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { Worker } = require('node:worker_threads');
+const { parseManifest, verifyResearchAddon } = require('./edge-mac-manifest-research.cjs');
 
 test('research v2 tracks environment ownership and detects a replaced directory',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_FLOCK_RESEARCH !== '1', timeout: 30000 }, async t => {
@@ -28,12 +29,16 @@ test('research v2 tracks environment ownership and detects a replaced directory'
             const real = await fs.realpath(base); assert.ok(path.dirname(real) === parent && /^cbte-flock-v2-/.test(path.basename(real)), 'fixture root changed');
             await fs.rm(real, { recursive: true });
         });
-        const filename = process.env.CBTE_MAC_FLOCK_V2_ADDON; assert.ok(path.isAbsolute(filename || ''), 'fixture addon unavailable');
+        const filename = process.env.CBTE_MAC_FLOCK_V2_ADDON, manifestPath = process.env.CBTE_MAC_FLOCK_MANIFEST;
+        assert.ok(path.isAbsolute(filename || '') && path.isAbsolute(manifestPath || ''), 'fixture addon unavailable');
+        const manifest = parseManifest(await fs.readFile(manifestPath, 'utf8'));
+        await verifyResearchAddon({ file: filename, manifest });
         const stat = await fs.lstat(base); assert.ok(stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === process.getuid()
             && (stat.mode & 0o777) === 0o700 && await fs.realpath(base) === base, 'fixture root invalid');
         await fs.writeFile(path.join(base, 'session.lock'), '', { flag: 'wx', mode: 0o600 }); addon = require(filename);
         assert.equal(addon.acquire(base), 'OK'); assert.equal(addon.acquire(base), 'BUSY');
         const copyPath = path.join(base, 'fixture-addon-copy.node'); await fs.copyFile(filename, copyPath, constants.COPYFILE_EXCL);
+        await verifyResearchAddon({ file: copyPath, manifest });
         copy = require(copyPath); assert.equal(copy.status(), 'NONE', 'fixture addon instances were not independent');
         assert.equal(copy.acquire(base), 'BUSY');
         assert.equal(addon.begin(), 'OK'); assert.equal(addon.begin(), 'BUSY'); assert.equal(addon.release(), 'BUSY'); assert.equal(addon.end(), 'OK');
@@ -61,5 +66,8 @@ test('research v2 tracks environment ownership and detects a replaced directory'
         const replace = `const fs=require('node:fs'),path=require('node:path'),a=require(process.argv[1]),p=process.argv[2];if(a.acquire(p)!=='OK')process.exit(2);fs.renameSync(p,p+'-moved');fs.mkdirSync(p,{mode:0o700});fs.writeFileSync(path.join(p,'session.lock'),'',{flag:'wx',mode:0o600});process.stdout.write(a.begin()==='INVALID'?'DETECTED':'UNEXPECTED');`;
         const child = spawnSync(process.execPath, ['-e', replace, filename, isolated], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
         assert.equal(child.status, 0, 'fixture replacement process failed'); assert.equal(child.stdout, 'DETECTED');
+        const altered = path.join(base, 'altered-addon.node');
+        await fs.copyFile(filename, altered, constants.COPYFILE_EXCL); await fs.appendFile(altered, 'synthetic alteration');
+        await assert.rejects(verifyResearchAddon({ file: altered, manifest }), { code: 'RESEARCH_MANIFEST_INVALID' });
         t.diagnostic('synthetic v2: quiescent worker cleanup, same-process contention and directory replacement detection verified');
     });
