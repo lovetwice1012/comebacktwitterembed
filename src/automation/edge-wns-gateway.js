@@ -3,7 +3,8 @@
 // One receiver inside the shared worker. The parent owns lease renewal and
 // must abort the signal as soon as the lease or rollout authorization ends.
 const { createEdgeWnsTransport } = require('./edge-wns-transport');
-const { createEdgeWnsSession } = require('./edge-wns-session');
+const { createEdgeWnsSession, reply } = require('./edge-wns-session');
+const { parseBindResponse } = require('./edge-wns-bind');
 const { createEdgeWnsReceiver } = require('./edge-wns-receiver');
 const fail = code => Object.assign(new Error(code), { code });
 function validateCredentials(value) {
@@ -28,6 +29,13 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
     if (signal.aborted) return { state: 'stopped' };
     let recovered, session, transport, token, generation = 0, established = false;
     const stopped = () => signal.aborted;
+    const guard = async () => { if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); await store.assertLease(lease, { authorize }); if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); };
+    const saveRotatedToken = async value => {
+        if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
+        const result = await store.saveWnsTokenState(lease, { vault, authorize, token: value, expectedGeneration: generation });
+        if (!result || result.generation !== generation + 1) throw fail('X_EDGE_WNS_STATE_INVALID');
+        generation = result.generation;
+    };
     function abort() {
         try { session?.close(); } catch { /* Continue closing the transport. */ }
         try { transport?.close(); } catch { /* A stopped session cannot send further frames. */ }
@@ -45,16 +53,10 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         }
         transport = transportFactory ? transportFactory({ signal }) : createEdgeWnsTransport({ signal });
         if (!transport || ['connect', 'send', 'next', 'close'].some(name => typeof transport[name] !== 'function')) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
-        const guard = async () => { if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); await store.assertLease(lease, { authorize }); if (stopped()) throw fail('X_EDGE_WNS_STOPPED'); };
         const guarded = { async connect() { await guard(); return transport.connect(); }, async send(frame) { await guard(); return transport.send(frame); },
             next: wait => transport.next(wait), close: () => { if (!transport.hasBufferedAfterDisconnect?.()) transport.close(); } };
         session = createEdgeWnsSession({ transport: guarded, store, lease, siteChannel: credentials.siteChannel, authorize,
-            saveRotatedToken: async value => {
-                if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
-                const result = await store.saveWnsTokenState(lease, { vault, authorize, token: value, expectedGeneration: generation });
-                if (!result || result.generation !== generation + 1) throw fail('X_EDGE_WNS_STATE_INVALID');
-                generation = result.generation;
-            },
+            saveRotatedToken,
             agent: credentials.agent, client: credentials.client, deviceKey: credentials.deviceKey, reconnectToken: token,
             productKey: credentials.productKey, productId: credentials.productId, authenticationMode: credentials.authenticationMode,
             ...(credentials.connectVersion === '2' ? { connectVersion: '2' } : {}) });
@@ -78,28 +80,43 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         return { state: 'stopped' };
     } catch (error) {
         if (stopped()) return { state: 'stopped' };
-        if (established && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_ACK_FAILED', 'X_EDGE_WNS_BACKPRESSURE', 'X_EDGE_WNS_FRAME_INVALID'].includes(error?.code)
+        const recoverBound = !established && session?.canRecoverBufferedBoundReply();
+        if ((established || recoverBound) && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_ACK_FAILED', 'X_EDGE_WNS_BACKPRESSURE', 'X_EDGE_WNS_FRAME_INVALID'].includes(error?.code)
             && transport?.hasBufferedAfterDisconnect?.() && typeof transport.takeBufferedAfterDisconnect === 'function') {
             // The provider may not replay frames after a failed connection. Persist
             // only complete, already-received frames while this lease remains valid;
             // there is no socket on which to acknowledge them.
-            const frames = transport.takeBufferedAfterDisconnect(); let drain;
+            const frames = transport.takeBufferedAfterDisconnect(); let drain, binding;
             try {
+                if (recoverBound) {
+                    // The first complete frame must authenticate this specific
+                    // BND exchange. Commit its rotated token under the current
+                    // lease before accepting any subsequent notification.
+                    reply(frames[0], 'BND', 3, 'CON');
+                    binding = parseBindResponse(frames[0], 3);
+                    await guard();
+                    await saveRotatedToken(binding.reconnectToken);
+                    await guard();
+                }
                 const drainAuthorize = async query => {
                     if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
                     await authorize(query);
                     if (stopped()) throw fail('X_EDGE_WNS_STOPPED');
                 };
                 drain = createEdgeWnsReceiver({ store, lease, channel: credentials.siteChannel, authorize: drainAuthorize, sendAck: async () => {} });
-                for (const frame of frames) {
+                for (const frame of recoverBound ? frames.slice(1) : frames) {
                     if (stopped()) break;
                     await store.assertLease(lease, { authorize: drainAuthorize });
                     if (stopped()) break;
                     await drain.receive(frame, 1, { acknowledge: false });
                 }
             } catch (drainError) {
-                if (/^X_PUSH_(?:LEASE_LOST|ROLLOUT_WITHDRAWN|ROLLOUT_CHECK_FAILED|STORE_TIMEOUT)$/.test(drainError?.code || '')) error = drainError;
-            } finally { drain?.close(); for (const frame of frames) frame.fill(0); }
+                // Do not report an ordinary disconnect when recovery itself
+                // failed: some buffered receipts may not have been stored.
+                // Never expose database or frame contents in the reason code.
+                error = /^X_PUSH_(?:LEASE_LOST|ROLLOUT_WITHDRAWN|ROLLOUT_CHECK_FAILED|STORE_TIMEOUT)$/.test(drainError?.code || '')
+                    ? fail(drainError.code) : fail('X_PUSH_BUFFERED_RECOVERY_FAILED');
+            } finally { binding?.reconnectToken.fill(0); drain?.close(); for (const frame of frames) frame.fill(0); }
         }
         if (stopped()) return { state: 'stopped' };
         if (typeof error?.code === 'string' && /^X_(?:EDGE_WNS|PUSH|SETUP)_[A-Z_]+$/.test(error.code)) throw error;

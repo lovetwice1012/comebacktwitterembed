@@ -165,6 +165,80 @@ test('network disconnect drains already-buffered owned receipts without acknowle
     await assert.rejects(runEdgeWnsGateway(h.options), { code: 'X_EDGE_WNS_SOCKET_CLOSED' });
     assert.equal(saved.length, 2); assert(!sent.includes('ACK')); assert.equal(h.received.length, 0);
 });
+test('failure to persist disconnected buffered receipts is reported safely after partial recovery', async () => {
+    for (const mode of ['database', 'timeout', 'conflict']) {
+        const saved = [], sent = [], socket = new EventEmitter(); let disconnected = false;
+        socket.write = (data, done) => {
+            const name = data.subarray(0, data.indexOf(' ')).toString('ascii'); sent.push(name);
+            const response = name === 'CNT' ? envelope('CNT 1 CON', '<connect/>') : name === 'ATH' ? envelope('ATH 2 CON')
+                : envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>fixture</nonce><reconnect-token>rotated-token</reconnect-token></wns>');
+            queueMicrotask(() => { done(); socket.emit('data', response); }); return true;
+        };
+        socket.destroy = () => { if (!disconnected) { disconnected = true; socket.emit('close'); } };
+        const h = harness({ store: { async recordFrame(_lease, entry, { authorize }) {
+            await authorize();
+            if (saved.length) {
+                if (mode === 'timeout') throw Object.assign(new Error('sensitive timeout detail'), { code: 'X_PUSH_STORE_TIMEOUT' });
+                if (mode === 'database') throw Object.assign(new Error('private database details'), { code: 'ER_SECRET_DETAILS' });
+                return { ...lease, ...entry, ownerUserId: 'wrong-owner', id: '2', duplicate: false };
+            }
+            saved.push(entry); return { ...lease, ...entry, id: '1', duplicate: false };
+        } }, options: { credentials: { agent: { os: 'Test', osVersion: '1', architecture: 'x64', locale: 'en' },
+            client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' }, deviceKey: Buffer.alloc(32, 7),
+            reconnectToken: Buffer.from('initial'), siteChannel: Buffer.from('target'), authenticationMode: 'bound' },
+            transportFactory: ({ signal }) => { const transport = createEdgeWnsTransport({ socketFactory: () => socket, signal, timeoutMs: 1000 }); queueMicrotask(() => socket.emit('secureConnect')); return transport; },
+            onReady: async () => { socket.emit('data', Buffer.concat([notification('target', 'first'), notification('target', 'second')])); socket.emit('close'); },
+            onReceived: async () => assert.fail('buffer recovery is not immediate delivery') } });
+        const expected = mode === 'timeout' ? 'X_PUSH_STORE_TIMEOUT' : 'X_PUSH_BUFFERED_RECOVERY_FAILED';
+        await assert.rejects(runEdgeWnsGateway(h.options), error => error.code === expected && error.message === expected);
+        assert.equal(saved.length, 1, mode); assert(!sent.includes('ACK'), mode); assert.equal(h.received.length, 0, mode);
+    }
+});
+test('disconnect during bound handshake saves only authenticated buffered notifications after token commit', async () => {
+    for (const mode of ['valid', 'invalid-bind', 'token-failure', 'record-failure', 'record-failure-second', 'revoked', 'revoked-after-token', 'before-bind', 'challenge']) {
+        const saved = [], sent = [], socket = new EventEmitter(); let disconnected = false, tokenSaved = false, revoked = false;
+        socket.write = (data, done) => {
+            const name = data.subarray(0, data.indexOf(' ')).toString('ascii'); sent.push(name);
+            if (name === (mode === 'before-bind' ? 'ATH' : 'BND')) {
+                queueMicrotask(() => {
+                    const bind = mode === 'invalid-bind' ? envelope('BND 3 CON', '<wns><ver>1.0</ver></wns>')
+                        : envelope('BND 3 CON', '<wns><ver>1.0</ver><nonce>fixture</nonce><reconnect-token>rotated-token</reconnect-token></wns>');
+                    socket.emit('data', Buffer.concat([bind, notification('target', 'early-one'), notification('other'), notification('target', 'early-two')]));
+                    if (mode === 'revoked') revoked = true;
+                    socket.emit('close');
+                });
+                return true;
+            }
+            const response = name === 'CNT' ? envelope('CNT 1 CON', '<connect/>') : envelope('ATH 2 CON');
+            queueMicrotask(() => { done(); socket.emit('data', response); }); return true;
+        };
+        socket.destroy = () => { if (!disconnected) { disconnected = true; socket.emit('close'); } };
+        const credentials = { agent: { os: 'Test', osVersion: '1', architecture: 'x64', locale: 'en' },
+            client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' }, deviceKey: Buffer.alloc(32, 7),
+            reconnectToken: Buffer.from('initial'), siteChannel: Buffer.from('target'), ...(mode === 'challenge'
+                ? { productKey: Buffer.from('0123456789abcdef'), productId: Buffer.from('fedcba9876543210') } : { authenticationMode: 'bound' }) };
+        const h = harness({ store: {
+            async saveWnsTokenState(_lease, { authorize, expectedGeneration }) {
+                await authorize(); if (mode === 'token-failure') throw new Error('synthetic DB failure'); tokenSaved = true;
+                if (mode === 'revoked-after-token') revoked = true;
+                return { generation: expectedGeneration + 1 };
+            },
+            async recordFrame(_lease, entry, { authorize }) {
+                await authorize(); assert(tokenSaved);
+                if (mode === 'record-failure' || mode === 'record-failure-second' && saved.length === 1) throw new Error('private database details');
+                saved.push(entry); return { ...lease, ...entry, id: String(saved.length), duplicate: false };
+            },
+        }, options: { credentials, authorize: async () => { if (revoked) throw Object.assign(new Error('revoked'), { code: 'X_PUSH_ROLLOUT_WITHDRAWN' }); },
+            transportFactory: ({ signal }) => { const transport = createEdgeWnsTransport({ socketFactory: () => socket, signal, timeoutMs: 1000 }); queueMicrotask(() => socket.emit('secureConnect')); return transport; },
+            onReady: async () => assert.fail('closed connection must not become ready'), onReceived: async () => assert.fail('buffered rows must use recovery') } });
+        const expected = mode.startsWith('revoked') ? 'X_PUSH_ROLLOUT_WITHDRAWN'
+            : ['invalid-bind', 'token-failure', 'record-failure', 'record-failure-second'].includes(mode) ? 'X_PUSH_BUFFERED_RECOVERY_FAILED' : 'X_EDGE_WNS_SOCKET_CLOSED';
+        await assert.rejects(runEdgeWnsGateway(h.options), error => error.code === expected && !error.message.includes('private database details'));
+        assert.equal(saved.length, mode === 'valid' ? 2 : mode === 'record-failure-second' ? 1 : 0, mode);
+        assert.equal(tokenSaved, ['valid', 'record-failure', 'record-failure-second', 'revoked-after-token'].includes(mode), mode);
+        assert(!sent.includes('ACK'), mode);
+    }
+});
 test('malformed input and bounded queue overflow preserve earlier owned receipts', async () => {
     for (const mode of ['malformed', 'overflow']) {
         const saved = [], sent = [], socket = new EventEmitter(); let disconnected = false;

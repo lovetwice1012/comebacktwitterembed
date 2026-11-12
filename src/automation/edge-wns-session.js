@@ -48,7 +48,7 @@ function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize,
     let receiver;
     try { receiver = createEdgeWnsReceiver({ store, lease, channel: siteChannel, authorize, sendAck: frame => transport.send(frame) }); }
     catch (error) { for (const value of Object.values(secrets)) value.fill(0); throw error; }
-    let state = 'new', busy = false, ackSequence = 5;
+    let state = 'new', busy = false, ackSequence = 5, awaitingBoundReply = false;
     function clearSecrets() { for (const value of Object.values(secrets)) value.fill(0); }
     function stop() { if (state === 'closed') return; state = 'closed'; clearSecrets(); receiver.close(); transport.close(); }
     async function exclusive(work) {
@@ -75,7 +75,9 @@ function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize,
                 await transport.connect();
                 (await exchange(cnt, 'CNT', 1, 'CON')).fill(0); cnt = null;
                 (await exchange(ath, 'ATH', 2, 'CON', { emptyBody: true })).fill(0); ath = null;
+                awaitingBoundReply = true;
                 const bound = await exchange(bnd, 'BND', 3, 'CON'); bnd = null;
+                awaitingBoundReply = false;
                 let binding;
                 try { binding = parseBindResponse(bound, 3); } finally { bound.fill(0); }
                 try {
@@ -101,6 +103,9 @@ function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize,
                 return await receiver.receive(frame, ackSequence++);
             } finally { frame.fill(0); }
         }),
+        // Only this handshake phase can prove a buffered BND belongs to the
+        // validated CNT/ATH exchange. Challenge mode still needs its PUT reply.
+        canRecoverBufferedBoundReply: () => authenticationMode === 'bound' && awaitingBoundReply,
         close: stop,
     });
 }
