@@ -3,11 +3,25 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const { constants } = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { Worker } = require('node:worker_threads');
 const { waitForMacProcessGroupExit } = require('../../src/automation/chrome-mac-process-group');
+async function fixtureText(parent, file) {
+    const dir = await fs.lstat(parent);
+    if (!dir.isDirectory() || dir.isSymbolicLink() || dir.uid !== process.getuid() || await fs.realpath(parent) !== parent) throw new Error('invalid fixture parent');
+    const before = await fs.lstat(file), fd = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+        const stat = await fd.stat();
+        if (!before.isFile() || before.isSymbolicLink() || stat.dev !== before.dev || stat.ino !== before.ino
+            || stat.uid !== process.getuid() || stat.nlink !== 1 || stat.size > 4096) throw new Error('invalid fixture file');
+        const value = await fd.readFile('utf8'), after = await fd.stat();
+        if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs) throw new Error('fixture file changed');
+        return value;
+    } finally { await fd.close(); }
+}
 
 test('research addon owns an advisory lock in the Node process',
     { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_FLOCK_RESEARCH !== '1', timeout: 30000 }, async t => {
@@ -92,4 +106,50 @@ test('research addon owns an advisory lock in the Node process',
         assert.equal(run(contender, contenderArgs), 'OK');
         t.diagnostic('synthetic injected close failure prevented reacquisition until the fixture process exited');
         t.diagnostic('synthetic in-process flock: normal, contention, separate close, child spawn and owner SIGKILL verified');
+    });
+
+test('research lock blocks another process before real registry rotation',
+    { skip: process.platform !== 'darwin' || process.env.CBTE_MAC_FLOCK_RESEARCH !== '1', timeout: 30000 }, async t => {
+        assert.equal(process.env.GITHUB_ACTIONS, 'true'); assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+        const { getOrCreateMacEdgeProfile } = require('../../src/automation/chrome-mac-profile-registry');
+        const temp = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(temp, 'cbte-flock-rotation-')); let holder;
+        t.after(async () => {
+            if (holder && holder.exitCode === null && holder.signalCode === null) holder.kill('SIGKILL');
+            if (holder) {
+                let timer; const closed = await Promise.race([holder.fixtureClosed.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
+                clearTimeout(timer); assert.ok(closed && holder.pid && await waitForMacProcessGroupExit(holder.pid), 'fixture retained because holder termination is uncertain');
+            }
+            const real = await fs.realpath(base);
+            assert.ok(path.dirname(real) === temp && /^cbte-flock-rotation-/.test(path.basename(real)), 'fixture root changed');
+            await fs.rm(real, { recursive: true });
+        });
+        const addon = process.env.CBTE_MAC_FLOCK_V2_ADDON; assert.ok(path.isAbsolute(addon || ''), 'fixture addon unavailable');
+        const stat = await fs.lstat(base); assert.ok(stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === process.getuid()
+            && (stat.mode & 0o777) === 0o700 && await fs.realpath(base) === base, 'fixture root invalid');
+        await fs.writeFile(path.join(base, 'session.lock'), '', { flag: 'wx', mode: 0o600 });
+        const old = await getOrCreateMacEdgeProfile(base), sentinel = path.join(old.rootPath, 'synthetic-sentinel');
+        await fs.writeFile(sentinel, 'preserve', { flag: 'wx', mode: 0o600 });
+        const originalIndex = await fixtureText(base, path.join(base, 'edge-setup-profile.json'));
+        const childScript = path.join(__dirname, 'mac-flock-rotation-child.cjs');
+        function attempt() {
+            const child = spawnSync(process.execPath, [childScript, addon, base, 'rotate'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+                env: { ...process.env, CBTE_MAC_FLOCK_V2: '1' } });
+            assert.equal(child.status, 0, 'fixture rotation process failed'); return child.stdout;
+        }
+        holder = spawn(process.execPath, [childScript, addon, base, 'hold'], { detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, CBTE_MAC_FLOCK_V2: '1' } });
+        holder.stdin.on('error', () => {}); holder.fixtureClosed = new Promise(resolve => { holder.once('close', resolve); holder.once('error', resolve); });
+        let timer; const ready = await Promise.race([new Promise(resolve => holder.stdout.once('data', b => resolve(b.toString('ascii')))),
+            new Promise(resolve => { timer = setTimeout(() => resolve('TIMEOUT'), 5000); })]); clearTimeout(timer);
+        assert.equal(ready, 'READY'); assert.equal(attempt(), 'BUSY');
+        assert.ok(await fixtureText(base, path.join(base, 'edge-setup-profile.json')) === originalIndex, 'index changed during contention');
+        assert.equal(holder.kill('SIGKILL'), true);
+        let closeTimer; const closed = await Promise.race([holder.fixtureClosed.then(() => true), new Promise(resolve => { closeTimer = setTimeout(() => resolve(false), 5000); })]); clearTimeout(closeTimer);
+        assert.equal(closed, true, 'fixture holder did not close'); assert.equal(attempt(), 'ROTATED');
+        const current = await getOrCreateMacEdgeProfile(base);
+        assert.ok(current.rootPath !== old.rootPath, 'fixture rotation did not create a new profile');
+        assert.ok(await fixtureText(old.rootPath, sentinel) === 'preserve', 'old fixture profile changed');
+        const backups = (await fs.readdir(base)).filter(name => /^edge-setup-profile-backup-[a-f0-9]{32}\.json$/.test(name));
+        assert.equal(backups.length, 1);
+        assert.ok(await fixtureText(base, path.join(base, backups[0])) === originalIndex, 'old fixture index changed');
+        t.diagnostic('synthetic competing rotation waited for owner termination and preserved prior profile');
     });

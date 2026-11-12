@@ -5,8 +5,13 @@ on:
     paths:
       - .github/workflows/mac-flock-research.yml
       - scripts/native-test/mac-flock-research.c
+      - scripts/native-test/mac-flock-session-v2.c
+      - scripts/native-test/mac-flock-session-v2.test.cjs
       - scripts/native-test/mac-flock-research.test.cjs
+      - scripts/native-test/mac-flock-rotation-child.cjs
       - src/automation/chrome-mac-process-group.js
+      - src/automation/chrome-mac-profile*.js
+      - src/automation/edge-mac-profile-rotation.js
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,9 +37,11 @@ jobs:
           test -f "$nodehome/include/node/node_api.h"
           clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -I "$nodehome/include/node" scripts/native-test/mac-flock-research.c -o "$RUNNER_TEMP/MacFlockResearch.node"
           clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -DCBTE_RESEARCH_FAULT_INJECT -I "$nodehome/include/node" scripts/native-test/mac-flock-research.c -o "$RUNNER_TEMP/MacFlockResearchFault.node"
+          clang -O2 -bundle -undefined dynamic_lookup -mmacosx-version-min=13.5 -I "$nodehome/include/node" scripts/native-test/mac-flock-session-v2.c -o "$RUNNER_TEMP/MacFlockSessionV2.node"
       - name: Test synthetic ownership and lifecycle
         env:
           CBTE_MAC_FLOCK_RESEARCH: '1'
           CBTE_MAC_FLOCK_ADDON: ${{ runner.temp }}/MacFlockResearch.node
           CBTE_MAC_FLOCK_FAULT_ADDON: ${{ runner.temp }}/MacFlockResearchFault.node
-        run: node --test scripts/native-test/mac-flock-research.test.cjs
+          CBTE_MAC_FLOCK_V2_ADDON: ${{ runner.temp }}/MacFlockSessionV2.node
+        run: node --test scripts/native-test/mac-flock-research.test.cjs scripts/native-test/mac-flock-session-v2.test.cjs
