@@ -17,7 +17,7 @@ const oldFilename = path.join(root, 'src/automation/x-push-store-legacy-syntheti
 const oldModule = new Module(oldFilename, module);
 oldModule.filename = oldFilename;
 oldModule.paths = Module._nodeModulePaths(path.dirname(oldFilename));
-oldModule._compile(execFileSync('git', ['show', '4a6d082:src/automation/x-push-store.js'], { cwd: root, encoding: 'utf8' }), oldFilename);
+oldModule._compile(execFileSync('git', ['show', '4a6d082aac678b9f5e9e663f85febba796352434:src/automation/x-push-store.js'], { cwd: root, encoding: 'utf8' }), oldFilename);
 const old = oldModule.exports;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -209,16 +209,16 @@ test('MariaDB statement time limit interrupts this synthetic sleep, without prov
     });
     await started;
     await assert.rejects(attempt, { code: 'X_PUSH_ATOMIC_TIMEOUT' });
-    let claimed = false;
+    let claimed = false, claimMs;
     const start = Date.now();
-    const successor = f.legacy.claim({ ...f.subscription, workerId: 'legacy-server-limit' }).then(value => { claimed = true; return value; });
+    const successor = f.legacy.claim({ ...f.subscription, workerId: 'legacy-server-limit' }).then(value => { claimed = true; claimMs = Date.now() - start; return value; });
     try {
         await delay(2000);
         assert.equal(claimed, true, 'this synthetic sleep remained locked despite the MariaDB statement setting');
     } finally {
         const lease = await successor;
         if (lease) await f.legacy.release(lease);
-        t.diagnostic(`synthetic successor claim completed within ${Date.now() - start} ms`);
+        t.diagnostic(`synthetic successor claim completed after ${claimMs} ms`);
     }
 });
 

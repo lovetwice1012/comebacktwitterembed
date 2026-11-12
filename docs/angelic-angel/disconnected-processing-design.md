@@ -87,3 +87,7 @@
 **この案には未解決の障害がある。** トランザクション中に `SELECT SLEEP(4)` を実行し、クライアント側で250ms後に接続を破棄しても、MariaDB は実行中の問い合わせが終わるまで行ロックを保持した。旧 worker が接続を取得できたのは接続破棄から約3.75秒後だった。JavaScript のタイムアウトと socket 破棄だけでは、DB側の処理中断・ロック解放時間を保証できない。実行用 adapter と再現試験は `experiments/chrome-push` に研究用として置き、通常起動経路には接続しない。
 
 MariaDB のサーバー側 `max_statement_time` は中断の確認点に依存し、すべての操作を厳密な時間内に中断する保証ではない。また MySQL の同種機能は適用範囲が異なる。[MariaDB の説明](https://mariadb.com/docs/server/ha-and-performance/optimization-and-tuning/query-optimizations/aborting-statements) を参照。別接続からの `KILL` も、対象セッションと同一の書き込みサーバーを確実に識別できないままでは、別の接続を停止する危険がある。DBの種類、プロキシや切替経路、権限、サーバー側中断と実際のロック解放を検証しないまま導入しない。
+
+同じ隔離環境の比較では、その接続の `max_statement_time` を0.5秒に設定すると `SLEEP(4)` は中断され、接続破棄の約251〜258ms後に旧 worker の claim が完了した。ただしこれは単一の人工的な問い合わせであり、実際の全SQL、ストレージ処理、COMMITの時間上限の証明にはならない。別の試験で、このセッション設定は commit 後に同じ pool 接続を再利用しても残った。共通 pool に無条件で設定すると既存通知など別の処理へ影響するため、セッションの復元・失敗時の接続破棄を含む設計が必要である。いずれも本番設定は変更していない。
+
+再現試験は `experiments/chrome-push/atomic-legacy-transaction-experiment.test.cjs` で、`4a6d082` の Git object と明示された非本番 loopback MariaDB を必要とする。毎回ランダム名の試験専用 schema を作成・削除し、最後にテスト用接続を閉じる。上記の隔離 MariaDB では10件成功し、このうち「接続破棄後もロックが残る」ことを確認する試験の成功は問題解決ではなく、問題を再現できたことを意味する。テスト用 adapter の動作を模擬接続で調べる単体試験は `scripts/test/x-push-atomic-db.test.js` にある。
