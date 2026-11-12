@@ -28,30 +28,30 @@ async function createInstrumentedBraveVerifier(t) {
         throw new Error('FIXTURE_VERIFIER_UNAVAILABLE');
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/brave-mac-browser.js'), 'utf8');
     return async () => {
-        const events = [], beforeStats = new Map(); let signatureChecks = 0;
-        const phase = () => signatureChecks >= 2 ? 'post' : 'pre';
+        const events = [], beforeStats = new Map(); let signatureChecks = 0, inspections = 0, currentPhase = 'pre';
         const wrappedFs = { ...fs,
             async lstat(name) {
                 const role = ROLES.get(name) || 'unexpected';
+                currentPhase = Math.floor(inspections++ / 3) % 2 === 0 ? 'pre' : 'post';
                 try {
                     const stat = await fs.lstat(name);
                     const fingerprint = [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs];
-                    if (phase() === 'pre') beforeStats.set(role, fingerprint);
-                    const before = phase() === 'post' ? beforeStats.get(role) : null;
+                    if (currentPhase === 'pre') beforeStats.set(role, fingerprint);
+                    const before = currentPhase === 'post' ? beforeStats.get(role) : null;
                     const differences = ['dev', 'inode', 'size', 'mtime', 'ctime'].map((name, index) =>
                         `${name}Changed=${before ? String(before[index] !== fingerprint[index]) : 'unknown'}`);
                     const stable = before ? String(before.every((value, index) => value === fingerprint[index])) : 'unknown';
-                    events.push(`inspection=${phase()}_${role}_lstat symlink=${stat.isSymbolicLink()} kind=${stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other'} stableSincePre=${stable} ${differences.join(' ')}`);
+                    events.push(`inspection=${currentPhase}_${role}_lstat symlink=${stat.isSymbolicLink()} kind=${stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other'} stableSincePre=${stable} ${differences.join(' ')}`);
                     return stat;
-                } catch (error) { events.push(`inspection=${phase()}_${role}_lstat result=${classifyFailure(error)}`); throw error; }
+                } catch (error) { events.push(`inspection=${currentPhase}_${role}_lstat result=${classifyFailure(error)}`); throw error; }
             },
             async realpath(name) {
                 const role = ROLES.get(name) || 'unexpected';
                 try {
                     const actual = await fs.realpath(name);
-                    events.push(`inspection=${phase()}_${role}_realpath unchanged=${actual === name}`);
+                    events.push(`inspection=${currentPhase}_${role}_realpath unchanged=${actual === name}`);
                     return actual;
-                } catch (error) { events.push(`inspection=${phase()}_${role}_realpath result=${classifyFailure(error)}`); throw error; }
+                } catch (error) { events.push(`inspection=${currentPhase}_${role}_realpath result=${classifyFailure(error)}`); throw error; }
             } };
         function execFile() { throw new Error('FIXTURE_PROMISIFY_EXPECTED'); }
         execFile[util.promisify.custom] = async (file, args, options) => {
@@ -74,12 +74,13 @@ async function createInstrumentedBraveVerifier(t) {
             }
         };
         const module = { exports: {} };
-        vm.runInNewContext(source, { module, exports: module.exports, process,
+        vm.runInNewContext(source, { module, exports: module.exports, process, Buffer,
             require(name) {
                 if (name === 'node:fs/promises') return wrappedFs;
                 if (name === 'node:child_process') return { execFile };
                 if (name === 'node:path') return path;
                 if (name === 'node:util') return util;
+                if (name === 'node:fs' || name === 'node:crypto') return require(name);
                 throw new Error('FIXTURE_UNEXPECTED_REQUIRE');
             } });
         try { return await module.exports.verifyInstalledMacBrave(); }

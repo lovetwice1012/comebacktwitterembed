@@ -27,16 +27,22 @@ test('diagnostic preserves strict verification and identifies the original faile
     const helper = fs.readFileSync(path.join(__dirname, '../native-test/brave-mac-verifier-diagnostic.cjs'), 'utf8');
     const verifier = fs.readFileSync(path.join(__dirname, '../../src/automation/brave-mac-browser.js'), 'utf8');
     for (const failure of ['first_signature', 'second_signature', 'post_identity', 'post_dev', 'post_inode', 'post_size', 'post_mtime', 'post_ctime']) {
-        let signature = 0, inspections = 0; const events = [], calls = [];
+        let signature = 0, inspections = 0; const events = [], calls = [], latest = new Map();
         const fakeFs = { async readFile() { return verifier; }, async lstat(name) {
             inspections++;
             const changed = inspections > 3 && name.replace(/\\/g, '/').endsWith('/Contents/MacOS/Brave Browser');
-            return { dev: changed && failure === 'post_dev' ? 2 : 1, ino: changed && failure === 'post_inode' ? 11 : 10,
+            const stat = { dev: changed && failure === 'post_dev' ? 2 : 1, ino: changed && failure === 'post_inode' ? 11 : 10,
                 size: changed && failure === 'post_size' ? 101 : 100,
                 mtimeMs: failure === 'post_identity' && inspections > 3 || changed && failure === 'post_mtime' ? 2 : 1,
-                ctimeMs: changed && failure === 'post_ctime' ? 2 : 1,
+                ctimeMs: changed && failure === 'post_ctime' ? inspections : 1,
                 isSymbolicLink: () => false, isDirectory: () => name.endsWith('.app'), isFile: () => !name.endsWith('.app') };
-        }, async realpath(name) { return name; } };
+            latest.set(name, stat); return stat;
+        }, async realpath(name) { return name; }, async open(name) {
+            const stat = latest.get(name), value = Buffer.alloc(stat.size, 1);
+            return { async stat() { return stat; }, async read(buffer, offset, length, position) {
+                const bytesRead = Math.min(length, value.length - position); value.copy(buffer, offset, position, position + bytesRead); return { bytesRead };
+            }, async close() {} };
+        } };
         function execFile() {}
         execFile[util.promisify.custom] = async (file, args) => {
             calls.push({ file, args });
@@ -50,8 +56,9 @@ test('diagnostic preserves strict verification and identifies the original faile
         };
         const module = { exports: {} };
         vm.runInNewContext(helper, { module, exports: module.exports, __dirname: path.join(__dirname, '../native-test'),
-            process: { platform: 'darwin', env: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CBTE_MAC_BRAVE_HOSTED: '1' } },
+            Buffer, process: { platform: 'darwin', env: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CBTE_MAC_BRAVE_HOSTED: '1' } },
             require(name) { if (name === 'node:fs/promises') return fakeFs; if (name === 'node:child_process') return { execFile };
+                if (name === 'node:fs') return { constants: { O_RDONLY: 0, O_NOFOLLOW: 1 } };
                 if (name === './brave-mac-install-diagnostic.cjs') return { snapshotBraveInstallation: async () => 'synthetic' };
                 return require(name); } });
         const verify = await module.exports.createInstrumentedBraveVerifier({ diagnostic: text => events.push(text) });

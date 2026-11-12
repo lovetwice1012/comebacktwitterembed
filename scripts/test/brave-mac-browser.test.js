@@ -8,26 +8,39 @@ const vm = require('node:vm');
 async function harness(options = {}) {
     const source = await fs.readFile(path.join(__dirname, '../../src/automation/brave-mac-browser.js'), 'utf8');
     const app = '/Applications/Brave Browser.app', executable = `${app}/Contents/MacOS/Brave Browser`, plist = `${app}/Contents/Info.plist`;
-    let calls = 0; const argumentsSeen = [];
+    let calls = 0; const argumentsSeen = [], latest = new Map();
     const fakeFs = { async lstat(name) {
         assert([app, executable, plist].includes(name)); calls++;
-        return { dev: 1, ino: options.changed && calls > 3 ? 99 : name.length, size: 20, mtimeMs: 1, ctimeMs: 2,
+        const ctime = options.alwaysCtime ? 2 + Math.floor((calls - 1) / 3)
+            : options.ctimeOnce && calls > 3 ? 3 : 2;
+        const stat = { dev: 1, ino: (options.changed && calls > 3 || options.replaceOnRetry && calls > 6) ? 99 : name.length,
+            size: 20, mtimeMs: options.mtimeChange && calls > 3 ? 2 : 1, ctimeMs: ctime,
             isSymbolicLink: () => options.link === name, isDirectory: () => name === app, isFile: () => name !== app };
-    }, async realpath(name) { return options.redirect === name ? '/other' : name; } };
+        latest.set(name, stat); return stat;
+    }, async realpath(name) { return options.redirect === name ? '/other' : name; }, async open(name) {
+        const stat = latest.get(name), value = Buffer.from((options.inPlaceRewrite && calls > 3 ? 'b' : 'a').repeat(20));
+        let statReads = 0;
+        return { async stat() { statReads++; return options.hashStatDrift && statReads === 2 ? { ...stat, ctimeMs: stat.ctimeMs + 1 } : stat; }, async read(buffer, offset, length, position) {
+            if (options.shortRead) return { bytesRead: 0 };
+            const bytesRead = Math.min(length, value.length - position); value.copy(buffer, offset, position, position + bytesRead); return { bytesRead };
+        }, async close() {} };
+    } };
     const mockedRequire = name => {
         if (name === 'node:fs/promises') return fakeFs;
+        if (name === 'node:fs') return { constants: { O_RDONLY: 0, O_NOFOLLOW: 1 } };
         if (name === 'node:path') return path.posix;
         if (name === 'node:util') return { promisify: fn => (...args) => new Promise((resolve, reject) =>
             fn(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))) };
         if (name === 'node:child_process') return { execFile(file, args, opts, callback) {
             argumentsSeen.push({ file, args, opts });
-            if (file === '/usr/bin/codesign') return callback(options.badSignature || options.badSecond && argumentsSeen.length === 3 ? new Error('private') : null, '', '');
+            if (file === '/usr/bin/codesign') return callback(options.badSignature || options.badSecond && argumentsSeen.length === 3
+                || options.badRetrySignature && argumentsSeen.length === 4 ? new Error('private') : null, '', '');
             assert.equal(file, '/usr/bin/plutil'); return callback(null, options.version ?? '157.1.99.55\n', '');
         } };
         return require(name);
     };
     const module = { exports: {} };
-    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, process: { platform: options.platform || 'darwin' } });
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire, Buffer, process: { platform: options.platform || 'darwin' } });
     return { verify: module.exports.verifyInstalledMacBrave, argumentsSeen, app, executable, plist };
 }
 test('Mac Brave discovery checks the expected Apple signature and executable', async () => {
@@ -38,6 +51,19 @@ test('Mac Brave discovery checks the expected Apple signature and executable', a
     assert(call.args.some(arg => arg.includes('com.brave.Browser') && arg.includes('KL8N8XSYF4')));
     assert.equal(call.args.at(-1), h.app);
     assert.equal(h.argumentsSeen[1].args.at(-1), h.plist);
+});
+test('ctime-only drift retries both signatures, but changes, rewrites and instability still fail closed', async () => {
+    const retried = await harness({ ctimeOnce: true });
+    assert.equal((await retried.verify()).browserVersion, '157.1.99.55');
+    assert.equal(retried.argumentsSeen.filter(call => call.file === '/usr/bin/codesign').length, 4);
+    for (const options of [{ alwaysCtime: true }, { ctimeOnce: true, badRetrySignature: true },
+        { ctimeOnce: true, replaceOnRetry: true }, { mtimeChange: true }, { ctimeOnce: true, inPlaceRewrite: true },
+        { hashStatDrift: true }, { shortRead: true }]) {
+        const h = await harness(options); await assert.rejects(h.verify(), { code: 'X_BRAVE_MAC_BROWSER_INVALID' });
+        if (options.alwaysCtime) assert.equal(h.argumentsSeen.filter(call => call.file === '/usr/bin/codesign').length, 6);
+        if (options.mtimeChange || options.inPlaceRewrite) assert.equal(h.argumentsSeen.filter(call => call.file === '/usr/bin/codesign').length, 2);
+        if (options.hashStatDrift || options.shortRead) assert.equal(h.argumentsSeen.filter(call => call.file === '/usr/bin/codesign').length, 0);
+    }
 });
 test('Mac Brave discovery rejects signatures, links, replacements and unsupported OS', async () => {
     for (const options of [{ badSignature: true }, { badSecond: true }, { changed: true }, { link: '/Applications/Brave Browser.app' },
