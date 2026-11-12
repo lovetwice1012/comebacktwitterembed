@@ -13,6 +13,7 @@ on:
       - scripts/native-test/edge-mac-broker-hosted.test.cjs
       - scripts/test/edge-mac-broker.test.js
       - scripts/native-test/edge-mac-calibration-hosted*.cjs
+      - scripts/native-test/edge-mac-synthetic-db.cjs
       - src/automation/edge-mac-calibration.js
       - src/automation/edge-mac-peer.js
       - src/automation/edge-calibration-*.js
@@ -57,9 +58,34 @@ jobs:
         run: |
           clang -O2 client/angelic-setup/mac/edge-process-identity.c -o "$RUNNER_TEMP/MacEdgeIdentity"
           clang -O2 client/angelic-setup/mac/edge-socket-owner.c -o "$RUNNER_TEMP/MacEdgeSocketOwner"
+      - name: Install disposable database
+        if: matrix.os == 'macos-15'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install mariadb@11.8
       - name: Test dedicated Edge launch
         env:
           CBTE_MAC_EDGE_HOSTED: '1'
           MAC_EDGE_IDENTITY_HELPER: ${{ runner.temp }}/MacEdgeIdentity
           MAC_EDGE_SOCKET_HELPER: ${{ runner.temp }}/MacEdgeSocketOwner
-        run: node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js
+          CBTE_MAC_EDGE_DB_FIXTURE: ${{ matrix.os == 'macos-15' && '1' || '0' }}
+          AUTOMATION_TEST_DB_PORT: '33621'
+        run: |
+          set -eu
+          if [ "$CBTE_MAC_EDGE_DB_FIXTURE" = 1 ]; then
+            dbbase="$(brew --prefix mariadb@11.8)"
+            dbdir="$RUNNER_TEMP/cbte-edge-mariadb-data"
+            mkdir -m 700 "$dbdir"
+            "$dbbase/bin/mariadb-install-db" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --auth-root-authentication-method=normal --skip-test-db > /dev/null
+            "$dbbase/bin/mariadbd" --no-defaults --basedir="$dbbase" --datadir="$dbdir" --socket="$RUNNER_TEMP/cbte-edge-mariadb.sock" --pid-file="$RUNNER_TEMP/cbte-edge-mariadb.pid" --log-error="$RUNNER_TEMP/cbte-edge-mariadb.log" --bind-address=127.0.0.1 --port=33621 --skip-name-resolve --skip-log-bin &
+            dbpid=$!
+            trap 'kill "$dbpid" 2>/dev/null || true; wait "$dbpid" 2>/dev/null || true' EXIT
+            ready=0
+            for i in $(seq 1 90); do
+              if "$dbbase/bin/mariadb-admin" --no-defaults --protocol=tcp -h 127.0.0.1 -P 33621 -u root ping > /dev/null 2>&1; then ready=1; break; fi
+              if ! kill -0 "$dbpid" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            test "$ready" = 1
+          fi
+          node --test --test-concurrency=1 scripts/native-test/edge-mac-broker-hosted.test.cjs scripts/native-test/edge-mac-calibration-hosted.test.cjs scripts/test/edge-mac-broker.test.js

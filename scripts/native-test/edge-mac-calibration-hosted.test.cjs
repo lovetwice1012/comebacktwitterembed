@@ -91,6 +91,10 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
                 assert.equal(output.file.push.connectVersion || '1', result.connectVersion);
                 assert.equal(output.unclassifiedRecordCount, partition.unknownCount);
                 assert.equal(output.otherNotificationsPossible, partition.unknownCount > 0 || output.otherSubscriptionCount > 0);
+                if (process.env.CBTE_MAC_EDGE_DB_FIXTURE === '1') {
+                    await require('./edge-mac-synthetic-db.cjs').verifySyntheticMacEdgeDatabase(output.file, captured, result.vapid);
+                    t.diagnostic('synthetic Mac Edge push saved in isolated DB and routed to one job');
+                } else {
                 const lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
                 let stored, rotated = false;
                 const store = { async assertLease(_lease, { authorize }) { await authorize(); },
@@ -118,6 +122,7 @@ test('signed Edge calibrates through an owned Mac profile and OS-verified peer',
                     } finally { session?.close(); transport.close(); }
                 });
                 t.diagnostic('synthetic Mac Edge push received and decrypted through WNS; credentials omitted');
+                }
             } finally {
                 for (const value of [expected.publicKey, expected.auth, expected.applicationServerKey, rewritten]) value?.fill(0);
                 if (selected) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0);
