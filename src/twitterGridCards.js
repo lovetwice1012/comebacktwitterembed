@@ -302,7 +302,10 @@ async function withMessageLock(interaction, work, db = require('./db'), confirma
             || !require('./components/twitterGridConfirm')._internal.buttonExists(current, confirmation.actionId))) throw new Error('GRID_SOURCE_CHANGED');
         if (confirmation?.deadlineCheck && !confirmation.deadlineCheck()) throw new Error('GRID_SOURCE_CHANGED');
         interaction.message = current;
-        return work(saved.totalParts > 1 && action === 'translate' ? { previewOnlyTranslation: true } : undefined);
+        const policy = {};
+        if (action === 'delete') policy.verifiedRequesterId = saved.requesterId || null;
+        if (saved.totalParts > 1 && action === 'translate') policy.previewOnlyTranslation = true;
+        return work(Object.keys(policy).length ? policy : undefined);
     });
 }
 module.exports = { safetyHash, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, embedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, withMessageLock };
