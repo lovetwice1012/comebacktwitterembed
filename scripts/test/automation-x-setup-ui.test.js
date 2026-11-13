@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { xFixtureResponse } = require('./helpers/notification-registration-fixture.cjs');
 const loadDashboard = require('./helpers/load-dashboard.cjs');
 const SECRET = 'SYNTHETIC_PRIVATE_X_PUSH_MATERIAL';
 const FILE = JSON.stringify({ syntheticPrivateMaterial: SECRET });
@@ -56,7 +57,7 @@ test('beginner setup leads with concrete steps and clearly explains manual uploa
         for (const pattern of [/WindowsのPC/, /すべて展開/, /ダブルクリックで開始\.cmd/, /専用Firefox/, /ベルを押し/, /ウィンドウをすべて閉じ/, /ここまでの作業は、ご自身のPC内で完了/]) assert.match(text, pattern);
         assert.match(text, /PCでファイルを作成/); assert.match(text, /サーバーの受信開始待ち/); assert.doesNotMatch(text, /X CONNECTION|STEP 1/);
         assert.match(text, /ツール専用のFirefox環境を作ります。普段使いのFirefoxと分けて使えます/);
-        assert.match(text, /作成したファイルは、次の手順でこの画面からアップロード/);
+        assert.match(text, /次の画面で作成したファイルをアップロード/);
         assert.doesNotMatch(text, /普段使いのFirefoxのデータは選ばないで|破棄することと.*別です|ファイルの登録だけでは通知は届きません/);
         assert(!text.includes('Angelic')); assert.equal(writes(f).length, 0); assert.equal(f.fileInput(), null);
         const download = f.container.querySelector('a[download]'); assert.equal(download.getAttribute('href'), '/api/automation/x-setup/download');
@@ -342,20 +343,28 @@ test('dedicated client starts with open instructions and sends only same-origin 
     } finally { await f.close(); }
 });
 
-test('automation workspace advertises the dedicated setup entry only on the personal route', async () => {
+test('the unified X filter exposes personal connection setup without leaking an owner or guild into the link', async () => {
     for (const guildId of [undefined, '333333333333333333']) {
         const f = await reactFixture('export { AutomationWorkspace } from "./components/automation/automation-workspace";');
         try {
             f.set('sessionStorage', f.dom.window.sessionStorage);
-            f.set('fetch', async address => {
-                const route = new URL(address, 'http://fixture').pathname.slice('/api/automation/'.length); let result = { items: [], nextCursor: null };
+            const requests = [];
+            f.set('fetch', async (address, options = {}) => {
+                const url = new URL(address, 'http://fixture'), route = url.pathname.slice('/api/automation/'.length); requests.push({ url, method: options.method || 'GET', body: options.body });
+                let result = xFixtureResponse(route) ?? { items: [], nextCursor: null };
                 if (route === 'catalog') result = {};
                 if (route === 'providers') result = { auto: [], price: [], autoRegistration: { eligible: false } };
                 if (route === 'entitlements') result = { plan: { name: '無料', dayLimit: 24, minuteLimit: 5 }, slots: { used: 0, max: 5, available: 5 }, usage: { entries: [] } };
                 return new Response(JSON.stringify(result), { status: 200 });
             });
             await f.render(f.React.createElement(f.exports.AutomationWorkspace, { viewerId: '222222222222222222', guildId })); await f.settle();
-            assert.equal(Boolean(f.container.querySelector('header a[href="/dashboard/automation/x"]')), !guildId);
+            const filter = f.container.querySelector('select[aria-label="通知の種類"]'); assert(filter);
+            await f.fill(filter, 'x'); await f.settle();
+            const link = f.container.querySelector('a[href="/dashboard/automation/x"]'); assert(link); assert.match(link.textContent, /Xの接続を確認/);
+            assert.equal(link.getAttribute('href'), '/dashboard/automation/x');
+            assert.equal(requests.filter(item => item.url.pathname.endsWith('/x-setup')).length, guildId ? 0 : 1);
+            assert(requests.filter(item => item.url.pathname.endsWith('/x-monitors')).length > 0);
+            assert(requests.every(item => !item.url.searchParams.has('ownerUserId') && item.method === 'GET'));
         } finally { await f.close(); }
     }
 });
@@ -470,6 +479,83 @@ test('returning X users see current connection and their next action before opti
         assert.match(f.container.querySelector('[aria-label="X通知の接続手順"]').textContent, /追加の設定後は専用Firefoxを閉じる.*すべて閉じて.*同時接続.*受信が競合/);
         await f.showUpload(); assert(f.container.querySelector('[aria-label="登録するデータと通知の取り扱い"]')); assert.equal(f.fileInput().disabled, true); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
+});
+
+test('returning users can directly open the Chrome or Brave instructions without changing their existing receiver', async () => {
+    const current = status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true,
+        subscriptions: [subscription({ browserKind: 'firefox', receiverState: 'listening', boundMonitorCount: 2 })] });
+    const f = await fixture({ upload: false, current });
+    try {
+        const group = f.container.querySelector('[aria-label="ブラウザーの受信情報を追加"]');
+        assert(group); assert.equal(f.container.querySelector('[aria-label="X通知の接続手順"]'), null);
+        assert.match(group.textContent, /Chromeで受信情報を追加/); assert.match(group.textContent, /Braveで受信情報を追加/);
+        await f.click('Chromeで受信情報を追加');
+        let guide = f.container.querySelector('[aria-label="X通知の接続手順"]');
+        assert(guide); assert.match(guide.textContent, /Chrome用の保存ツールをダウンロード/);
+        assert.equal([...guide.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome').querySelector('input').checked, true);
+        assert.equal(f.dom.window.document.activeElement, guide.querySelector('header.nx-stage-focus'));
+        const chromeButton = [...group.querySelectorAll('button')].find(item => item.textContent === 'Chromeで受信情報を追加');
+        chromeButton.focus(); await f.click('Chromeで受信情報を追加');
+        assert.equal(f.dom.window.document.activeElement, guide.querySelector('header.nx-stage-focus'));
+        assert.equal(guide.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome');
+        await f.showUpload(); await f.agree(); await f.choose();
+        await f.click('Braveで受信情報を追加');
+        guide = f.container.querySelector('[aria-label="X通知の接続手順"]');
+        assert.match(guide.textContent, /Brave用の保存ツールをダウンロード/);
+        assert.equal([...guide.querySelectorAll('label')].find(label => label.textContent.trim() === 'Brave').querySelector('input').checked, true);
+        assert.equal(f.dom.window.document.activeElement, guide.querySelector('header.nx-stage-focus'));
+        assert.equal(f.fileInput(), null); await f.showUpload(); assert.equal(f.consent().checked, false);
+        await f.click('Firefoxで受信情報を追加');
+        guide = f.container.querySelector('[aria-label="X通知の接続手順"]');
+        assert.match(guide.textContent, /専用Firefoxを開く/);
+        assert.equal([...guide.querySelectorAll('label')].find(label => label.textContent.trim() === 'Firefox').querySelector('input').checked, true);
+        assert(f.container.querySelector('[aria-label="受信情報1"]')); assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('direct browser actions respect eligibility and work inside the monitor setup', async () => {
+    const existing = [subscription({ receiverState: 'awaiting' })];
+    const embedded = await fixture({ upload: false, setupProps: { embedded: true, initiallyOpen: true },
+        current: status({ chromeEnabled: true, braveEnabled: false, receiverEnabled: true, subscriptions: existing }) });
+    try {
+        assert.match(embedded.container.textContent, /Chromeで受信情報を追加/);
+        assert.doesNotMatch(embedded.container.textContent, /Braveで受信情報を追加/);
+        await embedded.click('Chromeで受信情報を追加');
+        assert.match(embedded.container.querySelector('[aria-label="X通知の接続手順"]').textContent, /Chrome用の保存ツールをダウンロード/);
+        assert.equal(writes(embedded).length, 0);
+    } finally { await embedded.close(); }
+    const ineligible = await fixture({ upload: false, current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true,
+        rollout: { mode: 'supporters', eligible: false, reasonCode: 'X_ROLLOUT_SUPPORTERS_ONLY', reason: null }, subscriptions: existing }) });
+    try {
+        assert.equal(ineligible.container.querySelector('[aria-label="ブラウザーの受信情報を追加"]'), null);
+        assert.equal(writes(ineligible).length, 0);
+    } finally { await ineligible.close(); }
+});
+
+test('direct browser actions cannot interrupt a save or restart a completed embedded selection', async () => {
+    const current = status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true,
+        subscriptions: [subscription({ receiverState: 'listening' })] });
+    let release;
+    const f = await fixture({ upload: false, current,
+        respond: route => route === 'x-setup/import' ? new Promise(resolve => { release = () => resolve({ subscription: subscription(), duplicate: false }); }) : undefined });
+    try {
+        await f.click('Chromeで受信情報を追加'); await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        const save = [...f.container.querySelectorAll('button')].find(item => item.textContent === 'この受信情報を登録');
+        const brave = [...f.container.querySelectorAll('button')].find(item => item.textContent === 'Braveで受信情報を追加');
+        await f.act(async () => { save.click(); brave.click(); });
+        assert(f.review()); assert.equal(writes(f).filter(call => call.route.endsWith('/import')).length, 1);
+        assert.equal(f.consent().checked, true); assert(f.fileInput());
+        await f.act(async () => release()); assert.equal(f.review(), null); f.assertPrivate();
+    } finally { if (release) release(); await f.close(); }
+    const chosen = [];
+    const embedded = await fixture({ upload: false, current, setupProps: { embedded: true, initiallyOpen: true, onChooseSubscription: item => chosen.push(item) } });
+    try {
+        const select = embedded.container.querySelector('[aria-label="受信情報1"] footer button');
+        const chrome = [...embedded.container.querySelectorAll('button')].find(item => item.textContent === 'Chromeで受信情報を追加');
+        await embedded.act(async () => { select.click(); chrome.click(); });
+        assert.equal(chosen.length, 1); assert.equal(embedded.container.querySelector('[aria-label="X通知の接続手順"]'), null);
+        assert.equal(writes(embedded).length, 0);
+    } finally { await embedded.close(); }
 });
 
 test('an unbound saved receiver leads to monitor assignment and never presents connection or delivery as complete', async () => {

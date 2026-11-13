@@ -133,6 +133,23 @@
   background: hsl(var(--muted) / 35%);
 }
 
+.notification-usage-details {
+  margin-top: 16px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.notification-usage-details summary {
+  cursor: pointer;
+  color: hsl(var(--foreground));
+  font-weight: 550;
+}
+
+.notification-usage-details p {
+  margin-top: 8px;
+}
+
 .notification-card-heading {
   display: flex;
   align-items: center;
@@ -224,9 +241,12 @@
 
 .notification-x-availability {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr);
   gap: 24px;
-  padding: 18px 0 4px;
+  padding: 20px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: hsl(var(--card));
 }
 
 .notification-x-availability h3 {
@@ -408,8 +428,30 @@
   color: hsl(var(--muted-foreground));
 }
 
-.notification-billing :is(input, select, button, a):focus-visible,
-.notification-usage :is(button, a):focus-visible {
+.notification-support-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.notification-support-overview > * {
+  min-width: 0;
+}
+
+.notification-support-overview .notification-support-conditions {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.notification-support-overview .notification-support-conditions > p {
+  color: hsl(var(--foreground));
+  font-weight: 550;
+}
+
+.notification-billing :is(input, select, button, a, summary):focus-visible,
+.notification-usage :is(button, a, summary):focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 3px;
 }
@@ -463,6 +505,16 @@
 }
 
 @media (width <= 720px) {
+  .notification-plan-selection > form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .notification-plan-selection > form > label {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
   .notification-section-heading,
   .notification-billing-intro {
     flex-direction: column;
@@ -471,6 +523,7 @@
 
   .notification-usage-grid,
   .notification-billing-context,
+  .notification-support-overview,
   .notification-x-availability {
     grid-template-columns: 1fr;
   }

@@ -34,20 +34,23 @@
 }
 
 .notification-section-navigation {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .notification-section-navigation > a {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
-  padding: 15px 17px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 13px;
-  background: hsl(var(--card));
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
   color: hsl(var(--muted-foreground));
   transition: border-color .15s, background .15s;
 }
@@ -57,7 +60,7 @@
   background: hsl(var(--primary) / 3%);
 }
 
-.notification-section-navigation > a[aria-current="page"] {
+.notification-section-navigation > a[aria-current] {
   color: hsl(var(--primary));
   border-color: hsl(var(--primary) / 40%);
   background: hsl(var(--primary) / 6.5%);
@@ -65,6 +68,13 @@
 
 .notification-section-navigation a > svg {
   flex-shrink: 0;
+}
+
+.notification-section-navigation a:focus-visible,
+.automation-more-navigation summary:focus-visible,
+.automation-more-navigation button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
 }
 
 .notification-section-navigation a > span {
@@ -111,6 +121,72 @@
   background: hsl(var(--primary) / 9%);
   color: hsl(var(--primary));
   box-shadow: none;
+}
+
+.notification-workspace .automation-more-navigation > summary {
+  border-radius: 8px;
+  padding: 9px 13px;
+  font-size: 13px;
+}
+
+.notification-workspace .automation-more-navigation[data-active="true"] > summary {
+  background: hsl(var(--primary) / 9%);
+}
+
+.notification-add-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.notification-add-options {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-add-options > button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 70px;
+  padding: 14px 16px;
+  text-align: left;
+  border-radius: 12px;
+  background: hsl(var(--card));
+}
+
+.notification-add-options > button:hover {
+  border-color: hsl(var(--primary) / 45%);
+  background: hsl(var(--primary) / 5%);
+}
+
+.notification-add-options > button > strong {
+  color: hsl(var(--foreground));
+  font-size: 15px;
+}
+
+.notification-add-options > button > span {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notification-add-options > button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+.notification-add-kind {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notification-destination-shortcut {
+  min-height: 40px;
 }
 
 .notification-center {
@@ -286,14 +362,18 @@
   }
 
   .notification-section-navigation {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
+    padding-bottom: 3px;
   }
 
   .notification-section-navigation > a {
     flex-direction: column;
-    align-items: flex-start;
-    padding: 11px 10px;
-    gap: 8px;
+    justify-content: center;
+    text-align: center;
+    padding: 10px 12px;
+    gap: 5px;
   }
 
   .notification-section-navigation strong {
@@ -306,6 +386,14 @@
 
   .notification-center-toolbar {
     align-items: stretch;
+  }
+
+  .notification-add-controls {
+    width: 100%;
+  }
+
+  .notification-add-kind {
+    flex: 1 1 150px;
   }
 
   .notification-type-navigation {

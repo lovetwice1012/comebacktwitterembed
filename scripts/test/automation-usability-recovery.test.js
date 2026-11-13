@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
 const { catalog, template } = require('../../src/automation/catalog');
 const { validateWorkflow } = require('../../src/automation/schema');
 const { stringifyDraft, parseWorkflow } = require('../../src/automation/format');
@@ -75,7 +76,7 @@ test('notification and webhook dialog drafts resume after closing; webhook secre
     try {
         const api = async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : route.endsWith('/preview') ? { providerId: 'github', source: 'https://github.com/octocat', intervalMinutes: 360 } : { items: [], nextCursor: null };
         await f.render(f.React.createElement(f.exports.MonitorManager, { api, guildId: 'guild', canEdit: true, scope: 'private', destinations: [], rules: [], refresh: async () => {} })); await tick(f);
-        await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '途中の通知'); await f.submit();
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '途中の通知'); await f.submit();
         await f.click('キャンセル'); assert.equal(f.container.querySelector('dialog[open]'), null);
         await f.click('通知の入力を再開'); assert(f.container.querySelector('dialog[open]').textContent.includes('通知先の種類'));
         await f.click('キャンセル'); await f.click('通知先を追加');
@@ -243,7 +244,7 @@ test('all-target application remains visibly committed when its subsequent displ
 test('returning to the retained notification list reloads applied and cloned workflow assignments across pages', async () => {
     const f = await workspace({ attached: false });
     try {
-        await f.click('続きを読み込む'); await f.settle();
+        await f.click('新着通知をさらに表示'); await f.settle();
         assert.equal(f.container.querySelectorAll('.monitor-card').length, 2);
         await f.click('通知ルール'); await click(f, f.container.querySelector('.studio-rule-card')); await tick(f, 460);
         for (const target of ['first', 'second']) {
@@ -254,7 +255,7 @@ test('returning to the retained notification list reloads applied and cloned wor
         await f.click('通知を選ぶ'); await f.fill(f.container.querySelector('[aria-label="ルールを使う通知"]'), 'auto:second');
         await f.click('ルールを複製して、この通知だけに適用'); await tick(f, 460);
         assert.equal(f.rows[0].workflowId, 'original'); assert.equal(f.rows[1].workflowId, 'clone');
-        await f.click('通知一覧'); await tick(f); await f.click('続きを読み込む'); await f.settle();
+        await f.click('通知一覧'); await tick(f); await f.click('新着通知をさらに表示'); await f.settle();
         const cards = [...f.container.querySelectorAll('.monitor-card')];
         assert.equal(cards.length, 2);
         const ruleDetails = card => [...card.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent === '確認履歴・詳細ルール');

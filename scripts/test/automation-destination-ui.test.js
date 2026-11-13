@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
 const G1 = '111111111111111111', G2 = '222222222222222222';
 const C1 = '333333333333333333', C2 = '444444444444444444';
 const button = (f, text) => [...f.container.querySelectorAll('button')].find(item => item.textContent.trim() === text);
@@ -11,7 +12,7 @@ const channel = (id = C1, name = '通知') => ({ id, name, canCreateWebhook: tru
 const plan = { featureEnabled: true, currentPlan: { planId: 'basic', label: 'ベーシック', tier: 'paid', priority: 2, minuteLimit: 7, dayLimit: 48, intervalMinutes: 5, baseSlotLimit: 5 },
     personal: { totalLimit: 8, registeredCount: 1, used: 1, available: 7, supporterExtraSlots: 3 }, x: { used: 1, available: 7, specialLimit: 3, specialUsed: 0, reasonCode: null },
     pools: { free: { limit: 50, used: 1, available: 49 }, supporter: { limit: 100, used: 0, available: 100 } } };
-async function fixture({ guildId, scope = 'private', destinations = [], guildResponse, respond, refreshFails = false, targetedRefresh = false, firstPageLimit = 100 } = {}) {
+async function fixture({ guildId, scope = 'private', canEdit = true, destinations = [], guildResponse, respond, refreshFails = false, targetedRefresh = false, firstPageLimit = 100 } = {}) {
     const f = await reactFixture('export { MonitorManager } from "./components/automation/monitor-manager"; export { XMonitorManager } from "./components/automation/x-monitor-manager";');
     f.calls = []; f.fetches = []; f.destinations = destinations; f.guildResponse = guildResponse;
     const click = f.click;
@@ -49,20 +50,73 @@ async function fixture({ guildId, scope = 'private', destinations = [], guildRes
         if (route === 'x-processing-settings') return { requestedMode: 'batch', effectiveMode: 'batch', realtimeAllowed: false, planId: 'basic', planLabel: 'ベーシック', intervalMinutes: 5, configured: true, reasonCode: null, rollout: { mode: 'public', eligible: true, reasonCode: null, reason: null } };
         throw new Error(`Unexpected fixture route ${route}`);
     };
-    function Parent() {
+    function Parent({ currentScope = scope } = {}) {
         const [items, setItems] = f.React.useState(f.destinations.slice(0, firstPageLimit));
-        return f.React.createElement(f.exports.MonitorManager, { api, guildId, scope, active: true, canEdit: true, destinations: items, rules: [], refresh: async () => { if (refreshFails) throw new Error('fixture refresh failure'); setItems(f.destinations.slice(0, firstPageLimit)); }, ...(targetedRefresh ? { refreshDestination: async id => {
+        return f.React.createElement(f.exports.MonitorManager, { api, guildId, scope: currentScope, active: true, canEdit, destinations: items, rules: [], refresh: async () => { if (refreshFails) throw new Error('fixture refresh failure'); setItems(f.destinations.slice(0, firstPageLimit)); }, ...(targetedRefresh ? { refreshDestination: async id => {
             const saved = await api(`destinations/${id}`); setItems(current => [...current.filter(item => item.id !== saved.id), saved]);
         } } : {}) });
     }
     f.api = api;
     await f.render(f.React.createElement(Parent)); await f.settle();
+    f.setScope = async value => { await f.render(f.React.createElement(Parent, { currentScope: value })); await f.settle(); };
     f.writes = () => f.calls.filter(item => item.method !== 'GET');
     return f;
 }
 async function openChannel(f) {
     await f.click('通知先を追加'); await f.fill(f.field('通知先の名前'), 'X投稿の通知先'); await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
 }
+
+test('the notification type chooser opens price and X while preserving an unfinished different draft', async () => {
+    const f = await fixture();
+    try {
+        await openNotification(f, 'price'); assert(f.field('商品URL')); await f.fill(f.field('商品URL'), 'https://example.test/item');
+        await f.click('キャンセル'); f.set('confirm', () => false); await openNotification(f, 'auto');
+        assert(f.container.querySelector('dialog[open]'), 'declining draft replacement keeps the chooser open');
+        await f.click('キャンセル'); await f.click('通知の入力を再開'); assert.equal(f.field('商品URL').value, 'https://example.test/item');
+        await f.click('キャンセル'); await openNotification(f, 'x'); assert(f.field('Xアカウント名')); assert.equal(f.writes().length, 0);
+    } finally { await f.close(); }
+});
+
+test('changing to server scope removes the X filter and keeps browsing available', async () => {
+    const f = await fixture({ guildId: G1 });
+    try {
+        const picker = f.container.querySelector('select[aria-label="通知の種類"]'); await f.fill(picker, 'x'); assert.equal(picker.value, 'x');
+        await f.setScope('guild'); assert.deepEqual([...picker.options].map(option => option.value), ['all', 'auto', 'price']);
+        assert.equal(picker.value, 'all'); assert.equal(f.writes().length, 0);
+    } finally { await f.close(); }
+});
+
+test('the notification destinations shortcut opens the existing panel and moves focus', async () => {
+    const f = await fixture();
+    try {
+        const panel = f.container.querySelector('#notification-destinations'); let scrolled = 0;
+        panel.scrollIntoView = () => { scrolled++; };
+        assert.equal(panel.open, false); await f.click('通知先を見る'); await f.settle();
+        assert.equal(panel.open, true); assert.equal(scrolled, 1);
+        assert.equal(f.dom.window.document.activeElement, panel.querySelector('summary'));
+        assert.equal(button(f, '通知先を見る').getAttribute('aria-expanded'), 'true');
+        await f.click('通知先を見る'); assert.equal(scrolled, 2); assert.equal(f.writes().length, 0);
+    } finally { await f.close(); }
+});
+
+test('shared scope does not offer X registration and respects server edit permission', async () => {
+    const f = await fixture({ guildId: G1, scope: 'guild', canEdit: false });
+    try {
+        const picker = f.container.querySelector('select[aria-label="通知の種類"]');
+        assert.deepEqual([...picker.options].map(option => option.value), ['all', 'auto', 'price']);
+        assert.equal(button(f, '通知を追加').disabled, true); assert.equal(button(f, '通知先を見る').disabled, false); assert.equal(f.writes().length, 0);
+    } finally { await f.close(); }
+});
+
+test('the existing X deep link selects the labelled kind filter without changing data', async () => {
+    const f = await fixture();
+    try {
+        await f.act(async () => { f.dom.window.location.hash = '#x-notifications'; f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange')); });
+        await f.settle(); const picker = f.container.querySelector('select[aria-label="通知の種類"]');
+        assert.equal(picker.value, 'x'); picker.focus(); await f.fill(picker, 'price');
+        assert.equal(picker.value, 'price'); assert.equal(f.dom.window.document.activeElement, picker); assert.equal(f.writes().length, 0);
+    } finally { await f.close(); }
+});
 
 test('personal notification destinations show DM, Bot-created channel webhook, and existing webhook choices', async () => {
     const f = await fixture();
@@ -80,7 +134,7 @@ test('personal notification destinations show DM, Bot-created channel webhook, a
 test('personal channel selection creates a private destination only on explicit save and refreshes open X draft choices', async () => {
     const f = await fixture();
     try {
-        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), '@retained_x'); await f.fill(f.field('監視の表示名'), '保持する下書き');
+        await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), '@retained_x'); await f.fill(f.field('監視の表示名'), '保持する下書き');
         await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), 'X投稿の通知先'); await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
         assert.equal(f.fetches[0].url, '/api/guilds?purpose=notification-destinations'); assert.equal(f.fetches[0].options.cache, 'no-store');
         await f.fill(f.field('通知先のサーバー'), G1); await f.settle();
@@ -91,7 +145,7 @@ test('personal channel selection creates a private destination only on explicit 
         assert.equal(f.field('編集できる人').disabled, true); await submitDestination(f);
         assert.equal(f.writes().length, 1); assert.equal(f.writes()[0].route, `destinations?guildId=${G1}`); assert.equal(f.writes()[0].body.kind, 'channel'); assert.equal(f.writes()[0].body.scope, 'private'); assert.equal(f.writes()[0].body.channelId, C1);
         assert.equal(f.field('Xアカウント名').value, 'retained_x'); assert.equal(f.field('監視の表示名').value, '保持する下書き');
-        const choices = f.container.querySelector('form[aria-label="X監視の登録設定"] select'); assert(choices.querySelector('option[value="new-destination"]')); assert.equal(choices.value, 'new-destination');
+        const choices = xDestinationSelect(f); assert(choices.querySelector('option[value="new-destination"]')); assert.equal(choices.value, 'new-destination');
     } finally { await f.close(); }
 });
 
@@ -190,17 +244,17 @@ test('a failed save retains channel and server for an explicit retry without cre
 
 const originalDestination = { id: 'original-destination', name: '元のDM', scope: 'private', kind: 'dm', enabled: true };
 async function retainNormalDraft(f) {
-    await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '通常通知の下書き'); await f.submit(); await f.click('キャンセル');
+    await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '通常通知の下書き'); await f.submit(); await f.click('キャンセル');
 }
 const normalDestinations = f => f.container.querySelector('form.monitor-registration').querySelectorAll('select');
 
 test('adding from an X draft selects its new destination while a retained ordinary draft keeps its original destination', async () => {
     const f = await fixture({ destinations: [originalDestination], respond: async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : undefined });
     try {
-        await retainNormalDraft(f); await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'preserved_x');
+        await retainNormalDraft(f); await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'preserved_x');
         await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), 'X専用DM'); await submitDestination(f);
-        assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'preserved_x');
-        await f.click('新着通知'); await f.click('通知の入力を再開'); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
+        assert.equal(xDestinationSelect(f).value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'preserved_x');
+        await f.click('キャンセル'); await f.click('通知の入力を再開'); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
     } finally { await f.close(); }
 });
 
@@ -215,7 +269,7 @@ test('ordinary destination creation still selects its destination in the request
 test('normal registration adds a channel in place and returns to its retained source and destination step without creating a monitor', async () => {
     const f = await fixture({ destinations: [originalDestination], respond: async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : undefined });
     try {
-        await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '保持する通常通知'); await f.submit();
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '保持する通常通知'); await f.submit();
         await f.click('通知先を追加'); assert.equal(f.container.querySelectorAll('dialog[open]').length, 2);
         await f.fill(f.field('通知先の名前'), '通常通知のチャンネル'); await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
         await f.fill(f.field('通知先のサーバー'), G1); await f.settle(); await f.fill(f.field('Webhookを作成するチャンネル'), C1);
@@ -230,10 +284,10 @@ test('normal registration adds a channel in place and returns to its retained so
 test('cancelling destination creation detaches the old X draft callback when its form is resumed separately', async () => {
     const f = await fixture();
     try {
-        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'old_request');
+        await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'old_request');
         await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), 'キャンセルした宛先'); await f.click('キャンセル');
         await f.fill(f.field('Xアカウント名'), 'new_request'); await f.click('通知先の入力を再開'); await submitDestination(f);
-        assert.equal(f.field('Xアカウント名').value, 'new_request'); assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, ''); assert.equal(f.writes().length, 1);
+        assert.equal(f.field('Xアカウント名').value, 'new_request'); assert.equal(xDestinationSelect(f).value, ''); assert.equal(f.writes().length, 1);
     } finally { await f.close(); }
 });
 
@@ -242,8 +296,8 @@ test('stale and unmounted X destination callbacks cannot change another draft; a
     try {
         await f.render(f.React.createElement(f.exports.XMonitorManager, { api: f.api, destinations: [originalDestination], onAddDestination: callback => callbacks.push(callback) }));
         await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'first_draft'); await f.click('チャンネル・Webhookを追加');
-        await f.fill(f.field('Xアカウント名'), 'changed_draft'); await f.act(async () => callbacks[0]('original-destination')); assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, '');
-        await f.click('チャンネル・Webhookを追加'); await f.act(async () => callbacks[1]('original-destination')); assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, 'original-destination');
+        await f.fill(f.field('Xアカウント名'), 'changed_draft'); await f.act(async () => callbacks[0]('original-destination')); assert.equal(xDestinationSelect(f).value, '');
+        await f.click('チャンネル・Webhookを追加'); await f.act(async () => callbacks[1]('original-destination')); assert.equal(xDestinationSelect(f).value, 'original-destination');
         await f.render(f.React.createElement('p', null, '別の画面')); await f.act(async () => callbacks[1]('unexpected')); assert.equal(f.container.textContent, '別の画面');
     } finally { await f.close(); }
 });
@@ -252,9 +306,9 @@ test('a created destination beyond the first hundred candidates is individually 
     const destinations = Array.from({ length: 100 }, (_, index) => ({ ...originalDestination, id: `older-${index}`, name: `既存${index}` }));
     const f = await fixture({ destinations, targetedRefresh: true });
     try {
-        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'many_choices');
+        await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'many_choices');
         await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), '101件目の通知先'); await submitDestination(f);
-        assert(f.calls.some(item => item.route === 'destinations/new-destination' && item.method === 'GET')); const choices = f.container.querySelector('form[aria-label="X監視の登録設定"] select');
+        assert(f.calls.some(item => item.route === 'destinations/new-destination' && item.method === 'GET')); const choices = xDestinationSelect(f);
         assert.equal(choices.options.length, 102); assert.equal(choices.value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'many_choices');
     } finally { await f.close(); }
 });

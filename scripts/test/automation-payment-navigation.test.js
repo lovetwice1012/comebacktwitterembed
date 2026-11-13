@@ -61,7 +61,7 @@ test('the shared notification navigation uses document navigation so Square rece
             'next/link': { __esModule: true, default: clientLink(f.React, navigations) },
         });
         await f.render(f.React.createElement(AutomationPageFrame, { locale: 'ja', section: 'notifications', title: '通知' }));
-        for (const href of ['/dashboard/automation/plans', '/dashboard/automation/x']) {
+        for (const href of ['/dashboard/automation/plans', '/dashboard/automation/support']) {
             assert.equal(await clickNavigation(f, href), false, `${href} must fetch a new document`);
         }
         assert.deepEqual(navigations, []);
@@ -153,7 +153,7 @@ test('the legacy frame keeps the UI selection and also uses document navigation 
         });
         await f.render(f.React.createElement(AutomationPageFrame, { locale: 'ja', newUI: false, section: 'plans', title: '利用状況とプラン' }));
         assert.equal(f.container.querySelector('.dashboard-app'), null);
-        for (const href of ['/dashboard', '/dashboard/automation', '/dashboard/personal-links', '/dashboard/automation/plans']) assert.equal(await clickNavigation(f, href), false);
+        for (const href of ['/dashboard', '/dashboard/automation', '/dashboard/personal-links', '/dashboard/automation/plans', '/dashboard/automation/support']) assert.equal(await clickNavigation(f, href), false);
         assert.deepEqual(navigations, []);
     } finally { await f.close(); }
 });

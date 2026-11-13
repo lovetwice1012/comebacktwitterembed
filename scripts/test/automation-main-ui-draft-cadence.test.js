@@ -47,7 +47,8 @@ async function scenario({ autoId = '42', priceId = '42', operation = 'delete-pri
             refresh: async () => {},
         }));
         await settle(fixture);
-        await fixture.click('設定を変更');
+        const autoCard = [...fixture.container.querySelectorAll('article.monitor-card')].find(node => node.textContent.includes('Auto retained draft'));
+        assert(autoCard); await fixture.act(async () => [...autoCard.querySelectorAll('button')].find(node => node.textContent.trim() === '設定を変更').click());
         await fixture.fill(field(fixture, '名前（省略可）'), 'UNSAVED-AUTO-DRAFT');
         await fixture.click('キャンセル');
         assert.match(fixture.container.textContent, /通知の入力を保持しています/);
@@ -55,7 +56,7 @@ async function scenario({ autoId = '42', priceId = '42', operation = 'delete-pri
         if (operation === 'delete-auto') {
             await fixture.click('削除');
         } else {
-            await fixture.click('価格通知'); await settle(fixture);
+            await fixture.fill(fixture.container.querySelector('select[aria-label="通知の種類"]'), 'price'); await settle(fixture);
             if (operation === 'toggle-price') await fixture.click('停止');
             else await fixture.click('削除');
         }
@@ -124,7 +125,7 @@ test('MAIN-UI-2 page-two cadence save adopts fresh baseline and supports another
             rules: [], refresh: async () => {},
         }));
         await tick(fixture);
-        await fixture.click('続きを読み込む');
+        await fixture.click('新着通知をさらに表示');
         await tick(fixture);
         const card = [...fixture.container.querySelectorAll('article.monitor-card')].find(node => node.textContent.includes('通知 101'));
         assert(card, 'page-two monitor must be visible');

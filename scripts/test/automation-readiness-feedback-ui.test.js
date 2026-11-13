@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification, xFixtureResponse } = require('./helpers/notification-registration-fixture.cjs');
 const { catalog } = require('../../src/automation/catalog');
 const { newWorkflow } = require('../../src/automation/schema');
 const tick = f => f.act(async () => new Promise(resolve => setTimeout(resolve, 20)));
@@ -98,9 +99,9 @@ test('the real workspace keeps malformed successful lists out of rendering and r
         f.set('sessionStorage', f.dom.window.sessionStorage); f.set('confirm', () => true);
         f.set('fetch', async address => {
             const route = new URL(address, 'http://fixture').pathname.slice('/api/automation/'.length);
-            return Response.json(route === 'catalog' ? catalog() : route === 'providers' ? { auto: [], price: [], autoRegistration: { eligible: true } }
+            return Response.json(xFixtureResponse(route) ?? (route === 'catalog' ? catalog() : route === 'providers' ? { auto: [], price: [], autoRegistration: { eligible: true } }
                 : route === 'entitlements' ? { plan: { name: '無料' }, slots: { used: 0, max: 5, available: 5 }, usage: { entries: [] } }
-                    : route === 'workflows' && broken ? malformed : { items: [], nextCursor: null });
+                    : route === 'workflows' && broken ? malformed : { items: [], nextCursor: null }));
         });
         try {
             await f.render(f.React.createElement(f.exports.AutomationWorkspace, { viewerId: '222222222222222222' })); await tick(f);
@@ -121,14 +122,17 @@ test('the real workspace presents one safe gateway error and recovers resource l
     f.set('fetch', async address => {
         if (failed) return new Response('<html>PRIVATE_GATEWAY_502</html>', { status: failed });
         const route = new URL(address, 'http://fixture').pathname.slice('/api/automation/'.length);
-        return Response.json(route === 'catalog' ? catalog() : route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } }
-            : route === 'entitlements' ? { plan: { name: '無料' }, slots: { used: 0, max: 5, available: 5 }, usage: { entries: [] } } : { items: [], nextCursor: null });
+        return Response.json(xFixtureResponse(route) ?? (route === 'catalog' ? catalog() : route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } }
+            : route === 'entitlements' ? { plan: { name: '無料' }, slots: { used: 0, max: 5, available: 5 }, usage: { entries: [] } } : { items: [], nextCursor: null }));
     });
     try {
         await f.render(f.React.createElement(f.exports.AutomationWorkspace, { viewerId: '222222222222222222' })); await tick(f);
         assert.equal(f.container.querySelectorAll('[role="alert"]').length, 1); assert(!/PRIVATE|Unexpected|JSON/.test(f.container.textContent));
-        failed = 0; await f.click('一覧を再読み込み'); await tick(f); assert.equal(f.container.querySelectorAll('[role="alert"]').length, 0);
-        await f.click('通知を追加'); assert(f.field('対象のURL・ID')); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '保持する名前');
+        failed = 0; await f.click('一覧を再読み込み');
+        for (let attempt = 0; attempt < 20 && f.container.querySelector('[role="alert"]'); attempt++) await tick(f);
+        assert.equal(f.container.querySelectorAll('[role="alert"]').length, 0,
+            [...f.container.querySelectorAll('[role="alert"]')].map(node => node.outerHTML).join(' / '));
+        await openNotification(f, 'auto'); assert(f.field('対象のURL・ID')); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '保持する名前');
         failed = 502; await f.submit(); await tick(f);
         assert.equal(f.field('対象のURL・ID').value, 'https://github.com/octocat'); assert.equal(f.field('名前').value, '保持する名前');
         assert.match(f.container.querySelector('dialog[open]').textContent, /入力内容は保持/); assert(!/PRIVATE|Unexpected/.test(f.container.textContent));

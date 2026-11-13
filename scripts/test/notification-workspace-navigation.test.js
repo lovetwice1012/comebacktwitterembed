@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
 
 async function fixture({ scope = 'private', hash = '' } = {}) {
     const f = await reactFixture('export { MonitorManager } from "./components/automation/monitor-manager"; export { xRegistrationHandle } from "./components/automation/notification-registration-source";');
@@ -27,74 +28,61 @@ async function fixture({ scope = 'private', hash = '' } = {}) {
     await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); });
     return f;
 }
-const selected = f => f.container.querySelector('[role="tab"][aria-selected="true"]');
-const press = (f, key) => f.act(async () => selected(f).dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+const selected = f => f.container.querySelector('select[aria-label="通知の種類"]');
+const select = async (f, value) => { assert(selected(f)); await f.fill(selected(f), value); await f.settle(); };
 
-test('notification tabs expose their panels and support arrow, Home and End keys with one focus target', async () => {
+test('the unified list exposes one labelled native kind filter with an all-notifications default', async () => {
     const f = await fixture();
     try {
-        const tabs = [...f.container.querySelectorAll('[role="tab"]')]; assert.equal(tabs.length, 3);
-        assert.deepEqual(tabs.map(tab => tab.textContent), ['新着通知', '価格通知', 'X通知']);
-        assert.equal(tabs.filter(tab => tab.tabIndex === 0).length, 1);
-        for (const tab of tabs) assert(f.dom.window.document.getElementById(tab.getAttribute('aria-controls')));
-        selected(f).focus(); await press(f, 'ArrowRight'); assert.equal(selected(f).textContent, '価格通知');
-        await press(f, 'End'); assert.equal(selected(f).textContent, 'X通知'); assert.equal(f.dom.window.document.activeElement, selected(f));
-        await press(f, 'Home'); assert.equal(selected(f).textContent, '新着通知');
-        await press(f, 'ArrowLeft'); assert.equal(selected(f).textContent, 'X通知');
+        const control = selected(f); assert(control); assert.equal(control.value, 'all');
+        assert.deepEqual([...control.options].map(option => option.value), ['all', 'auto', 'price', 'x']);
+        assert(f.container.querySelector('.monitor-list[aria-label="登録した通知"]'));
+        control.focus(); assert.equal(f.dom.window.document.activeElement, control);
+        for (const value of ['auto', 'price', 'x', 'all']) { await select(f, value); assert.equal(control.value, value); }
     } finally { await f.close(); }
 });
 
-test('X belongs to its own active tab and keeps its draft across normal views without background X requests', async () => {
+test('X draft survives closing and normal filters without extra X reads or writes', async () => {
     const f = await fixture();
     try {
-        const xCalls = () => f.calls.filter(call => call.path.startsWith('x-')).length;
-        assert.equal(xCalls(), 0); await f.click('X通知'); await f.settle(); assert(xCalls() > 0);
-        await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'keep_my_target');
-        const draft = f.container.querySelector('form[aria-label="X監視の登録設定"]'); assert(draft);
-        await f.click('価格通知'); await f.settle(); const before = xCalls();
-        assert.equal(draft.closest('[role="tabpanel"]').hidden, true);
-        await f.click('更新'); await f.settle(); assert.equal(xCalls(), before);
-        await f.click('X通知'); await f.settle(); assert.equal(f.field('Xアカウント名').value, 'keep_my_target');
-        assert.equal(draft.closest('[role="tabpanel"]').hidden, false);
+        const xCalls = () => f.calls.filter(call => call.path === 'x-monitors').length;
+        assert(xCalls() > 0); await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'keep_my_target');
+        assert(f.container.querySelector('form[aria-label="X監視の登録設定"]')); await f.click('キャンセル');
+        const before = xCalls(); await select(f, 'price'); await select(f, 'auto'); await select(f, 'x');
+        assert.equal(xCalls(), before);
+        await f.click('編集中の設定を開く'); assert.equal(f.field('Xアカウント名').value, 'keep_my_target');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
     } finally { await f.close(); }
 });
 
-test('the connection page return link opens the X tab while shared notifications remain separately scoped', async () => {
+test('the X return link filters the unified list while shared notifications remain separately scoped', async () => {
     const f = await fixture({ hash: '#x-notifications' });
-    try { assert.equal(selected(f).textContent, 'X通知'); assert.equal(f.container.querySelector('a[href="/dashboard/automation/x"]').textContent, '接続を確認'); }
+    try { assert.equal(selected(f).value, 'x'); assert(f.container.querySelector('a[href="/dashboard/automation/x"]')); }
     finally { await f.close(); }
     const shared = await fixture({ scope: 'guild', hash: '#x-notifications' });
-    try { assert.equal(shared.container.querySelectorAll('[role="tab"]').length, 2); assert.equal(shared.container.querySelector('[aria-label="Xアカウントの監視"]'), null); assert.equal(shared.calls.filter(call => call.path.startsWith('x-')).length, 0); }
+    try { assert.deepEqual([...selected(shared).options].map(option => option.value), ['all', 'auto', 'price']); assert.equal(shared.calls.filter(call => call.path.startsWith('x-')).length, 0); }
     finally { await shared.close(); }
 });
 
 test('the common add action routes an X profile URL to its editor without ordinary preview calls and keeps its name', async () => {
     const f = await fixture();
     try {
-        await f.click('通知を追加');
-        await f.fill(f.field('対象のURL・ID'), 'https://x.com/Example_User');
-        await f.fill(f.field('名前（省略可）'), '共通入口の監視');
-        await f.click('対象を確認'); await f.settle();
-        assert.equal(selected(f).textContent, 'X通知');
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://x.com/Example_User');
+        await f.fill(f.field('名前（省略可）'), '共通入口の監視'); await f.click('対象を確認'); await f.settle();
         assert.equal(f.field('Xアカウント名（@ユーザー名）').value, 'Example_User');
         assert.equal(f.field('監視の表示名').value, '共通入口の監視');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
         assert.equal([...f.container.querySelectorAll('button')].filter(node => node.textContent === '通知を追加').length, 1);
-        assert.equal([...f.container.querySelectorAll('button')].filter(node => node.textContent === 'X監視を追加').length, 0);
     } finally { await f.close(); }
 });
 
-test('choosing X in the common registration accepts a handle and preserves an existing X draft', async () => {
+test('choosing X through the common registration retains an existing X draft', async () => {
     const f = await fixture();
     try {
-        await f.click('X通知'); await f.settle(); await f.click('通知を追加');
-        await f.fill(f.field('Xアカウント名'), 'retained_x');
-        await f.click('新着通知'); await f.click('通知を追加');
-        await f.fill(f.field('サービス'), 'twitter');
-        await f.fill(f.field('Xアカウント名・プロフィールURL'), '@new_candidate');
-        await f.click('対象を確認'); await f.settle();
-        assert.equal(selected(f).textContent, 'X通知'); assert.equal(f.field('Xアカウント名（@ユーザー名）').value, 'retained_x');
+        await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'retained_x'); await f.click('キャンセル');
+        await openNotification(f, 'auto'); await f.fill(f.field('サービス'), 'twitter');
+        await f.fill(f.field('Xアカウント名・プロフィールURL'), '@new_candidate'); await f.click('対象を確認'); await f.settle();
+        assert.equal(f.field('Xアカウント名（@ユーザー名）').value, 'retained_x');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
     } finally { await f.close(); }
 });
@@ -106,9 +94,9 @@ test('X profile input validation rejects nonprofile, credentialed and misleading
             assert.equal(f.exports.xRegistrationHandle(value), 'valid_user');
         for (const value of ['https://x.com/i/web/status/123', 'https://x.com/user/status/123', 'https://x.com/home', 'https://user@x.com/valid_user', 'https://x.com.attacker.test/valid_user', 'https://attacker.x.com/valid_user', 'http://x.com/valid_user', '@this_handle_is_far_too_long'])
             assert.throws(() => f.exports.xRegistrationHandle(value), /プロフィール/);
-        await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://x.com/user/status/123');
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://x.com/user/status/123');
         await f.click('対象を確認'); await f.settle();
-        assert.equal(selected(f).textContent, '新着通知'); assert.match(f.container.textContent, /プロフィールのURLを入力/);
+        assert.match(f.container.textContent, /プロフィールのURLを入力/);
         assert.equal(f.field('Xアカウント名・プロフィールURL').value, 'https://x.com/user/status/123');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
     } finally { await f.close(); }

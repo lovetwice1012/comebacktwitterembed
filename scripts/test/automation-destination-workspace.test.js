@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
 const { catalog } = require('../../src/automation/catalog');
 const USER = '222222222222222222';
 const destination = index => ({ id: `destination-${index}`, name: `通知先${index}`, kind: 'dm', scope: 'private', enabled: true, revision: 1 });
@@ -40,9 +41,9 @@ async function fixture({ list = () => ({ items: [], nextCursor: null }), failInd
     return f;
 }
 async function openXDraft(f) {
-    await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'workspace_x');
+    await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'workspace_x');
 }
-const choices = f => f.container.querySelector('form[aria-label="X監視の登録設定"] select');
+const choices = f => xDestinationSelect(f);
 async function saveXDestination(f) {
     await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), '今回追加する通知先');
     await f.act(async () => f.container.querySelector('form[aria-label="通知先の登録設定"]').dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true })));
@@ -76,7 +77,8 @@ test('an individual workspace refresh failure keeps the destination saved and of
     try {
         await openXDraft(f); await saveXDestination(f); assert.equal(f.destinationWrites().length, 1);
         assert.equal(f.container.querySelector('form[aria-label="通知先の登録設定"]'), null); assert.match(f.container.textContent, /通知先は保存済みです/);
-        await f.settle(); await f.click('X一覧・利用枠を更新'); await f.settle(); assert.equal(f.destinationWrites().length, 1); assert.equal(f.field('Xアカウント名').value, 'workspace_x');
+        await f.settle(); await f.click('キャンセル'); await f.click('更新'); await f.settle();
+        await f.click('編集中の設定を開く'); assert.equal(f.destinationWrites().length, 1); assert.equal(f.field('Xアカウント名').value, 'workspace_x');
     } finally { await f.close(); }
 });
 

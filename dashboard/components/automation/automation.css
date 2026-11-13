@@ -10,6 +10,17 @@
 .automation-navigation { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 10px; }
 .automation-navigation button { border: 0; padding: 8px 16px; background: transparent; color: hsl(var(--muted-foreground)); }
 .automation-navigation button[aria-current="page"] { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.automation-more-navigation { position: relative; }
+.automation-more-navigation > summary { cursor: pointer; list-style: none; padding: 8px 16px; color: hsl(var(--muted-foreground)); }
+.automation-more-navigation > summary::-webkit-details-marker { display: none; }
+.automation-more-navigation > summary::after { content: " ▾"; }
+.automation-more-navigation[data-active="true"] > summary { color: hsl(var(--primary)); font-weight: 600; }
+.automation-more-navigation > div { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; display: grid; min-width: 150px; padding: 4px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); box-shadow: 0 8px 24px hsl(var(--foreground) / 12%); }
+.automation-more-navigation > div > button { text-align: left; border-radius: 6px; }
+.automation-more-navigation > div > button:hover { background: hsl(var(--muted)); }
+@media (width <= 700px) {
+  .automation-more-navigation > div { position: static; max-width: calc(100vw - 2rem); box-shadow: none; }
+}
 .automation-workbench { border: 1px solid hsl(var(--border)); border-radius: var(--automation-radius); background: hsl(var(--card)); padding: 12px; min-width: 0; }
 .automation-workspace-navigation { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .automation-workspace-navigation > div { display: flex; gap: 8px; }

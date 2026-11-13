@@ -45,7 +45,7 @@ async function fixture({ currentQuota = quota(), items = [row()], respond, opene
     f.renderManager = async (nextActive = active) => f.render(f.React.createElement(parent ? f.exports.MonitorManager : f.exports.XMonitorManager,
         { api: f.api, active: nextActive, destinations, rules, ...(parent ? { scope, guildId, canEdit: true, refresh: async () => {} } : { registrationRequest: f.registrationRequest, hideAddAction, ...(compact ? { initiallyOpen: true, setupPlacement: 'compact' } : {}) }) }));
     await f.renderManager(); await f.settle();
-    if (parent && opened && scope === 'private') { await f.click('X通知'); await f.settle(); }
+    if (parent && opened && scope === 'private') { await f.fill(f.container.querySelector('select[aria-label="通知の種類"]'), 'x'); await f.settle(); }
     if (opened && scope === 'private' && [...f.container.querySelectorAll('button')].some(item => item.textContent === 'Xアカウントの監視を管理')) { await f.click('Xアカウントの監視を管理'); await f.settle(); }
     f.inClick = async (node, text) => { const button = [...node.querySelectorAll('button')].find(item => item.textContent.trim() === text); assert(button, text); await f.act(async () => button.click()); };
     f.form = () => f.container.querySelector('form[aria-label="X監視の登録設定"]');
@@ -374,11 +374,18 @@ test('rapid register clicks write once and use only the returned canonical monit
     } finally { if (release) release(); await f.close(); }
 });
 
-test('existing private monitor workspace exposes lazy X controls while guild-shared scope has no personal owner panel', async () => {
+test('the unified private list shows owned X while the guild-shared scope never reads or exposes it', async () => {
     for (const scope of ['private', 'guild']) {
         const f = await fixture({ parent: true, scope, opened: false });
-        try { assert.equal(Boolean(f.container.querySelector('[aria-label="Xアカウントの監視"]')), scope === 'private');
-            assert.equal(f.calls.filter(item => item.route.startsWith('x-')).length, 0); assert.match(f.container.textContent, /新着通知/); }
+        try {
+            const list = f.container.querySelector('.monitor-list[aria-label="登録した通知"]'); assert(list);
+            const xCard = list.querySelector('article[aria-label="本人のX監視のX監視"]');
+            assert.equal(Boolean(xCard), scope === 'private');
+            const reads = f.calls.filter(item => item.route === 'x-monitors' && item.method === 'GET');
+            assert.equal(reads.length, scope === 'private' ? 1 : 0);
+            if (scope === 'guild') assert.equal(f.calls.filter(item => item.route.startsWith('x-')).length, 0);
+            assert.equal(writes(f).length, 0); assert.match(f.container.textContent, /通知/);
+        }
         finally { await f.close(); }
     }
 });
@@ -445,6 +452,9 @@ test('private workspace on a guild page links to personal setup without using th
         assert.equal(f.container.querySelector('[aria-label="X通知の受信設定"]'), null);
         const link = f.container.querySelector('a[href="/dashboard/automation/x"]'); assert(link); assert.match(link.textContent, /接続を確認/);
         assert.equal(f.calls.some(call => call.route.startsWith('x-setup')), false);
+        const xReads = f.calls.filter(call => call.route === 'x-monitors' && call.method === 'GET');
+        assert.equal(xReads.length, 1); assert(xReads.every(call => !call.body || !Object.hasOwn(call.body, 'ownerUserId')));
+        assert.equal(link.getAttribute('href'), '/dashboard/automation/x'); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 
@@ -533,16 +543,16 @@ test('the compact X tab opens monitoring directly with actual quota and timing s
     } finally { await f.close(); }
 });
 
-test('opening X registration focuses the account field without hiding the first setup steps', async () => {
+test('opening X registration without a connection focuses preparation without hiding the first steps', async () => {
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ compact: true, currentQuota: current });
     const proto = f.dom.window.HTMLElement.prototype, original = proto.focus, calls = [];
-    proto.focus = function (options) { if (this.matches('input')) calls.push(options); return original.call(this, options); };
+    proto.focus = function (options) { if (this.textContent === '接続を準備する') calls.push(options); return original.call(this, options); };
     try {
         await f.click('X監視を追加');
         const input = f.field('Xアカウント名');
         const dialog = input.closest('dialog');
-        assert.equal(f.dom.window.document.activeElement, input);
+        assert.equal(f.dom.window.document.activeElement.textContent, '接続を準備する');
         assert(calls.some(options => options?.preventScroll === true));
         assert.equal(dialog.scrollTop, 0);
         assert(dialog.querySelector('[aria-label="X監視の登録手順"]'));
@@ -600,7 +610,7 @@ test('the shared registration request waits for the active X panel, prefills a u
     const f = await fixture({ compact: true, active: false, currentQuota: current, registrationRequest: { id: 1, accountHandle: '@shared_entry' } });
     try {
         assert.equal(f.calls.length, 0); assert.equal(f.form(), null); await f.renderManager(true); await f.settle();
-        assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(f.dom.window.document.activeElement, f.field('Xアカウント名'));
+        assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(f.dom.window.document.activeElement.textContent, '接続を準備する');
         await f.click('あとで続ける'); await f.renderManager(false); await f.renderManager(true); assert.equal(f.container.querySelector('dialog[open]'), null);
         f.registrationRequest = { id: 2, accountHandle: 'next_entry' }; await f.renderManager(true); assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
@@ -613,7 +623,7 @@ test('a repeated shared-entry request resumes an existing X draft without replac
         await f.fill(f.field('監視の表示名'), '保持する入力'); await f.fill(f.field('通知先'), 'dm-own'); await f.submitX();
         f.registrationRequest = { id: 2, accountHandle: 'not_applied' }; await f.renderManager(true);
         assert.equal(f.field('Xアカウント名').value, 'original_entry'); assert.equal(f.field('監視の表示名').value, '保持する入力'); assert.equal(f.field('通知先').value, 'dm-own'); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
-        assert.equal(f.dom.window.document.activeElement, f.field('Xアカウント名')); assert.equal(writes(f).length, 0);
+        assert.equal(f.dom.window.document.activeElement.textContent, '接続を準備する'); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 

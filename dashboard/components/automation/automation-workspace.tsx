@@ -11,6 +11,7 @@ import { automationFetch } from "./automation-feedback";
 import { recoveryKey, encodeRecovery, decodeRecovery } from "../../../src/automation/draft-recovery";
 import { ArrowLeft, ArrowRight, Bell, Check, Clock3, FileUp, Filter, Link2, Search, StickyNote, TrendingDown, AlertTriangle, LockKeyhole } from "lucide-react";
 import "./automation.css";
+import "./notification-workspace.css";
 import "./studio-workspace.css";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
@@ -64,6 +65,20 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   const [applyTargets, setApplyTargets] = useState<any[] | null>(null);
   const [notificationNext, setNotificationNext] = useState<Record<string, string | null>>({ auto: null, price: null });
   const actionsMenu = useRef<HTMLDetailsElement>(null), actionsToggle = useRef<HTMLElement>(null), historyPanel = useRef<HTMLElement>(null), ruleNameInput = useRef<HTMLInputElement>(null);
+  const moreNavigation = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      const menu = moreNavigation.current;
+      if (menu?.open && event.target && !menu.contains(event.target as Node)) menu.open = false;
+    };
+    const closeEscape = (event: globalThis.KeyboardEvent) => {
+      const menu = moreNavigation.current;
+      if (event.key === "Escape" && menu?.open) { menu.open = false; menu.querySelector("summary")?.focus(); }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => { document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeEscape); };
+  }, []);
   const workspaceId = useId();
   const storageKey = recoveryKey(viewerId, guildId);
   const recoveredSource = useRef<{ workflowId: string; baseRevision: number } | null>(null);
@@ -321,8 +336,14 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   }
   return <div className={`automation-app space-y-3 ${inStudio ? "automation-studio" : ""}`}>
     {savedRead && <section aria-label="保存後の表示の再取得"><p role="status">{savedRead.message}</p><button className={button} disabled={working} onClick={() => void task(() => finishCommit(savedRead.message, savedRead.read))}>保存後の表示を更新</button></section>}
-    {!inStudio && <>{presentation === "standalone" || guildId ? <header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</a><a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</a>{!guildId ? <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップ</a> : null}</div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header> : null}
-    <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "通知ルール"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
+    {!inStudio && <>{presentation === "standalone" || guildId ? <header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</a><a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</a></div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header> : null}
+    <nav className="automation-navigation" aria-label="通知メニュー">
+      {[["monitors", "通知一覧"], ["history", "配信予定・履歴"], ["rules", "通知ルール"]].map(([id, name]) => <button type="button" key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}
+      <details ref={moreNavigation} className="automation-more-navigation" data-active={tab === "dictionaries" || tab === "marketplace" ? "true" : undefined}>
+        <summary>その他</summary>
+        <div>{[["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button type="button" key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={event => { const menu = event.currentTarget.closest("details"); setTab(id); menu?.querySelector("summary")?.focus(); menu?.removeAttribute("open"); void task(refresh); }}>{name}</button>)}</div>
+      </details>
+    </nav></>}
     {error && !applyTargets && !notificationOpen && <div role="alert" className="space-y-2 rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive"><p>{error}</p><button type="button" className={button} disabled={busy} onClick={() => void task(async () => { const [value] = await Promise.all([api("catalog"), refresh()]); setCatalog(value); })}>一覧を再読み込み</button>{error.startsWith("ログインの有効期限") ? <a href="/api/auth/signin/discord?callbackUrl=/dashboard/automation" target="_blank" rel="noreferrer" className={button}>別のタブでログイン</a> : null}</div>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}
     {catalog?.deliverySafety?.available === false && !inStudio && <p role="status" className="rounded border border-amber-500 p-3 text-sm">送信・公開を利用できません。時間をおいて再試行してください。</p>}

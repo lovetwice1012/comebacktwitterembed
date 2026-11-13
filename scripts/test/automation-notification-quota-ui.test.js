@@ -2,6 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
+const card = (f, name) => [...f.container.querySelectorAll('.monitor-card')].find(item => item.textContent.includes(name));
 const row = (kind, id = 'same-id') => ({ id, kind, name: kind === 'auto' ? '新着の通知' : '価格の通知', scope: 'private', providerId: kind === 'auto' ? 'github' : 'steam', source: 'https://example.test/source', enabled: true, destinationId: 'dm', lastCheckedAtMs: 100 });
 const profile = (changes = {}) => ({
     plan: { id: 'free', tier: 'free', name: '無料プラン', priority: 0, slotLimit: 5, dayLimit: 24, minuteLimit: 5, ...changes },
@@ -32,10 +34,11 @@ test('free notification slots show actual sent messages separately from pending 
         assert.match(f.container.textContent, /無料プラン.*使用枠 4 \/ 5.*空き 1枠/);
         assert.match(f.container.textContent, /1枠あたり1日24通・1分5通/);
         assert.match(f.container.textContent, /メッセージ1件＝1通/); assert.match(f.container.textContent, /日本時間の0時/);
-        assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 3通.*1日24通・1分5通.*予約・確認待ち 2通/);
-        assert(!f.container.textContent.includes('今日の送信 8通'));
-        await f.click('価格通知'); await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-        assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 8通.*1日24通・1分5通/);
+        assert.match(card(f, '新着の通知').textContent, /今日の送信 3通.*1日24通・1分5通.*予約・確認待ち 2通/);
+        assert(!card(f, '新着の通知').textContent.includes('今日の送信 8通'));
+        assert.match(card(f, '価格の通知').textContent, /今日の送信 8通/);
+        await f.fill(f.container.querySelector('select[aria-label="通知の種類"]'), 'price'); await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+        assert.match(card(f, '価格の通知').textContent, /今日の送信 8通.*1日24通・1分5通/);
         assert(!f.container.textContent.includes('今日の送信 3通')); assert(!f.container.textContent.includes('予約・確認待ち'));
     } finally { await f.close(); }
 });
@@ -49,7 +52,7 @@ test('supporter priority and paid plan limits display server-provided values wit
         current = profile({ id: 'configured-paid', tier: 'paid', name: '設定済みプラン', slotLimit: 9, dayLimit: 72, minuteLimit: 7, priority: 2 });
         await f.click('更新'); await f.settle();
         assert.match(f.container.textContent, /設定済みプラン.*使用枠 4 \/ 9.*空き 5枠/);
-        assert.match(f.container.textContent, /1日72通・1分7通/); assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 3通.*1日72通・1分7通/);
+        assert.match(f.container.textContent, /1日72通・1分7通/); assert.match(card(f, '新着の通知').textContent, /今日の送信 3通.*1日72通・1分7通/);
         assert(!f.container.textContent.includes('円')); assert(!f.container.textContent.includes('60通'));
     } finally { await f.close(); }
 });
@@ -85,7 +88,7 @@ test('an old entitlement response cannot overwrite newer plan and slot usage loa
 test('a service slot validation error keeps the registration form and its source/name so the user can correct capacity and retry', async () => {
     const f = await fixture(async () => profile(), { createError: { code: 'AUTOMATION_SLOT_LIMIT', maxSlots: 5, availableSlots: 0, planName: '無料', error: 'PRIVATE_CREATION_INTERNAL' } });
     try {
-        await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/preserved'); await f.fill(f.field('名前（省略可）'), '残す通知入力');
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/preserved'); await f.fill(f.field('名前（省略可）'), '残す通知入力');
         await f.submit(); await f.submit();
         const form = f.container.querySelector('form'); assert.match(f.container.textContent, /残す通知入力/);
         await f.submit();
@@ -110,7 +113,7 @@ test('a slot rejection refreshes stale capacity metadata without closing the mod
     const f = await fixture(async () => latest, { createError: { code: 'AUTOMATION_SLOT_LIMIT', maxSlots: 5, availableSlots: 0, planName: '無料', error: 'PRIVATE_SLOT_REJECTION' } });
     try {
         assert.match(f.container.textContent, /使用枠 0 \/ 5.*空き 5枠/);
-        await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/keep-after-rejection'); await f.fill(f.field('名前（省略可）'), '6枠目の入力');
+        await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/keep-after-rejection'); await f.fill(f.field('名前（省略可）'), '6枠目の入力');
         await f.submit(); await f.submit();
         const form = f.container.querySelector('form'), dialog = form.closest('dialog');
         latest = profile(); latest.slots = { used: 5, max: 5, available: 0 };

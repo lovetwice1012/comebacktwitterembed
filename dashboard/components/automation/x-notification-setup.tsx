@@ -77,7 +77,7 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
     const target = stagePanel.current ?? (embedded ? setupHeading.current : null);
     if (!target) return;
     focusStage.current = false; target.focus({ preventScroll: true }); target.scrollIntoView?.({ block: "start" });
-  }, [stage, adding, loading, status, embedded]);
+  }, [stage, adding, loading, status, embedded, browser]);
   const canUpload = Boolean(active && status?.available && consent && !busy && !loading && !finished.current);
   async function choose(file: File | undefined) {
     clearFile(false); setError(""); setNotice("");
@@ -148,6 +148,14 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
   const bound = status?.subscriptions.reduce((sum, item) => sum + item.boundMonitorCount, 0) ?? 0;
   const needsBinding = bound === 0 && !status?.nextCursor;
   const openUpload = () => { clearFile(); setConsent(false); focusStage.current = true; setStage("upload"); };
+  const openBrowserPreparation = (nextBrowser: "firefox" | "chrome" | "brave") => {
+    if (!active || busy || loading || action.current || finished.current || chosenId !== null || !status?.available
+      || (nextBrowser === "chrome" && !status.chromeEnabled) || (nextBrowser === "brave" && !status.braveEnabled)) return;
+    const alreadyOpen = adding && stage === "prepare" && browser === nextBrowser;
+    clearFile(); setConsent(false); setDeleting(null); setBrowser(nextBrowser);
+    focusStage.current = !alreadyOpen; setAdding(true); setStage("prepare");
+    if (alreadyOpen) { stagePanel.current?.focus({ preventScroll: true }); stagePanel.current?.scrollIntoView?.({ block: "start" }); }
+  };
   const chooseSubscription = (item: XSetupSubscription) => {
     if (!active || loading || busy || action.current || finished.current || !onChooseSubscription
       || item.receiverState === "requires_reenrollment"
@@ -167,9 +175,16 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
       {loading ? <p role="status" className="nx-inline-note">受付状態と登録一覧を読み込み中…</p> : null}{busy ? <p role="status" className="nx-inline-note">処理中です…</p> : null}
       {error ? <p ref={errorMessage} tabIndex={-1} role="alert" className="nx-feedback nx-feedback-error">{error}</p> : null}{notice ? <p ref={noticeMessage} tabIndex={-1} role="status" className="nx-feedback">{notice}</p> : null}
       {registered && !embedded ? <section aria-label="現在のX接続" className="nx-connection-overview"><div><span className="nx-state-pill" data-state={listening ? "ready" : "pending"}>{listening ? "接続を確認済み" : status?.nextCursor ? "続きの受信情報を確認" : "接続の準備・確認中"}</span>{needsBinding ? <h3>監視への割り当て待ち</h3> : null}<a className="nx-primary" href={monitorLink()}>監視アカウントを開く<ArrowRight size={16} aria-hidden="true" /></a></div><dl className="nx-summary-numbers"><div><dt>表示中の受信情報</dt><dd>{status?.subscriptions.length}件</dd></div><div><dt>表示中の接続確認済み</dt><dd>{listening}件</dd></div></dl></section> : null}
+      {registered && status?.available && status.chromeEnabled ? <section aria-label="ブラウザーの受信情報を追加">
+        <h3>受信情報を追加</h3><div className="nx-actions">
+          <button type="button" className={button} disabled={!active || busy || loading || chosenId !== null} onClick={() => openBrowserPreparation("firefox")}>Firefoxで受信情報を追加</button>
+          <button type="button" className={button} disabled={!active || busy || loading || chosenId !== null} onClick={() => openBrowserPreparation("chrome")}>Chromeで受信情報を追加</button>
+          {status.braveEnabled ? <button type="button" className={button} disabled={!active || busy || loading || chosenId !== null} onClick={() => openBrowserPreparation("brave")}>Braveで受信情報を追加</button> : null}
+        </div>
+      </section> : null}
       {registered ? <div className="nx-section-heading nx-section-heading-small"><div><h3>登録した受信情報</h3></div><button className={button} disabled={!active || busy || loading} onClick={() => { clearFile(); setDeleting(null); void load(); }}>受付状態・登録一覧を更新</button></div> : null}
       <section aria-label="登録済みのX通知受信情報" className="nx-receiver-list">
-        {status?.subscriptions.map((item, index) => <article key={item.id} aria-label={`受信情報${index + 1}`} className="nx-receiver-card"><header><div><h4>受信情報 {index + 1}</h4><span className="nx-field-note">保存済み</span></div><span className="nx-state-pill" data-state={item.receiverState === "listening" ? "ready" : "pending"}>{xReceiverLabel(item.receiverState)}</span></header>
+        {status?.subscriptions.map((item, index) => <article key={item.id} aria-label={`受信情報${index + 1}`} className="nx-receiver-card"><header><div><h4>受信情報 {index + 1}</h4><span className="nx-field-note">{item.browserKind === "brave" ? "Brave" : item.browserKind === "chrome" ? "Chrome" : "Firefox"} · 保存済み</span></div><span className="nx-state-pill" data-state={item.receiverState === "listening" ? "ready" : "pending"}>{xReceiverLabel(item.receiverState)}</span></header>
           <p className="nx-binding-count">この受信情報を使う監視：{item.boundMonitorCount}件</p>
           {item.boundMonitorCount === 0 ? <p className="nx-inline-note">{embedded ? "この接続を選び、通知先とタイミングを確認してください。" : "X監視の編集で「使用する自分の受信情報」にこの受信情報を選ぶと、サーバーとの接続を進められます。"}</p> : null}
           <div className="nx-last-received"><span>サーバーが最後に通知データを受け取った日時（日本時間）</span><strong>{item.lastReceivedAtMs === null ? "最初の受信を待っています" : date(item.lastReceivedAtMs)}</strong></div>
@@ -187,7 +202,7 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
         </article>)}
         {status?.nextCursor ? <button className={button} disabled={!active || busy || loading} onClick={() => { clearFile(); void load(status.nextCursor ?? undefined); }}>受信情報をさらに表示</button> : null}
       </section>
-      {registered ? <div className="nx-setup-maintenance"><details><summary>PCを閉じる前に</summary><p>設定用ブラウザーを閉じたまま使えます。「接続を確認済み」と表示されたら、実際のX通知が通知先に届くことを確認してください。確認後は、PCの電源を切って使えます。サーバーとブラウザーが同時に接続すると、通知の受信が競合する場合があります。</p></details><button className={button} disabled={!active || busy || chosenId !== null} onClick={() => { clearFile(); setConsent(false); focusStage.current = !adding; setAdding(value => !value); setStage("prepare"); }}>{adding ? "追加の手順を閉じる" : "受信情報を追加・登録し直す"}</button></div> : null}
+      {registered ? <div className="nx-setup-maintenance"><details><summary>PCを閉じる前に</summary><p>設定用ブラウザーを閉じたまま使えます。「接続を確認済み」と表示されたら、実際のX通知が通知先に届くことを確認してください。確認後は、PCの電源を切って使えます。サーバーとブラウザーが同時に接続すると、通知の受信が競合する場合があります。</p></details>{adding || !status?.available || !status.chromeEnabled ? <button className={button} disabled={!active || busy || chosenId !== null} onClick={() => { clearFile(); setConsent(false); focusStage.current = !adding; setAdding(value => !value); setStage("prepare"); }}>{adding ? "追加の手順を閉じる" : "受信情報を追加・登録し直す"}</button> : null}</div> : null}
       {showPreparation ? <section aria-label="X通知の接続手順" className="nx-onboarding"><ol className="nx-stepper" aria-label="X接続の手順"><li aria-current={stage === "prepare" ? "step" : undefined}><span>{stage === "upload" ? <Check size={16} aria-hidden="true" /> : "1"}</span>PCで準備</li><li aria-current={stage === "upload" ? "step" : undefined}><span>2</span>ファイルを登録</li><li><span>3</span>{embedded ? "通知先とタイミング" : "接続を確認"}</li></ol>
         {stage === "prepare" ? <div className="nx-preparation"><header ref={stagePanel} tabIndex={-1} className="nx-stage-focus"><h3>PCでファイルを作成</h3></header>{status?.chromeEnabled ? <fieldset className="nx-actions"><legend>設定に使うブラウザー</legend><label><input type="radio" name="x-setup-browser" checked={browser === "firefox"} onChange={() => setBrowser("firefox")} /> Firefox</label><label><input type="radio" name="x-setup-browser" checked={browser === "chrome"} onChange={() => setBrowser("chrome")} /> Chrome</label>{status.braveEnabled ? <label><input type="radio" name="x-setup-browser" checked={browser === "brave"} onChange={() => setBrowser("brave")} /> Brave</label> : null}<p className="nx-field-note">Microsoft Edge は準備中です。</p></fieldset> : null}{browser !== "firefox" && status?.chromeEnabled ? <ol className="nx-instruction-list">
           <li><Download size={22} aria-hidden="true" /><div><h4>{chromiumLabel}用の保存ツールをダウンロード</h4><p>WindowsでZIPをすべて展開してください。</p><a href={X_SETUP_CHROME_DOWNLOAD_URL} download className="nx-primary">{chromiumLabel}用ツールをダウンロード<Download size={15} aria-hidden="true" /></a></div></li>
@@ -195,10 +210,10 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
           <li><span className="nx-step-number">3</span><div><h4>通知データを保存</h4><p>ツールの「通知データを保存」を押します。設定用{chromiumLabel}が閉じ、アップロード用のファイルができます。</p></div></li>
         </ol> : <ol className="nx-instruction-list">
           {registered && listening > 0 ? <li><Radio size={22} aria-hidden="true" /><div><h4>追加の設定後は専用Firefoxを閉じる</h4><p>アカウントを追加したら、専用Firefoxのウィンドウをすべて閉じて、この画面に戻ってください。サーバーと専用Firefoxの同時接続では、通知の受信が競合する場合があります。</p></div></li> : null}
-          <li><Download size={22} aria-hidden="true" /><div><h4>保存ツールをダウンロード</h4><p>初回設定にはWindowsのPCとFirefoxが必要です。ZIPを保存し、右クリックの「すべて展開」で解凍してください。</p><a href={X_SETUP_DOWNLOAD_URL} download className="nx-primary">保存ツール（ZIP）をダウンロード<Download size={15} aria-hidden="true" /></a>{status ? <div className="nx-download-meta"><span>バージョン {status.download.version}</span><details><summary>ダウンロードの照合用情報</summary><p>SHA-256</p><code>{status.download.sha256}</code></details></div> : null}</div></li>
-          <li><span className="nx-step-number">2</span><div><h4>専用Firefoxを開く</h4><p>展開先の「ダブルクリックで開始.cmd」を開き、画面の案内に従って、ツール専用のFirefox環境を作ります。普段使いのFirefoxと分けて使えます。</p><p>Firefoxが見つからない場合は「Firefoxを選ぶ」で指定します。</p></div></li>
-          <li><span className="nx-step-number">3</span><div><h4>Xにログインして通知を許可</h4><p>専用FirefoxでXにログインし、ブラウザー通知を許可します。通知を受け取りたいアカウントのプロフィールでベルを押し、投稿通知を有効にしてください。</p><p>監視するアカウントごとに登録します。必要な利用枠は、通知方法を選ぶ画面で確認できます。Xのログイン情報は、専用Firefoxで開いたXの画面に入力してください。</p></div></li>
-          <li><span className="nx-step-number">4</span><div><h4>Firefoxを閉じてJSONを保存</h4><p>専用Firefoxのウィンドウをすべて閉じ、保存ツールに戻ります。保存先を選び、説明を確認してJSONファイルを作成します。他サイトの通知設定も見つかった場合は、ファイル作成の直前に、その通知の扱いを確認できます。</p><p>ここまでの作業は、ご自身のPC内で完了します。作成したファイルは、次の手順でこの画面からアップロードします。保存先はツールの完了画面に表示されます。</p></div></li>
+          <li><Download size={22} aria-hidden="true" /><div><h4>保存ツールをダウンロード</h4><p>WindowsのPCでZIPを保存し、右クリックの「すべて展開」で解凍します。</p><a href={X_SETUP_DOWNLOAD_URL} download className="nx-primary">保存ツール（ZIP）をダウンロード<Download size={15} aria-hidden="true" /></a>{status ? <div className="nx-download-meta"><span>バージョン {status.download.version}</span><details><summary>ダウンロードの照合用情報</summary><p>SHA-256</p><code>{status.download.sha256}</code></details></div> : null}</div></li>
+          <li><span className="nx-step-number">2</span><div><h4>専用Firefoxを開く</h4><p>「ダブルクリックで開始.cmd」を開き、ツール専用のFirefox環境を作ります。普段使いのFirefoxと分けて使えます。</p><p>Firefoxが見つからない場合は「Firefoxを選ぶ」で指定します。</p></div></li>
+          <li><span className="nx-step-number">3</span><div><h4>Xにログインして通知を許可</h4><p>専用FirefoxでXにログインし、ブラウザー通知を許可します。監視するアカウントごとに、プロフィールのベルを押して投稿通知をオンにしてください。</p></div></li>
+          <li><span className="nx-step-number">4</span><div><h4>Firefoxを閉じてJSONを保存</h4><p>専用Firefoxのウィンドウをすべて閉じ、保存ツールでJSONファイルを作成します。他サイトの通知設定もある場合は、作成前に通知の扱いを確認できます。</p><p>ここまでの作業は、ご自身のPC内で完了します。次の画面で作成したファイルをアップロードしてください。</p></div></li>
         </ol>}<div className="nx-step-actions"><button className="nx-primary" disabled={!active || busy || loading} onClick={openUpload}>ファイルを登録する<ArrowRight size={16} aria-hidden="true" /></button></div></div> : <div className="nx-upload-stage"><header ref={stagePanel} tabIndex={-1} className="nx-stage-focus"><h3>JSONファイルを登録</h3></header>
           <section aria-label="登録するデータと通知の取り扱い" className="nx-consent-information"><h4><ShieldCheck size={18} aria-hidden="true" />登録するデータをご確認ください</h4><p><strong>ファイルに入る情報</strong><br />X通知の受信先、識別子、通知を読み取るための秘密鍵が入ります。Cookie、閲覧履歴、保存パスワード、他サイトの秘密鍵は含みません。</p><p><strong>他サイトの通知について</strong><br />設定用ブラウザーに他サイトの通知設定もある場合、そのサイトの暗号化された通知や識別情報もサーバーへ届くことがあります。サーバーに届く以上、運営側でそのデータを取得することは可能です。現在は、X以外の通知を受信後に破棄します。別途明確な許可をいただくまでは、復号・利用・保存を行いません。他サイトの通知を利用する際は、あらためて許可を確認します。破棄された通知は、ブラウザーでも受け取れなくなる場合があります。</p><p><strong>ファイルの保管</strong><br />ファイルには、X通知を読むための鍵が入っています。ファイル自体は暗号化せずに保存するので、ご自身のPCで保管し、この登録画面にアップロードしてください。登録後、PC上のファイルが不要になったら削除できます。</p><p><strong>利用を終了するとき</strong><br />サービス上の受信情報は、登録一覧から削除できます。Xとブラウザー側の通知も止めるには、それぞれの設定で通知を解除してください。</p></section>
           {status && !status.available ? <p role="status" className="nx-inline-note">{status.rollout.reasonCode ? xSetupFeedback({ code: status.rollout.reasonCode }) : "現在、ファイルの受付は準備中です。手順の確認と保存ツールのダウンロードができます。"}</p> : null}

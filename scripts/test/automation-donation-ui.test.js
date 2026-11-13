@@ -64,8 +64,24 @@ test('donation route requires a session and existing payment/workspace routes ex
     const root = path.resolve(__dirname, '../..');
     const page = fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/support/page.tsx'), 'utf8');
     assert.match(page, /await requireDashboardSession\(\)/); assert.match(page, /key=\{session\.user\.id\}/);
-    assert.match(fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/plans/page.tsx'), 'utf8'), /href="\/dashboard\/automation\/support"/);
+    assert.match(fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/plans/page.tsx'), 'utf8'), /section="plans"/);
+    assert.match(page, /section="support"/);
     assert.match(fs.readFileSync(path.join(root, 'dashboard/app/admin/notification-plans/page.tsx'), 'utf8'), /<DonationPolicyManager/);
+});
+test('plan and support pages both expose the shared navigation and mark the current page', async () => {
+    const f = await reactFixture('export { AutomationPageFrame } from "./components/automation/automation-page-frame";');
+    try {
+        for (const newUI of [false, true]) for (const section of ['plans', 'support']) {
+            await f.render(f.React.createElement(f.exports.AutomationPageFrame, { locale: 'ja', section, title: '通知', newUI }, '内容'));
+            const nav = f.container.querySelector('nav[aria-label="通知の設定"]');
+            assert(nav);
+            const plans = nav.querySelector('a[href="/dashboard/automation/plans"]');
+            const support = nav.querySelector('a[href="/dashboard/automation/support"]');
+            assert(plans && support, 'both pages remain reachable from either page');
+            assert.equal(plans.getAttribute('aria-current'), section === 'plans' ? 'page' : null);
+            assert.equal(support.getAttribute('aria-current'), section === 'support' ? 'page' : null);
+        }
+    } finally { await f.close(); }
 });
 test('disabled or unconfigured donations preserve history and never load Square or invent a contribution amount', async () => {
     for (const config of [options({ enabled: false, minimumAmount: null, maximumAmount: null }), options({ configured: false })]) {

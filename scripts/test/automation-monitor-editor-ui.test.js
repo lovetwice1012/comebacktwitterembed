@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
 
 const tick = f => f.act(async () => new Promise(resolve => setTimeout(resolve, 20)));
 const field = (f, name) => [...f.container.querySelectorAll('form.monitor-registration label')].find(label => label.firstChild?.textContent.trim() === name)?.querySelector('input,select');
@@ -45,7 +46,7 @@ async function fixture({ initial = row(), respond } = {}) {
         destinations: [{ id: 'dm-one', name: '個人DM', kind: 'dm', enabled: true, scope: 'private' }, { id: 'channel-two', name: '投稿チャンネル', kind: 'webhook', enabled: true, scope: 'private' }],
         rules: [{ id: 'rule-a', name: '現在のルール', scope: 'private', enabled: true }, { id: 'rule-b', name: '別のルール', scope: 'private', enabled: true }], refresh: async () => {} }));
     await tick(f);
-    if (initial.kind === 'price') { await f.click('価格通知'); await tick(f); }
+    if (initial.kind === 'price') { await f.fill(f.container.querySelector('select[aria-label="通知の種類"]'), 'price'); await tick(f); }
     f.writes = () => f.calls.filter(call => call.method !== 'GET' && !call.route.endsWith('/preview'));
     f.open = () => f.click('設定を変更');
     f.form = () => f.container.querySelector('form.monitor-registration');
@@ -121,7 +122,7 @@ test('creating with a failed optional rule keeps the new monitor ID and retries 
     let attempts = 0;
     const f = await fixture({ respond: route => { if (route === 'workflows/rule-b/attach' && ++attempts === 1) throw new Error('fixture attachment failure'); } });
     try {
-        await f.click('通知を追加'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user');
+        await openNotification(f, 'auto'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user');
         await f.fill(field(f, '名前（省略可）'), '新しい通知'); await f.click('対象を確認');
         await f.fill(field(f, '詳細ルール'), 'rule-b'); await f.click('通知内容を確認'); await f.click('通知を登録');
         assert.equal(f.current.id, '303'); assert.match(f.container.querySelector('dialog[open]').textContent, /通知は保存済みです/);
@@ -139,7 +140,7 @@ test('a new-registration duplicate response keeps the editable draft instead of 
         if (route === 'monitors/auto' && method === 'POST' && rejectDuplicate) { rejectDuplicate = false; throw Object.assign(new Error('同じ対象の通知が登録済みです。'), { code: 'MONITOR_EXISTS', status: 409 }); }
     } });
     try {
-        await f.click('通知を追加'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user'); await f.click('対象を確認');
+        await openNotification(f, 'auto'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user'); await f.click('対象を確認');
         await f.click('通知内容を確認'); await f.click('通知を登録');
         assert.equal(f.container.querySelector('[aria-label="通知設定の再確認"]'), null);
         assert.match(f.container.querySelector('dialog[open]').textContent, /登録済みです/);
@@ -215,9 +216,9 @@ test('closing and switching notification tabs retains an edit without saving or 
     const f = await fixture();
     try {
         await f.open(); await f.fill(field(f, '名前（省略可）'), '編集中の名前'); await f.fill(field(f, '通知先'), 'channel-two'); await f.click('キャンセル');
-        await f.click('価格通知'); await tick(f); await f.click('通知の入力を再開');
+        await f.fill(f.container.querySelector('select[aria-label="通知の種類"]'), 'price'); await tick(f); await f.click('通知の入力を再開');
         assert.equal(field(f, '名前（省略可）').value, '編集中の名前'); assert.equal(field(f, '通知先').value, 'channel-two');
-        assert.equal(f.container.querySelector('[role="tab"][aria-selected="true"]').textContent, '新着通知'); assert.equal(f.writes().length, 0);
+        assert(field(f, '対象のURL・ID'), 'the retained form is the original new-post notification'); assert.equal(f.writes().length, 0);
         assert.equal(f.dom.window.localStorage.length, 0); assert.equal(f.dom.window.sessionStorage.length, 0);
     } finally { await f.close(); }
 });
