@@ -92,13 +92,13 @@ function normalizeTargetSetting(raw: Partial<TargetSetting> | null | undefined):
 
 function buttonDefaults(providerId: string): ButtonVisibility {
   const defaults: ButtonVisibility = Object.fromEntries(buttonKeys.map((key) => [key, false]));
-  if (providerId === "twitter") defaults.savetweet = false;
+  if (providerId === "twitter") { defaults.savetweet = false; defaults.tg = false; }
   return defaults;
 }
 
 function normalizeButtonVisibility(providerId: string, raw: ButtonVisibility | null | undefined): ButtonVisibility {
   const value = { ...buttonDefaults(providerId), ...(raw || {}) };
-  if (providerId !== "twitter") delete value.savetweet;
+  if (providerId !== "twitter") { delete value.savetweet; delete value.tg; }
   return value;
 }
 

@@ -215,6 +215,7 @@ const ja = {
   "form.button.personal_remind": "あとで通知ボタン",
   "form.button.personal_restock": "再入荷を待つボタン",
   "form.button.gallery": "ギャラリーボタン",
+  "form.button.tg": "画像をまとめるボタン",
   "form.button.all": "すべてのボタン",
   "form.readOnlyKind": "この設定種別は表示専用です。",
 
@@ -547,6 +548,7 @@ const en: Record<keyof typeof ja, string> = {
   "form.button.personal_remind": "Remind me button",
   "form.button.personal_restock": "Watch restock button",
   "form.button.gallery": "Gallery buttons",
+  "form.button.tg": "Combine images button",
   "form.button.all": "All buttons",
   "form.readOnlyKind": "This setting type is read-only.",
 

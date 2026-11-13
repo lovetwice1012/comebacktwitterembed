@@ -70,6 +70,7 @@ test('Bun captures its ws adapter for Discord and restores the native global', a
     assert.equal(runtime.gatewayTransport, 'bun-ws-compat');
     assert.equal(runtime.restTransport, 'npm-undici');
     assert.equal(target.WebSocket, nativeWebSocket);
+    assert.equal(runtime.restOptions.makeRequest[Symbol.for('cbte.discord.singleAttemptFetch')], true);
 
     const response = await runtime.restOptions.makeRequest('https://example.test', { method: 'GET' });
     assert.equal(response.status, 204);

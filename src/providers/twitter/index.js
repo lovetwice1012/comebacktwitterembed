@@ -35,7 +35,6 @@ const { toApiLocaleFamily } = require('../../discordLocales');
 // ---- Twitter 内部定数 (このファイル外には出さない) -------------------------
 
 const SAVED_MARKERS         = ['twidata.sprink.cloud', 'localhost:3088'];
-const VIDEO_MARKERS         = ['video.twimg.com'];
 const ATTACHMENT_THRESHOLD  = 4;
 const MAX_ATTACHMENTS       = 10;
 const MAX_EMBEDS_PER_STEP   = 10;
@@ -85,11 +84,25 @@ function tr(spec, lang) {
 // ---- 内部ヘルパ --------------------------------------------------------------
 
 function isVideoUrl(el) {
-    return VIDEO_MARKERS.some(m => el.includes(m)) || videoExtensions.some(ext => el.includes(ext));
+    if (typeof el !== 'string') return false;
+    try {
+        const url = new URL(el), host = url.hostname.toLowerCase();
+        if (host === 'video.twimg.com') return true;
+        const last = url.pathname.split('/').pop() || '';
+        const pathnameExtension = /\.([A-Za-z0-9]+)(?::(?:orig|large|medium|small|thumb))?$/i.exec(last)?.[1]?.toLowerCase();
+        const format = (url.searchParams.get('format') || '').toLowerCase();
+        return videoExtensions.includes(pathnameExtension) || videoExtensions.includes(format);
+    } catch { return false; }
 }
 
 function isImageUrl(el) {
-    return /(?:\.|format=)(?:jpe?g|png|webp)(?:[?#&]|$)/i.test(el) || el.includes('pbs.twimg.com/media/');
+    return /(?:\.|format=)(?:jpe?g|png|webp|avif)(?:[?#&]|$)/i.test(el) || el.includes('pbs.twimg.com/media/');
+}
+
+function canManageSourceMessages(message) {
+    // Automation renders may represent a DM or provide only a guild ID.
+    // Unknown Bot permissions must never be treated as management authority.
+    return message?.guild?.members?.me?.permissions?.has?.(PermissionsBitField.Flags.ManageMessages) === true;
 }
 
 function firstTweetMediaArray(tweet) {
@@ -205,6 +218,7 @@ function buildTwitterAnalytics(tweet, url) {
     const hashtags = wordsFromText(tweet.text, /#([\p{L}\p{N}_]+)/gu);
     const mentions = wordsFromText(tweet.text, /@([A-Za-z0-9_]{1,15})/g);
     const media = summarizeTweetMedia(tweet);
+    const sensitivityUnknown = tweet[Symbol.for('cbte.twitter.fx.sensitivity.unknown')] === true;
     return createProviderAnalytics({
         content: {
             accountKey: tweet.user_screen_name || tweet.user_name,
@@ -215,7 +229,7 @@ function buildTwitterAnalytics(tweet, url) {
             descriptionPreview: tweet.text,
             authorName: tweet.user_name || tweet.user_screen_name,
             publishedAtMs: tweet.date ? Date.parse(tweet.date) : null,
-            sensitive: tweetHasSensitiveMedia(tweet) ? 1 : 0,
+            sensitive: sensitivityUnknown ? null : tweetHasSensitiveMedia(tweet) ? 1 : 0,
             mediaCount: media.count,
         },
         metrics: {
@@ -228,7 +242,7 @@ function buildTwitterAnalytics(tweet, url) {
             ...tagFacets('hashtag', hashtags),
             ...tagFacets('mention', mentions),
             facet('media_type', media.typeSummary),
-            facet('sensitive', tweetHasSensitiveMedia(tweet) ? 'yes' : 'no'),
+            facet('sensitive', sensitivityUnknown ? null : tweetHasSensitiveMedia(tweet) ? 'yes' : 'no'),
             facet('has_article', tweet.article ? 'yes' : 'no'),
             facet('has_quote', tweet.qrtURL ? 'yes' : 'no'),
         ],
@@ -249,7 +263,11 @@ async function fetchTweetData(url) {
     const parsed = new URL(url);
     const isOriginalTweet = /^(twitter\.com|x\.com)$/.test(parsed.hostname);
     const plan = isOriginalTweet ? await require('../../adminSupport/providerSources').resolvePlan('twitter') : null;
-    let api = plan ? url.replace(/^https?:\/\/(twitter\.com|x\.com)/, plan.sources[0].origin) : url;
+    // /i/web/status/<id> has an extra path segment compared with the normal
+    // status URL. Normalize it before dropping trailing /photo or /video paths.
+    const internal = isOriginalTweet && /^\/i\/web\/status\/(\d+)(?:\/|$)/i.exec(parsed.pathname);
+    const sourceUrl = internal ? `${parsed.origin}/i/status/${internal[1]}` : url;
+    let api = plan ? sourceUrl.replace(/^https?:\/\/(twitter\.com|x\.com)/, plan.sources[0].origin) : sourceUrl;
     const parts = api.split('/');
     if (parts.length > 6 && !api.includes('twidata.sprink.cloud')) api = parts.slice(0, 6).join('/');
     const requestOptions = { timeout: 15000, size: 4 * 1024 * 1024 };
@@ -261,7 +279,7 @@ async function fetchTweetData(url) {
         api = nextApi;
         text = await (await fetch(nextApi, requestOptions)).text();
     }
-    try { return parseTweetApiResponse(text); }
+    try { return parseTweetApiResponse(text, isOriginalTweet ? url : undefined); }
     catch (error) { telemetry.event('parse', 'failed', { url: api, expected: 'Twitter JSON payload', error: telemetry.errorData(error) }); throw error; }
 }
 
@@ -506,12 +524,26 @@ function canInlineQuoteSteps(parentStep, childSteps) {
     const childEmbeds = childSteps.flatMap(step => step.embeds || []);
     if (childEmbeds.length === 0) return false;
     if ((parentStep.embeds || []).length + childEmbeds.length > MAX_EMBEDS_PER_STEP) return false;
-    return childSteps.every(step => !Array.isArray(step.files) || step.files.length === 0);
+    // A media or long-text continuation must remain a separate send. Folding
+    // its first embed inline would silently discard the later messages.
+    return childSteps.every(step => (!Array.isArray(step.files) || step.files.length === 0)
+        && step.requiresPreviousSuccess !== true
+        && (typeof step.content !== 'string' || !step.content.includes('\n')));
 }
 
 function appendInlineQuoteSteps(parentStep, childSteps, lang) {
-    const quotedEmbeds = childSteps.flatMap(step => step.embeds || []).map(embed => cloneInlineQuoteEmbed(embed, lang));
-    parentStep.embeds.push(...quotedEmbeds);
+    for (const child of childSteps) {
+        const offset = parentStep.embeds.length;
+        const quotedEmbeds = (child.embeds || []).map(embed => cloneInlineQuoteEmbed(embed, lang));
+        parentStep.embeds.push(...quotedEmbeds);
+        if (quotedEmbeds.length) parentStep.twitterGridSharedInline = true;
+        const groups = [child.twitterGrid, ...(child.twitterGridInline || [])].filter(Boolean).map(group => ({
+            ...group,
+            embedStart: offset + (group.embedStart ?? 0),
+            embedEnd: offset + (group.embedEnd ?? quotedEmbeds.length),
+        }));
+        if (groups.length) parentStep.twitterGridInline = [...(parentStep.twitterGridInline || []), ...groups];
+    }
 }
 
 function summarizeQuoteEmbed(embed, lang) {
@@ -561,7 +593,6 @@ function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault)
     let videoflag = false;
 
     if (mediaURLs.length > ATTACHMENT_THRESHOLD || sendAsAttachmentsByDefault === true) {
-        if (mediaURLs.length > MAX_ATTACHMENTS) mediaURLs = mediaURLs.slice(0, MAX_ATTACHMENTS);
         attachments = mediaURLs;
         embeds.push(baseEmbed);
         attachments.forEach(el => { if (isVideoUrl(el)) videoflag = true; });
@@ -573,7 +604,7 @@ function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault)
 
     let compactSingleImageHandled = false;
     mediaURLs.forEach(element => {
-        if (VIDEO_MARKERS.some(m => element.includes(m))) {
+        if (isVideoUrl(element)) {
             attachments.push(element);
             videoflag = true;
             return;
@@ -588,6 +619,75 @@ function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault)
         }
     });
     return { embeds, files: attachments, extraButton, compactSingleImageHandled };
+}
+
+// Split only the final, policy-filtered payload. In particular, link-only and
+// thumbnail-only modes must never recover the original images for a second
+// message or the image-combining control.
+function splitMediaSteps(step, tweet) {
+    const files = Array.isArray(step.files) ? step.files : [];
+    const parts = [step];
+    if (files.length > MAX_ATTACHMENTS) {
+        step.files = files.slice(0, MAX_ATTACHMENTS);
+        for (let start = MAX_ATTACHMENTS; start < files.length; start += MAX_ATTACHMENTS) {
+            parts.push({
+                files: files.slice(start, start + MAX_ATTACHMENTS),
+                send: 'channel',
+                allowedMentions: { parse: [], repliedUser: false },
+                // A continuation only makes sense once the preceding message
+                // has been confirmed; the dispatcher enforces this dependency.
+                requiresPreviousSuccess: true,
+            });
+        }
+    }
+
+    // Link-only mode can exceed Discord's 2,000-character message limit even
+    // for 20 ordinary CDN URLs. Prefer splitting between lines so each URL
+    // remains usable; an exceptionally long line is preserved across parts.
+    if (typeof step.content === 'string' && step.content.length > 2000) {
+        let remaining = step.content;
+        const chunks = [];
+        while (remaining.length > 2000) {
+            const newline = remaining.lastIndexOf('\n', 2000);
+            const boundary = newline > 0 ? newline : 2000;
+            chunks.push(remaining.slice(0, boundary));
+            remaining = remaining.slice(boundary + (newline > 0 ? 1 : 0));
+        }
+        chunks.push(remaining);
+        step.content = chunks.shift();
+        for (const content of chunks) parts.push({ content, send: 'channel',
+            allowedMentions: { parse: [], repliedUser: false }, requiresPreviousSuccess: true });
+    }
+
+    // The fallback is a distinct upstream trust boundary. Only its attachment
+    // steps require the pinned, redirect-checked download path; existing Vx
+    // and saved-post behavior is unchanged.
+    if (tweet[Symbol.for('cbte.twitter.fx.media')] === true) {
+        for (const part of parts) if (part.files?.length) part.safeTwitterMedia = true;
+    }
+
+    const tweetUrls = new Set(Array.isArray(tweet.mediaURLs) ? tweet.mediaURLs : []);
+    // A spoiler must not be turned into an unmasked composite. Preserve all
+    // original attachments and omit the control for the entire tweet.
+    if (parts.some(part => (part.files || []).some(file => typeof file === 'object'
+        && (file?.spoiler === true || file?.name?.startsWith('SPOILER_'))))) return parts;
+    const imageUrls = parts.map(part => {
+        const fromFiles = (part.files || []).map(file => typeof file === 'string' ? file : file?.attachment)
+            .filter(url => typeof url === 'string' && tweetUrls.has(url) && isImageUrl(url) && !isVideoUrl(url));
+        const attached = new Set(fromFiles);
+        const fromEmbeds = (part.embeds || []).map(embed => embed?.image?.url)
+            .filter(url => typeof url === 'string' && tweetUrls.has(url) && !attached.has(url) && isImageUrl(url) && !isVideoUrl(url));
+        return [...fromFiles, ...fromEmbeds];
+    });
+    if (imageUrls.reduce((sum, urls) => sum + urls.length, 0) > 1) {
+        const imageParts = imageUrls.map((urls, index) => ({ urls, index })).filter(part => part.urls.length > 0);
+        imageParts.forEach((part, sequence) => {
+            const imageStep = parts[part.index];
+            imageStep.twitterGrid = { imageUrls: part.urls, sequence, totalParts: imageParts.length,
+                ...(sequence === 0 ? { embedStart: 0, embedEnd: (imageStep.embeds || []).length } : {}) };
+        });
+    }
+    return parts;
 }
 
 // ---- メイン extractor -------------------------------------------------------
@@ -619,7 +719,7 @@ async function extract(message, url, s, opts) {
 
     // legacy_mode 自動判定 (未設定なら ManageMessages 権限値で初期化)
     if (s.legacy_mode === undefined) {
-        s.legacy_mode = message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages);
+        s.legacy_mode = canManageSourceMessages(message);
     }
 
     let tweet;
@@ -735,7 +835,7 @@ async function extract(message, url, s, opts) {
     }
 
     // legacyModeSuppress
-    if (!quoted && s.legacy_mode === true && message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    if (!quoted && s.legacy_mode === true && canManageSourceMessages(message)) {
         step.suppressSourceEmbeds = true;
     }
 
@@ -766,7 +866,7 @@ async function extract(message, url, s, opts) {
     applyMediaDisplayToStep(step, s, mediaUrls, 'Media');
 
     /** @type {import('../_types').SendStep[]} */
-    const allSteps = [step];
+    const allSteps = splitMediaSteps(step, tweet);
 
     // 引用ポスト再帰展開
     if (tweet.qrtURL && canRecurseQuoted(s, depth)) {

@@ -9,6 +9,12 @@ const { webhookParts } = require('./destinations');
 const { createSafety, SafetyError } = require('./safety');
 const { createRateLimiter, AutomationRateError } = require('./rate-limits');
 const FILE_LIMIT = 25 * 1024 * 1024;
+// Discord limits a multipart request as a whole. Leave room for the JSON body,
+// boundaries, per-file headers and filenames instead of filling all 25 MiB
+// with attachment bytes. Ordinary non-X delivery retains its existing limit.
+const TWITTER_MULTIPART_RESERVE = 1024 * 1024;
+const TWITTER_ATTACHMENT_BUDGET = FILE_LIMIT - TWITTER_MULTIPART_RESERVE;
+const TWITTER_MULTIPART_HEADER_RESERVE = 64 * 1024;
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
 const toJSON = value => typeof value?.toJSON === 'function' ? value.toJSON() : structuredClone(value);
 
@@ -171,7 +177,7 @@ function createTransport(db, destinations, client, options = {}) {
         }
         const plan = job.plan, event = plan.event;
         const snapshotAggregate = !!plan.members && !(plan.flowV2 && plan.aggregateSnapshot === false && plan.members.length === 1);
-        let steps, attributedSlots = null;
+        let steps, attributedSlots = null, splitTwitterExpanded = false;
         if (snapshotAggregate) {
             const rawSteps = [], rawSlots = [];
             for (const [memberIndex, entry] of plan.members.entries()) {
@@ -220,6 +226,7 @@ function createTransport(db, destinations, client, options = {}) {
             // null can mean a provider's own content safety filter suppressed
             // the output. Do not bypass that decision with a raw-URL fallback.
             if (!Array.isArray(extracted) || !extracted.length) throw failure('PROVIDER_NO_OUTPUT', 403);
+            splitTwitterExpanded = provider.id === 'twitter';
             steps = extracted.map(step => ({ content: step.content, embeds: step.embeds, components: step.components, files: step.files }));
             if (steps[0]) steps[0].content = [plan.text, steps[0].content].filter(Boolean).join('\n').slice(0, 1900);
         }
@@ -227,25 +234,40 @@ function createTransport(db, destinations, client, options = {}) {
         const payloads = [], payloadSlots = [], normalExpansions = [];
         for (const [stepIndex, rawStep] of steps.entries()) {
             const step = snapshotAggregate ? rawStep : filterMedia(rawStep, plan.display.media);
-            const files = [];
+            const groups = [[]];
             let total = 0;
             for (const file of step.files || []) {
                 const value = typeof file === 'string' ? file : file.attachment;
                 const buffer = Buffer.isBuffer(value) ? value : typeof value === 'string' && /^https:\/\//.test(value) ? await publicFile(value) : null;
                 if (!buffer) throw failure('UNSUPPORTED_ATTACHMENT');
+                const budget = splitTwitterExpanded ? TWITTER_ATTACHMENT_BUDGET : FILE_LIMIT;
+                if (buffer.length > budget) throw failure('ATTACHMENT_LIMIT');
+                let files = groups.at(-1);
+                if (total + buffer.length > budget || files.length >= 10) {
+                    if (!splitTwitterExpanded) throw failure('ATTACHMENT_LIMIT');
+                    files = []; groups.push(files); total = 0;
+                }
                 total += buffer.length;
-                if (total > FILE_LIMIT || files.length >= 10) throw failure('ATTACHMENT_LIMIT');
-                files.push({ attachment: buffer, name: typeof file === 'object' && file.name ? String(file.name).replace(/[\\/\r\n]/g, '_').slice(0, 120) : `attachment-${files.length}.bin` });
+                // Keep the original index stable across size-based subparts.
+                const fileIndex = groups.reduce((count, group) => count + group.length, 0);
+                files.push({ attachment: buffer, name: typeof file === 'object' && file.name ? String(file.name).replace(/[\\/\r\n]/g, '_').slice(0, 120) : `attachment-${fileIndex}.bin` });
             }
             const target = /** @type {any} */ ({ client });
             const { normalExpansion, ...discordStep } = step;
-            const payload = MessagePayload.create(target, { ...discordStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
-            payload.resolveBody(); await payload.resolveFiles();
-            const body = /** @type {any} */ (payload.body);
-            if (!body.content && !body.embeds?.length && !payload.files?.length) continue;
-            payloads.push({ body, files: payload.files });
-            payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
-            normalExpansions.push(normalExpansion === true);
+            for (const [groupIndex, files] of groups.entries()) {
+                // Continuations carry only media and the original flags. Text,
+                // embeds and components belong to this post's first message.
+                const bodyStep = groupIndex === 0 ? discordStep : { flags: discordStep.flags };
+                const payload = MessagePayload.create(target, { ...bodyStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
+                payload.resolveBody(); await payload.resolveFiles();
+                const body = /** @type {any} */ (payload.body);
+                if (!body.content && !body.embeds?.length && !payload.files?.length) continue;
+                if (splitTwitterExpanded && Buffer.byteLength(JSON.stringify(body)) > TWITTER_MULTIPART_RESERVE - TWITTER_MULTIPART_HEADER_RESERVE) throw failure('ATTACHMENT_LIMIT');
+                payloads.push({ body, files: payload.files });
+                if (payloads.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
+                payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
+                normalExpansions.push(normalExpansion === true);
+            }
         }
         if (!payloads.length) throw failure('EMPTY_NOTIFICATION');
         const prepared = { channelId, webhook, payloads, channelNsfw };
@@ -338,7 +360,9 @@ function createTransport(db, destinations, client, options = {}) {
                 payload.body.nonce = hash(`${job.id}:${index}`).slice(0, 24);
                 payload.body.enforce_nonce = true;
             }
-            ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body, { normalExpansion: state.normalExpansions[index] }) : null;
+            ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body, {
+                normalExpansion: state.normalExpansions[index], ownerUserId: state.ownerUserId,
+            }) : null;
             submitted = true;
             const message = prepared.webhook
                 ? await rest.post(Routes.webhook(prepared.webhook.id, prepared.webhook.token), { ...payload, auth: false, query: new URLSearchParams({ wait: 'true' }) })

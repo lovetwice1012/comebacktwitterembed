@@ -54,6 +54,15 @@ const PROVIDER_DEFAULTS = {
     twitter_text_mode:                                     'normal',
     twitter_quote_mode:                                    'full',
     twitter_quote_layout:                                  'separate',
+    twitter_grid_default_layout:                           'grid',
+    twitter_grid_columns:                                  2,
+    twitter_grid_gap:                                      4,
+    twitter_grid_background:                               '#000000',
+    twitter_grid_fit:                                      'contain',
+    twitter_grid_cell_size:                                512,
+    twitter_grid_quality:                                  85,
+    twitter_grid_default_visibility:                       'private',
+    twitter_grid_replace_permission:                       'restricted',
     pixiv_caption_max_length:                              undefined,
     pixiv_tag_limit:                                       undefined,
     pixiv_r18_display_mode:                                'normal',
@@ -83,6 +92,15 @@ const PROVIDER_DEFAULTS = {
 };
 
 const PROVIDER_SETTING_COLUMNS = {
+    twitter_grid_default_layout: { column: 'twitter_grid_default_layout', type: 'string' },
+    twitter_grid_columns: { column: 'twitter_grid_columns', type: 'int' },
+    twitter_grid_gap: { column: 'twitter_grid_gap', type: 'int' },
+    twitter_grid_background: { column: 'twitter_grid_background', type: 'string' },
+    twitter_grid_fit: { column: 'twitter_grid_fit', type: 'string' },
+    twitter_grid_cell_size: { column: 'twitter_grid_cell_size', type: 'int' },
+    twitter_grid_quality: { column: 'twitter_grid_quality', type: 'int' },
+    twitter_grid_default_visibility: { column: 'twitter_grid_default_visibility', type: 'string' },
+    twitter_grid_replace_permission: { column: 'twitter_grid_replace_permission', type: 'string' },
     silent_expansion: { column: 'silent_expansion', type: 'bool' },
     show_previous_shares: { column: 'show_previous_shares', type: 'bool' },
     gallery_display_mode: {
@@ -721,6 +739,12 @@ async function getProviderSettings(providerInput, guildId) {
     return await providerSettingsCache.getOrLoad(key, () => loadProviderSettings(provider, guildId));
 }
 
+// Security-sensitive operations must observe the current DB policy, even
+// while cross-process cache invalidation is still in flight.
+async function getFreshProviderSettings(providerInput, guildId) {
+    return loadProviderSettings(normalizeProvider(providerInput), guildId);
+}
+
 function providerSettingsCacheKey(providerId, guildId) {
     return `${providerId}\u0001${guildId}`;
 }
@@ -849,6 +873,7 @@ module.exports = {
     getSetting,
     setSetting,
     getProviderSettings,
+    getFreshProviderSettings,
     isProviderEnabled,
     setProviderEnabled,
     getSaveTweetQuotaOverride,

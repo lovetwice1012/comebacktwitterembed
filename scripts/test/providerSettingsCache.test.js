@@ -143,6 +143,18 @@ test('remote invalidation and TTL expiry reload production rows while other scop
     assert.equal((await settings.getProviderSettings(provider, 'guild-a')).enabled, true);
 });
 
+test('security-sensitive fresh settings see committed changes before cache invalidation', async () => {
+    const { database, settings } = fixture();
+    const cached = await settings.getProviderSettings(provider, 'guild-a');
+    assert.equal(cached.enabled, true);
+    database.scope('twitter', 'guild-a').scalar.enabled = 0;
+    const fresh = await settings.getFreshProviderSettings(provider, 'guild-a');
+    assert.equal(fresh.enabled, false);
+    assert.equal((await settings.getProviderSettings(provider, 'guild-a')).enabled, true);
+    database.beforeQuery = async sql => { if (sql.includes('SELECT *')) throw new Error('synthetic database error'); };
+    await assert.rejects(settings.getFreshProviderSettings(provider, 'guild-a'), /synthetic database error/);
+});
+
 for (const failedRead of ['scalar', 'targets', 'words', 'visibility']) {
     test(`failed production ${failedRead} read rejects all shared callers and permits a fresh retry`, async () => {
         const { database, settings } = fixture();

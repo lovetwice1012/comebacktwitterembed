@@ -4,6 +4,7 @@ import { z } from "zod";
 import { editableSpecs, getProvider, getProviderSettingColumns } from "@/lib/settings-catalog";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import type { ButtonVisibility, SettingSpec, SettingValue, TargetSetting } from "@/lib/types";
+import { parseTwitterGridBackground, parseTwitterGridNumber, twitterGridNumberRanges } from "@/lib/twitter-grid-options";
 
 const snowflakeSchema = z.string().regex(/^\d{5,32}$/);
 
@@ -25,6 +26,7 @@ const buttonVisibilityKeys = [
   "personal_remind",
   "personal_restock",
   "gallery",
+  "tg",
   "all",
   "savetweet",
 ] as const;
@@ -52,7 +54,7 @@ function normalizeTargets(value: unknown): TargetSetting {
 
 function normalizeButtonVisibility(providerId: string, value: unknown): ButtonVisibility {
   const parsed = buttonVisibilitySchema.parse(value || {});
-  if (providerId !== "twitter") delete parsed.savetweet;
+  if (providerId !== "twitter") { delete parsed.savetweet; delete parsed.tg; }
   return parsed;
 }
 
@@ -119,6 +121,16 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
   }
 
   if (spec.kind === "providerEnabled" || spec.kind === "bool") return z.boolean().parse(value);
+  if (providerId === "twitter" && Object.hasOwn(twitterGridNumberRanges, spec.key)) {
+    const number = parseTwitterGridNumber(spec.key, value);
+    if (number === null) throw new Error(t("validation.invalidChoice", { key: spec.key, values: twitterGridNumberRanges[spec.key].join("–") }));
+    return number;
+  }
+  if (providerId === "twitter" && spec.key === "twitter_grid_background") {
+    const color = parseTwitterGridBackground(value);
+    if (!color) throw new Error(t("validation.invalidChoice", { key: spec.key, values: "#RRGGBB" }));
+    return color;
+  }
   if (spec.kind === "choice") return parseScalarChoice(spec, value, locale);
   if (spec.kind === "multiChoice") return parseMultiChoice(spec, value, locale);
   if (spec.kind === "targets") return normalizeTargets(value);
@@ -131,6 +143,7 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
 }
 
 function isDangerousSetting(key: string, value: SettingValue) {
+  if (key === "twitter_grid_replace_permission" && value === "everyone") return true;
   if (key === "quote_repost_max_depth" && Number(value) === 0) return true;
   if (key === "media_display_mode" && value === "attachment") return true;
   if (key === "failure_display_policy" && value === "error_summary") return true;

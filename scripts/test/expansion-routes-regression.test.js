@@ -36,7 +36,7 @@ function isolated(filename, mocks) {
 }
 
 function harness(options = {}) {
-    const events = { extracted: [], payloads: [], traces: [], errors: [], metrics: [], cleanup: [], settings: [], sends: [] };
+    const events = { extracted: [], payloads: [], traces: [], errors: [], metrics: [], cleanup: [], settings: [], sends: [], singleAttempts: [] };
     const settings = options.settings || (() => ({ enabled: true, button_invisible: { all: true } }));
     const tracking = {
         recordMetric: key => events.metrics.push(key),
@@ -49,6 +49,13 @@ function harness(options = {}) {
         '../sharedPostHistory': { run: (_message, steps, _context, send) => send(steps) },
         '../mediaGallery': { prepare: async step => ({ step }) },
         '../personalLinks/cards': { prepare: async step => ({ step }) },
+        ...(options.singleAttempt ? { './twitter/singleAttemptSender': { forMessage: (source, mode, previous) => {
+            const reference = mode === 'reply-source' ? source : mode === 'reply-previous' ? previous || source : null;
+            events.singleAttempts.push({ mode, reference: reference?.id || null });
+            // The fixture boundary makes exactly one call and never retries a
+            // POST internally, matching the production one-shot contract.
+            return { send: payload => reference ? reference.reply(payload) : source.channel.send(payload) };
+        } } } : {}),
     });
     const source = () => {
         const message = {
@@ -275,7 +282,7 @@ test('failure notices remain failed even when sent successfully and never suppre
 });
 
 test('multi-step output retains reply destinations and silent flags, including attachment fallback', async () => {
-    const h = harness({ settings: () => ({ enabled: true, silent_expansion: true }),
+    const h = harness({ singleAttempt: true, settings: () => ({ enabled: true, silent_expansion: true }),
         extract: () => [
             { content: 'one', send: 'channel', deleteSource: true },
             { content: 'two', send: 'reply-source' },
@@ -284,9 +291,30 @@ test('multi-step output retains reply destinations and silent flags, including a
     });
     await h.receive(h.source());
     assert.deepEqual(h.events.sends, ['channel', 'reply-source', 'reply-sent-2', 'reply-sent-2']);
+    assert.deepEqual(h.events.singleAttempts, [{ mode: 'reply-previous', reference: 'sent-2' }]);
     assert(h.events.payloads.every(payload => payload.flags === 4096));
     assert.equal(h.events.payloads.at(-1).content, 'https://media.example/video.mp4');
     assert.deepEqual(h.events.cleanup, ['delete']); assert.equal(h.events.traces.at(-1).outcome, 'D');
+});
+
+test('X attachment route stays fail-closed when no one-shot sender is available', async () => {
+    const h = harness({ settings: () => ({ enabled: true, silent_expansion: true }),
+        extract: () => [{ content: 'one', send: 'channel', deleteSource: true }, { files: ['https://media.example/video.mp4'], send: 'reply-previous' }] });
+    await h.receive(h.source());
+    assert.deepEqual(h.events.sends, ['channel']);
+    assert.deepEqual(h.events.cleanup, []);
+    assert.equal(h.events.traces.at(-1).outcome, 'P');
+});
+
+test('an unknown one-shot attachment result is never retried or treated as a definite rejection', async () => {
+    const h = harness({ singleAttempt: true, settings: () => ({ enabled: true, silent_expansion: true }),
+        extract: () => [{ content: 'one', send: 'channel', deleteSource: true }, { files: ['https://media.example/video.mp4'], send: 'reply-previous' }],
+        send: async (_payload, attempt) => { if (attempt === 2) throw Object.assign(new Error('connection lost'), { code: 'ECONNRESET' }); } });
+    await h.receive(h.source());
+    assert.deepEqual(h.events.sends, ['channel', 'reply-sent-1']);
+    assert.deepEqual(h.events.singleAttempts, [{ mode: 'reply-previous', reference: 'sent-1' }]);
+    assert.deepEqual(h.events.cleanup, []);
+    assert.equal(h.events.traces.at(-1).outcome, 'U');
 });
 
 test('concurrent Gateway delivery is processed once; different messages share the bounded queue', async () => {

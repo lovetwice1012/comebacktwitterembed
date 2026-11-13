@@ -73,40 +73,50 @@ test('task navigation links private features directly and identifies the current
     } finally { await f.close(); }
 });
 
-test('obsolete list responses cannot overwrite a refresh or a newer server search', async () => {
+test('obsolete list responses cannot overwrite a refresh or a newer server search', { timeout: 30000 }, async () => {
     const f = await reactFixture('export { MonitorManager } from "./components/automation/monitor-manager";');
     try {
-        let finishFirst, finishRefresh, reads = 0;
+        let finishFirst, finishRefresh, reads = 0, priceReads = 0, xReads = 0;
+        let sawPrice, sawX, sawLatest, sawNone, sawClear;
+        const initialReads = Promise.all([new Promise(resolve => { sawPrice = resolve; }), new Promise(resolve => { sawX = resolve; })]);
+        const latestRead = new Promise(resolve => { sawLatest = resolve; });
+        const noneRead = new Promise(resolve => { sawNone = resolve; });
+        const clearRead = new Promise(resolve => { sawClear = resolve; });
         const row = name => ({ id: '1', kind: 'auto', name, scope: 'private', providerId: 'github', source: 'https://github.com/octocat', enabled: true });
         const api = async route => {
             if (route === 'providers') return { autoRegistration: { eligible: true }, auto: [{ id: 'github' }] };
             if (route === 'entitlements') return { plan: { name: '無料プラン', priority: 0, slotLimit: 5, dayLimit: 24, minuteLimit: 5 }, slots: { used: 1, max: 5, available: 4 }, usage: { entries: [] } };
-            if (xFixtureResponse(route) !== undefined) return xFixtureResponse(route);
-            if (route.startsWith('monitors/price?')) return { items: [], nextCursor: null };
-            if (!route.startsWith('monitors/auto?')) return { items: [], nextCursor: null };
+            const x = xFixtureResponse(route); if (x !== undefined) { xReads++; if (route === 'x-monitors') sawX(); return x; }
+            if (route.startsWith('monitors/price?')) { priceReads++; sawPrice(); return { items: [], nextCursor: null }; }
+            assert.ok(route.startsWith('monitors/auto?'), `Unexpected API ${route}`);
             reads++;
             if (reads === 1) return new Promise(resolve => { finishFirst = resolve; });
             if (reads === 3) return new Promise(resolve => { finishRefresh = resolve; });
-            if (new URLSearchParams(route.split('?')[1]).get('query') === 'none') return { items: [], nextCursor: null };
+            const query = new URLSearchParams(route.split('?')[1]).get('query');
+            if (query === '最新') sawLatest();
+            if (query === 'none') { sawNone(); return { items: [], nextCursor: null }; }
+            if (!query && reads >= 6) sawClear();
             return { items: [row(reads === 2 ? '最新の登録' : '検索された最新の通知')], nextCursor: null };
         };
         await f.render(f.React.createElement(f.exports.MonitorManager, { api, guildId: 'guild', scope: 'private', canEdit: true, destinations: [], rules: [], refresh: async () => {} }));
-        await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+        await f.act(async () => { await initialReads; });
         assert.equal(reads, 1);
+        assert.equal(priceReads, 1); assert.ok(xReads >= 1);
         await f.click('更新'); await f.settle(); assert(f.container.textContent.includes('最新の登録'));
         await f.act(async () => finishFirst({ items: [row('古い一覧')], nextCursor: null }));
         assert(!f.container.textContent.includes('古い一覧'));
         await f.click('更新'); await f.fill(f.field('通知を検索'), '最新');
-        await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+        await f.act(async () => { await latestRead; }); await f.settle();
+        assert.equal(typeof finishRefresh, 'function'); assert.ok(reads >= 4);
         assert(f.container.textContent.includes('検索された最新の通知'));
         await f.act(async () => finishRefresh({ items: [row('古い更新')], nextCursor: null }));
         assert(!f.container.textContent.includes('古い更新')); assert(f.container.textContent.includes('検索された最新の通知'));
         await f.fill(f.field('通知を検索'), 'none');
-        await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+        await f.act(async () => { await noneRead; }); await f.settle();
         assert([...f.container.querySelectorAll('button')].some(button => button.textContent.trim() === '検索条件をクリア'));
         assert(!f.container.textContent.includes('通知はまだありません'));
         await f.click('検索条件をクリア');
-        await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+        await f.act(async () => { await clearRead; }); await f.settle();
         assert(f.container.textContent.includes('検索された最新の通知'));
     } finally { await f.close(); }
 });

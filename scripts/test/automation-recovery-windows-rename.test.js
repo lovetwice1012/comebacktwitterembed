@@ -21,14 +21,15 @@ async function fixture(work) {
     }
 }
 
-async function denyDeleteSharing(filename, directory) {
-    const signal = path.join(directory, 'release-lock'), quoted = value => `'${value.replaceAll("'", "''")}'`;
+async function denyDeleteSharing(filename, directory, releaseDelayMs = 0) {
+    const signal = path.join(directory, 'release-lock'), released = path.join(directory, 'lock-released'), quoted = value => `'${value.replaceAll("'", "''")}'`;
     const script = `$stream = [System.IO.File]::Open(${quoted(filename)}, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
 try {
   [Console]::Out.WriteLine('locked')
   $deadline = [DateTime]::UtcNow.AddSeconds(10)
   while (-not [System.IO.File]::Exists(${quoted(signal)}) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 5 }
-} finally { $stream.Dispose() }`;
+  if ([System.IO.File]::Exists(${quoted(signal)}) -and ${releaseDelayMs} -gt 0) { Start-Sleep -Milliseconds ${releaseDelayMs} }
+} finally { $stream.Dispose(); [System.IO.File]::WriteAllText(${quoted(released)}, 'released') }`;
     const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = ''; child.stderr.on('data', value => { stderr += value; });
     const closed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => code === 0 ? resolve(undefined) : reject(new Error(`Owned lock helper failed: ${code} ${stderr}`))); });
@@ -36,20 +37,38 @@ try {
         let text = ''; child.stdout.on('data', value => { text += value; if (text.includes('locked')) resolve(undefined); });
         closed.then(() => reject(new Error('Lock helper exited before holding the file')), reject);
     });
-    return { release: () => fs.writeFileSync(signal, 'release'), close: async () => { fs.writeFileSync(signal, 'release'); await closed; } };
+    return {
+        releaseAndWait: () => {
+            fs.writeFileSync(signal, 'release');
+            // The product retry is synchronous; wait for the independent
+            // helper's post-Dispose marker without relying on the Node event
+            // loop being scheduled within the product's 100ms retry budget.
+            const deadline = Date.now() + 5000, sleeper = new Int32Array(new SharedArrayBuffer(4));
+            while (!fs.existsSync(released)) {
+                if (Date.now() >= deadline) throw new Error('Owned lock helper did not release its file');
+                Atomics.wait(sleeper, 0, 0, 5);
+            }
+            // Confirm the actual write-sharing conflict is gone, rather than
+            // treating a request to release as proof that it has completed.
+            const fd = fs.openSync(filename, 'r+'); fs.closeSync(fd);
+        },
+        close: async () => { fs.writeFileSync(signal, 'release'); await closed; },
+    };
 }
 
 for (const temporary of [true, false]) test(`Windows actual delete-sharing lock ${temporary ? 'releases during bounded atomic retry' : 'stays fail-closed after bounded retries'}`, { skip: process.platform !== 'win32', timeout: 20000 }, async () => fixture(async ({ bootstrap, cutoff, filename, directory }) => {
-    const locker = await denyDeleteSharing(filename, directory), rename = fs.renameSync, failures = []; let attempts = 0;
+    const locker = await denyDeleteSharing(filename, directory, temporary ? 200 : 0), rename = fs.renameSync, failures = []; let attempts = 0;
     fs.renameSync = function (from, to) {
         if (to !== filename) return rename.apply(this, arguments);
         attempts++;
         try { return rename.apply(this, arguments); }
-        catch (error) { failures.push(error.code); if (temporary) locker.release(); throw error; }
+        catch (error) { failures.push(error.code); if (temporary && failures.length === 1) locker.releaseAndWait(); throw error; }
     };
     try {
         if (temporary) {
-            assert.equal((await bootstrap.initialize(options)).complete, true); assert(attempts >= 2); assert(failures.every(code => ['EPERM','EBUSY'].includes(code)));
+            assert.equal((await bootstrap.initialize(options)).complete, true);
+            assert(attempts >= 2 && attempts <= 11); assert.ok(['EPERM','EBUSY'].includes(failures[0]));
+            assert(failures.every(code => ['EPERM','EBUSY'].includes(code)));
         } else {
             await assert.rejects(bootstrap.initialize(options), error => ['EPERM','EBUSY'].includes(error.code)); assert.equal(attempts, 11); assert.equal(bootstrap.begin().complete, false);
         }

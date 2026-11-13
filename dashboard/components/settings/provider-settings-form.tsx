@@ -13,6 +13,7 @@ import { categoryLabel, createTranslator, impactLabel, labelText, type Dashboard
 import { buildPreview } from "@/lib/settings-preview";
 import { deepEqual } from "@/lib/settings-diff";
 import { settingCommandsForValue, type SettingCommand } from "@/lib/setting-commands";
+import { parseTwitterGridBackground, parseTwitterGridNumber, twitterGridNumberRanges } from "@/lib/twitter-grid-options";
 import type { AccountDepthMap, ButtonVisibility, SettingState, SettingValue, TargetSetting } from "@/lib/types";
 import { isCommonSetting, settingChoiceTitle, settingDisplayValue, settingTitle } from "./settings-presentation";
 import "./settings-workspace.css";
@@ -72,6 +73,7 @@ const buttonLabelKeys: Record<string, TranslationKey> = {
   personal_remind: "form.button.personal_remind",
   personal_restock: "form.button.personal_restock",
   gallery: "form.button.gallery",
+  tg: "form.button.tg",
   all: "form.button.all",
 };
 
@@ -179,7 +181,7 @@ export function ProviderSettingsForm({
     requestAnimationFrame(() => {
       const card = document.getElementById(`setting-${encodeURIComponent(key)}`);
       card?.scrollIntoView?.({ block: "center" });
-      (card?.querySelector<HTMLElement>('[aria-invalid="true"],input:not(:disabled),select:not(:disabled),textarea:not(:disabled)') || card)?.focus();
+      (card?.querySelector<HTMLElement>('[aria-invalid="true"]') || card?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)') || card)?.focus();
     });
   };
 
@@ -370,7 +372,7 @@ export function ProviderSettingsForm({
               </Button>
             </div>
           </div>
-          {invalidKeys.length > 0 && <Button variant="ghost" className="mt-2 min-h-11 text-destructive" onClick={() => revealSetting(invalidKeys[0])}>{locale === "ja" ? "未完了のアカウント設定を確認" : "Review unfinished account settings"}</Button>}
+          {invalidKeys.length > 0 && <Button variant="ghost" className="mt-2 min-h-11 text-destructive" onClick={() => revealSetting(invalidKeys[0])}>{locale === "ja" ? "入力内容を確認" : "Review inputs"}</Button>}
           {message ? <div role={messageError ? "alert" : "status"} className={`mt-2 text-sm ${messageError ? "text-destructive" : "text-muted-foreground"}`}>{message}</div> : null}
           {storageWarning ? <p role="status" className="mt-2 flex items-start gap-2 text-xs text-muted-foreground"><AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />{storageWarning}</p> : null}
         </div>
@@ -568,6 +570,9 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
   }
 
   if (spec.kind === "choice") {
+    if (Object.hasOwn(twitterGridNumberRanges, setting.key) || setting.key === "twitter_grid_background") {
+      return <TwitterGridValueInput setting={setting} value={value} setValue={setValue} disabled={disabled} locale={locale} onValidityChange={onValidityChange} />;
+    }
     return (
       <select aria-label={settingTitle(setting, locale)} className="min-h-11 w-full min-w-0 rounded-md border bg-card px-3 text-sm" value={String(value ?? "")} disabled={disabled} onChange={(event) => setValue(event.target.value)}>
         {spec.choices?.map((choice) => (
@@ -671,6 +676,26 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
   }
 
   return <div className="text-sm text-muted-foreground">{t("form.readOnlyKind")}</div>;
+}
+
+function TwitterGridValueInput({ setting, value, setValue, disabled, locale, onValidityChange }: {
+  setting: SettingState; value: SettingValue; setValue: (value: SettingValue) => void; disabled: boolean;
+  locale: DashboardLocale; onValidityChange: (valid: boolean) => void;
+}) {
+  const color = setting.key === "twitter_grid_background";
+  const range = twitterGridNumberRanges[setting.key];
+  const text = String(value ?? "");
+  const valid = color ? parseTwitterGridBackground(text) !== null : parseTwitterGridNumber(setting.key, text) !== null;
+  useEffect(() => { onValidityChange(valid); }, [valid, onValidityChange]);
+  return <div className="space-y-1">
+    <div className="flex items-center gap-2">
+      {color && <input type="color" aria-label={locale === "ja" ? "色を選ぶ" : "Choose color"} disabled={disabled} value={parseTwitterGridBackground(text) || "#000000"} onChange={event => setValue(event.target.value)} />}
+      <Input aria-label={settingTitle(setting, locale)} type={color ? "text" : "number"} inputMode={color ? "text" : "numeric"}
+        min={range?.[0]} max={range?.[1]} step={color ? undefined : 1} disabled={disabled} value={text}
+        aria-invalid={!valid} onChange={event => setValue(event.target.value)} />
+    </div>
+    {!valid && <p className="text-sm text-destructive">{color ? (locale === "ja" ? "#RRGGBB 形式で入力してください。" : "Enter a color as #RRGGBB.") : `${range[0]}–${range[1]}`}</p>}
+  </div>;
 }
 
 function AccountDepthMapEditor({

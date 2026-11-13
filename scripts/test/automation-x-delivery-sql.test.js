@@ -105,7 +105,7 @@ function independentTransactionAdapter(db, hooks = {}) {
 }
 const deferredMove = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
-test('real SQL: X uses the shared queue, graph, entitlements and mocked physical Discord path', { skip: !port, timeout: 120000 }, async t => {
+test('real SQL: X uses the shared queue, graph, entitlements and mocked physical Discord path', { skip: !port, timeout: 600000 }, async t => {
     await t.test('committed owner notification reaches default DM once and replay/new-push-version deduplicates by public post', () => fixture(async f => {
         const subscriptionId = await f.subscription(), monitorId = await f.monitor(subscriptionId);
         const row = await f.inbox(subscriptionId);

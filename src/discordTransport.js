@@ -63,27 +63,27 @@ function loadDiscordRuntime(options = {}) {
         throw new TypeError('The installed undici package did not export fetch.');
     }
 
+    const makeRequest = async (url, init) => {
+        const response = await fetch(url, init);
+        return {
+            body: response.body,
+            arrayBuffer: () => response.arrayBuffer(),
+            json: () => response.json(),
+            text: () => response.text(),
+            get bodyUsed() { return response.bodyUsed; },
+            headers: response.headers,
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+        };
+    };
+    // This adapter calls the pinned npm fetch exactly once; the X sender can
+    // safely reuse it without changing Bun's normal shared REST manager.
+    Object.defineProperty(makeRequest, Symbol.for('cbte.discord.singleAttemptFetch'), { value: true });
     return {
         discord,
         gatewayTransport: 'bun-ws-compat',
-        restOptions: {
-            async makeRequest(url, init) {
-                const response = await fetch(url, init);
-                return {
-                    body: response.body,
-                    arrayBuffer: () => response.arrayBuffer(),
-                    json: () => response.json(),
-                    text: () => response.text(),
-                    get bodyUsed() {
-                        return response.bodyUsed;
-                    },
-                    headers: response.headers,
-                    status: response.status,
-                    statusText: response.statusText,
-                    ok: response.ok,
-                };
-            },
-        },
+        restOptions: { makeRequest },
         restTransport: 'npm-undici',
     };
 }

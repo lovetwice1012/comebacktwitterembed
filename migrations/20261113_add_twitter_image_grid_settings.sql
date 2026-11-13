@@ -1,0 +1,9 @@
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_default_layout VARCHAR(32) NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_columns INT NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_gap INT NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_background VARCHAR(32) NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_fit VARCHAR(32) NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_cell_size INT NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_quality INT NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_default_visibility VARCHAR(32) NULL;
+ALTER TABLE guild_provider_settings ADD COLUMN twitter_grid_replace_permission VARCHAR(32) NULL;

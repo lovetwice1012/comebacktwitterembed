@@ -137,6 +137,10 @@ function register(client) {
                 await require('../components/personalLinks').handle(interaction);
                 return;
             }
+            if ([InteractionType.ModalSubmit, InteractionType.MessageComponent].includes(interaction.type) && baseCustomId === 'tg') {
+                await require('../components/twitterGrid').handle(interaction);
+                return;
+            }
             if (interaction.type === InteractionType.ModalSubmit || interaction.type === InteractionType.MessageComponent) {
                 require('../adminSupport/telemetry').event('input', 'interaction.received', { customId: interaction.customId, interactionId: interaction.id,
                     sourceMessageId: interaction.message?.id, values: interaction.values,
@@ -232,7 +236,9 @@ function register(client) {
             }
 
             const ctx = { client, buttons: buildButtons(interaction) };
-            await handler.handle(interaction, ctx);
+            if (['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete'].includes(baseCustomId)) {
+                await require('../twitterGridCards').withMessageLock(interaction, () => handler.handle(interaction, ctx));
+            } else await handler.handle(interaction, ctx);
             recordMetric('component_success', { interaction, componentId: baseCustomId });
             recordAnalyticsEvent('component', {
                 source: 'messageComponents.handle',

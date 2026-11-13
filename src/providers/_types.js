@@ -30,6 +30,11 @@
  * @property {any[]} [components]             button row 等のコンポーネント
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
  * @property {string} [outputRole]            Distinguishes content from failure notices.
+ * @property {boolean} [requiresPreviousSuccess] Send a continuation only after the previous message succeeds.
+ * @property {{imageUrls: string[], sequence: number, totalParts: number, embedStart?: number, embedEnd?: number}} [twitterGrid] Visible image URLs for the current part of an X post.
+ * @property {Array<{imageUrls: string[], sequence: number, totalParts: number, embedStart?: number, embedEnd?: number}>} [twitterGridInline] Separate image groups belonging to inline quoted posts.
+ * @property {boolean} [twitterGridSharedInline] Inline quoted content shares this message even if it has no grid control.
+ * @property {boolean} [safeTwitterMedia] The media URLs came from the externally sourced Fx response and require verified fetching.
  * @property {object} [allowedMentions]       Discord allowedMentions
  * @property {Array<{id: string, name: string}>} [restockOptions] Sold-out BOOTH variants eligible for personal watches.
  * @property {object} [analytics]             Provider native analytics metadata.

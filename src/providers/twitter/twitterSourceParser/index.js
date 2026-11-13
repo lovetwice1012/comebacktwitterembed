@@ -108,20 +108,25 @@ function getExpectedNonExpandableReason(payload) {
     return looksLikeExpectedNonExpandable(text) ? text : null;
 }
 
-function parseTweetApiResponse(text) {
+function parseTweetApiResponse(text, expectedUrl) {
+    let payload;
     try {
-        const payload = JSON.parse(text);
-        const expectedReason = getExpectedNonExpandableReason(payload);
-        if (expectedReason) throw new ExpectedNonExpandableTweetError(expectedReason);
-        if (!hasTweetData(payload)) throw new Error('Twitter API returned a payload without tweet data.');
-        return payload;
+        payload = JSON.parse(text);
     } catch (err) {
-        if (isExpectedNonExpandableTweetError(err)) throw err;
         if (looksLikeExpectedNonExpandable(text)) {
             throw new ExpectedNonExpandableTweetError('Tweet is unavailable, private, age-restricted, or login-required.');
         }
         throw err;
     }
+    // Only Fx's successful, nested envelope is normalized. Validation errors
+    // are not reclassified by searching field names such as
+    // "possibly_sensitive" in the serialized JSON.
+    if (payload?.code === 200 && Object.hasOwn(payload, 'tweet'))
+        return require('./fxTwitter').normalizeFxTwitter(payload, expectedUrl);
+    const expectedReason = getExpectedNonExpandableReason(payload);
+    if (expectedReason) throw new ExpectedNonExpandableTweetError(expectedReason);
+    if (!hasTweetData(payload)) throw new Error('Twitter API returned a payload without tweet data.');
+    return payload;
 }
 
 module.exports = {

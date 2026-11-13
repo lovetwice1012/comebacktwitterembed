@@ -36,7 +36,7 @@ function isolated(filename, mocks) {
 }
 
 function harness(options = {}) {
-    const events = { extracted: [], payloads: [], traces: [], errors: [], metrics: [], cleanup: [], settings: [], sends: [] };
+    const events = { extracted: [], payloads: [], traces: [], errors: [], metrics: [], cleanup: [], settings: [], sends: [], dispatchContexts: [] };
     const settings = options.settings || (() => ({ enabled: true, button_invisible: { all: true } }));
     const tracking = {
         recordMetric: key => events.metrics.push(key),
@@ -82,10 +82,11 @@ function harness(options = {}) {
         '../providers/_provider_settings': { getProviderSettings: async (provider, guild) => {
             events.settings.push({ id: provider.id, guild }); return settings(provider.id);
         } },
-        '../providers/_dispatcher': options.dispatch || dispatch,
+        '../providers/_dispatcher': options.dispatch || { runSendSteps: (...args) => { events.dispatchContexts.push(args[3]); return dispatch.runSendSteps(...args); } },
         '../errorTracking': tracking,
         '../workQueue': { messageWorkQueue: queue },
-        '../automation/outbound-guard': { shouldIgnore: options.outboundGuard || (async () => false) },
+        '../automation/outbound-guard': { shouldIgnore: options.outboundGuard || (async () => false),
+            ...(options.outboundClassify ? { classify: options.outboundClassify } : {}) },
         '../expansionTraceStore': {
             beginExpansionTrace: async input => events.traces.push({ ...input, state: 'queued' }),
             updateExpansionTrace: async (traceId, value) => events.traces.push({ traceId, ...value }),
@@ -98,9 +99,11 @@ function harness(options = {}) {
     return { events, source, receive: listeners[1], retry: message => handler.retryMessage(client, message), queue };
 }
 
-async function automationHandoff(format, { early = true, enabled = true, unknown = false, members = null } = {}) {
+async function automationHandoff(format, { early = true, enabled = true, unknown = false, members = null, providerId = 'youtube', extractBotMessage = false } = {}) {
+    const sourceUrl = samples[providerId];
     const guard = require('../../src/automation/outbound-guard').createOutboundGuard();
-    const h = harness({ settings: () => ({ enabled, silent_expansion: true }), outboundGuard: message => guard.shouldIgnore(message) });
+    const h = harness({ settings: () => ({ enabled, silent_expansion: true, extract_bot_message: extractBotMessage }),
+        outboundGuard: message => guard.shouldIgnore(message), outboundClassify: message => guard.classify(message) });
     const owner = '222222222222222222', channel = '333333333333333333', webhook = '444444444444444444';
     const gatewayEvents = [], gatewayWork = [], submitted = [];
     let directFetches = 0;
@@ -127,9 +130,9 @@ async function automationHandoff(format, { early = true, enabled = true, unknown
     };
     const { createTransport } = isolated(require.resolve('../../src/automation/transport'), {
         './outbound-guard': guard,
-        '../providers/_loader': { loadProviders: () => [{ id: 'youtube', extract: async () => {
+        '../providers/_loader': { loadProviders: () => [{ id: providerId, extract: async () => {
             directFetches++;
-            return [{ content: samples.youtube, embeds: [{ title: 'direct media', url: samples.youtube }] }];
+            return [{ content: sourceUrl, embeds: [{ title: 'direct media', url: sourceUrl }] }];
         } }] },
         '../providers/_provider_settings': { getProviderSettings: async () => ({ enabled: true }), PROVIDER_DEFAULTS: {} },
     });
@@ -140,8 +143,8 @@ async function automationHandoff(format, { early = true, enabled = true, unknown
             membershipResolver: async (_db, job) => [{ targetKind: job.target_kind, targetId: String(job.target_id) }],
         });
     const job = { id: 'handoff', target_kind: 'auto', target_id: '1', owner_user_id: owner, plan: {
-        context: { locale: 'ja' }, event: { title: 'new video', providerId: 'youtube', url: samples.youtube },
-        display: { format, media: 'inherit' }, text: `new video\n${samples.youtube}`, ...(members ? { members } : {}),
+        context: { locale: 'ja' }, event: { title: 'new video', providerId, url: sourceUrl },
+        display: { format, media: 'inherit' }, text: `new video\n${sourceUrl}`, ...(members ? { members } : {}),
     } };
     const prepared = await transport.prepare(job, { kind: 'webhook', guild_id: 'guild', webhook_endpoint_id: '1' });
     for (const [index] of prepared.payloads.entries()) {
@@ -154,6 +157,37 @@ async function automationHandoff(format, { early = true, enabled = true, unknown
     for (const message of gatewayEvents) await h.receive(message);
     return { ...h, submitted, directFetches, prepared, job };
 }
+
+test('normal X webhook notifications reach ordinary expansion with Bot-message extraction on or off', async () => {
+    for (const early of [true, false]) for (const extractBotMessage of [false, true]) {
+        const h = await automationHandoff('normal', { early, providerId: 'twitter', extractBotMessage });
+        assert.equal(h.directFetches, 0);
+        assert.equal(h.submitted[0].content, `new video\n${samples.twitter}`);
+        assert.equal(h.events.extracted.length, 1);
+        assert.equal(h.events.extracted[0].id, 'twitter');
+        assert.equal(h.events.extracted[0].settings.extract_bot_message, extractBotMessage);
+        assert.equal(h.events.extracted[0].message.author.id, '444444444444444444', 'Discord author must remain the webhook');
+        assert.equal(h.events.dispatchContexts[0].gridRequesterId, '222222222222222222');
+        assert.equal(h.events.traces.at(-1).state, 'completed');
+    }
+});
+
+test('ordinary non-webhook Bot posts still respect the disabled Bot-message setting', async () => {
+    const h = harness({ settings: () => ({ enabled: true, extract_bot_message: false }) });
+    const message = h.source(); message.author = { id: 'other-bot', bot: true }; message.webhookId = null;
+    await h.receive(message);
+    assert.equal(h.events.extracted.length, 0);
+    assert.equal(h.events.traces.at(-1).reasonCode, 'bot_message_disabled');
+});
+
+test('a Bot-owned normal DM does not enter the guild-only ordinary expansion route', async () => {
+    const h = harness();
+    const message = h.source();
+    message.guild = null; message.guildId = null; message.author = { id: 'bot', bot: true };
+    await h.receive(message);
+    assert.equal(h.events.extracted.length, 0);
+    assert.equal(h.events.payloads.length, 0);
+});
 
 test('normal automation hands off early and late Gateway events to ordinary settings, dispatch and deduplication', async () => {
     for (const early of [true, false]) {
@@ -178,6 +212,7 @@ test('normal automation obeys disabled providers and a visible unknown submissio
         const visible = await automationHandoff('normal', { unknown: true, early });
         assert.equal(visible.submitted.length, 1);
         assert.equal(visible.events.extracted.length, 1);
+        assert.equal(visible.events.dispatchContexts[0].gridRequesterId, undefined, 'unknown receipt cannot establish an owner');
     }
 });
 

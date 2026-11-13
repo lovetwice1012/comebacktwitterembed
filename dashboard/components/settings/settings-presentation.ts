@@ -37,7 +37,7 @@ const buttonTitles: Record<string, TranslationKey> = {
   showMediaAsAttachments: "form.button.showMediaAsAttachments", showAttachmentsAsEmbedsImage: "form.button.showAttachmentsAsEmbedsImage",
   translate: "form.button.translate", delete: "form.button.delete", savetweet: "form.button.savetweet", personal: "form.button.personal",
   personal_save: "form.button.personal_save", personal_remind: "form.button.personal_remind", personal_restock: "form.button.personal_restock",
-  gallery: "form.button.gallery", all: "form.button.all",
+  gallery: "form.button.gallery", tg: "form.button.tg", all: "form.button.all",
 };
 
 export function settingTitle(setting: SettingState, locale: DashboardLocale) {

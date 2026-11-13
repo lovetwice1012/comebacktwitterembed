@@ -517,7 +517,7 @@ function categoryFor(spec: BotSettingSpec) {
   if (spec.kind === "multiChoice") return "provider";
   if (spec.kind === "accountDepthMap") return "advanced";
   if (key.includes("language") || key.includes("translate")) return "translation";
-  if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download") || key.includes("sensitive") || key.includes("r18")) return "media";
+  if (key.includes("media") || key.includes("image") || key.includes("grid") || key.includes("attachment") || key.includes("download") || key.includes("sensitive") || key.includes("r18")) return "media";
   if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "suppression";
   if (key.includes("failure") || key.includes("fallback")) return "failure";
   if (key.includes("density") || key.includes("description") || key.includes("caption") || key.includes("text") || key.includes("layout") || key.includes("stats")) return "output";

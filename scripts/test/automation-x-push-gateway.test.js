@@ -251,20 +251,37 @@ test('HELLO timeout, unsupported response and missing app pong close safely', as
         ['X_PUSH_PONG_TIMEOUT', (message, socket) => hello(current, message, socket)],
     ]) {
         var current = await insertSubscription(db);
-        const h = harness(db, current, server, { requestTimeoutMs: 30, pingIntervalMs: 30 });
+        // The same request timeout also bounds real SQL lease operations. A
+        // 30ms timeout can fail there before these protocol cases even begin
+        // when the full suite runs concurrently. Exercise a delayed claim and
+        // keep the timeout long enough to distinguish it from socket failure.
+        const store = createXPushStore(db), claim = store.claim;
+        store.claim = async (...args) => { await new Promise(resolve => setTimeout(resolve, 65)); return claim(...args); };
+        const h = harness(db, current, server, { store, requestTimeoutMs: 2000, pingIntervalMs: 30 });
         await assert.rejects(h.run(), code(expected));
         assert(!h.socket.sent.some(row => row.messageType === 'ack'));
     }
 }));
 
-test('lease renewal loss aborts a quiet socket and shutdown releases a lease despite a stalled router', async () => setup(async db => {
-    const subscription = await insertSubscription(db), store = createXPushStore(db, { leaseMs: 100 });
-    const lost = harness(db, subscription, (message, socket) => hello(subscription, message, socket), { store: { ...store, renew: async () => { throw new Error('DB DOWN'); } }, requestTimeoutMs: 500 });
-    await assert.rejects(lost.run(), code('X_PUSH_LEASE_LOST'));
+test('lease renewal loss aborts a quiet socket and shutdown releases a lease despite a stalled router', { timeout: 60000 }, async () => setup(async db => {
+    // Keep a real long-lived SQL lease while scheduling the first synthetic
+    // renewal quickly. The renewal is deliberately failed only after HELLO
+    // succeeds, so the test proves that an established quiet socket closes.
+    const subscription = await insertSubscription(db), store = createXPushStore(db, { leaseMs: 10000 });
+    let releaseSession, sessionOpened = false, renewalAfterSession = false, assertions = 0;
+    const sessionReady = new Promise(resolve => { releaseSession = resolve; }), assertLease = store.assertLease;
+    const delayedStore = { ...store, leaseMs: 100,
+        assertLease: async (...args) => { if (++assertions === 1) await new Promise(resolve => setTimeout(resolve, 130)); return assertLease(...args); },
+        renew: async () => { await sessionReady; renewalAfterSession = sessionOpened && lost.socket?.readyState === 1; throw new Error('DB DOWN'); } };
+    const lost = harness(db, subscription, (message, socket) => hello(subscription, message, socket), { store: delayedStore, requestTimeoutMs: 5000 });
+    await assert.rejects(lost.run({ onSession: () => { sessionOpened = lost.socket?.readyState === 1; releaseSession(); } }), code('X_PUSH_LEASE_LOST'));
+    assert.equal(sessionOpened, true); assert.equal(renewalAfterSession, true); assert.ok(assertions >= 1);
     assert.equal(lost.socket.readyState, 3);
     const wire = await encrypted(subscription.file, { ok: true }), controller = new AbortController();
-    const stopped = harness(db, subscription, (message, socket) => { if (hello(subscription, message, socket)) socket.reply(notification(subscription.file, 'stopping', wire)); });
-    const result = await stopped.run({ signal: controller.signal, onReceived: () => { controller.abort(); return new Promise(() => {}); } });
+    let routerEntered = false;
+    const stopped = harness(db, subscription, (message, socket) => { if (hello(subscription, message, socket)) socket.reply(notification(subscription.file, 'stopping', wire)); }, { requestTimeoutMs: 5000 });
+    const result = await stopped.run({ signal: controller.signal, onReceived: () => { routerEntered = true; controller.abort(); return new Promise(() => {}); } });
+    assert.equal(routerEntered, true);
     assert.deepEqual(result, { state: 'stopped', reasonCode: null });
     assert.equal((await stopped.gateway.store.status(subscription)).state, 'stopped');
     assert.equal((await stopped.gateway.store.listInbox(subscription)).length, 1);

@@ -854,11 +854,28 @@ function uniqueSpecs(specs) {
     return out;
 }
 
+const gridChoice = (key, en, ja, values) => ({
+    key, settingKey: key, label: text(en, ja), description: text('', ''), kind: 'choice',
+    choices: values.map(([value, english, japanese]) => ({ value: String(value), label: text(english, japanese) })),
+});
+const TWITTER_GRID_SETTING_SPECS = [
+    gridChoice('twitter_grid_default_layout', 'Image layout', '画像の並べ方', [['grid','Grid','グリッド'], ['horizontal','Horizontal','横並び'], ['vertical','Vertical','縦並び']]),
+    gridChoice('twitter_grid_columns', 'Grid columns', 'グリッドの列数', [2,3,4,5,6].map(n => [n, `${n} columns`, `${n}列`])),
+    gridChoice('twitter_grid_gap', 'Image spacing', '画像の間隔', [0,4,8,16,32].map(n => [n, `${n} px`, `${n} px`])),
+    gridChoice('twitter_grid_background', 'Background', '背景色', [['#000000','Black','黒'], ['#ffffff','White','白'], ['#808080','Gray','グレー']]),
+    gridChoice('twitter_grid_fit', 'Image fit', '画像の表示', [['contain','Show entire image','画像全体'], ['cover','Fill the cell','枠いっぱいに表示']]),
+    gridChoice('twitter_grid_cell_size', 'Image size', '画像の大きさ', [256,512,768,1024].map(n => [n, `${n} px`, `${n} px`])),
+    gridChoice('twitter_grid_quality', 'Image quality', '画質', [60,75,85,95].map(n => [n, `${n}%`, `${n}%`])),
+    gridChoice('twitter_grid_default_visibility', 'Default display', 'まとめた画像の表示先', [['private','Only me','自分だけ'], ['replace','Replace the post','投稿を置き換え']]),
+    gridChoice('twitter_grid_replace_permission', 'Who can replace', '投稿を置き換えられる人', [['restricted','Poster and administrators','投稿者と管理者'], ['everyone','Everyone','全員']]),
+];
+
 function getProviderSettingSpecs(provider, options = {}) {
     const specs = [];
     if (options.includeOverview !== false) specs.push(overviewSpec());
     if (options.includeCommon !== false) specs.push(...COMMON_SETTING_SPECS.map(cloneSpec));
     specs.push(...providerSettingEntries(provider).map(normalizeSettingSpec).filter(Boolean));
+    if (provider?.id === 'twitter') specs.push(...TWITTER_GRID_SETTING_SPECS.map(cloneSpec));
     return uniqueSpecs(specs);
 }
 

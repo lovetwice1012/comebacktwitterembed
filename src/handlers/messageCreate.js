@@ -192,8 +192,17 @@ function register(client) {
         if (message.id && activeMessageIds.has(message.id)) return Promise.resolve({ status: 'busy' });
         if (message.id) activeMessageIds.add(message.id);
         return telemetry.run({ ...telemetry.contextFromMessage(message), trigger_type: 'user', initiated_via: retry ? 'message_retry' : undefined }, async () => {
-        if (message.webhookId && await require('../automation/outbound-guard').shouldIgnore(message)) {
-            telemetry.markOutcome('skipped', 'automation_delivery_already_rendered'); return;
+        let gridRequesterId;
+        if (message.webhookId) {
+            const guard = require('../automation/outbound-guard');
+            const decision = typeof guard.classify === 'function'
+                ? await guard.classify(message) : { ignore: await guard.shouldIgnore(message) };
+            if (decision.ignore) {
+                telemetry.markOutcome('skipped', 'automation_delivery_already_rendered'); return;
+            }
+            // Owner authorization is carried out of band; never replace the
+            // Discord author used by existing permission and audit checks.
+            if (/^\d{16,22}$/.test(String(decision.ownerUserId || ''))) gridRequesterId = String(decision.ownerUserId);
         }
         telemetry.event('input', 'received', { content: message.content, bot: message.author?.bot, webhookId: message.webhookId });
         let matches;
@@ -335,6 +344,7 @@ function register(client) {
                         telemetry.event('output', 'generated', { steps });
                         const sendResult = await runSendSteps(message, steps, provider.id, {
                             url, presentationSettings: providerSettings, sharedHistory: !contentFailed, personalActions: !contentFailed,
+                            ...(gridRequesterId ? { gridRequesterId } : {}),
                         });
                         resultState.delivery = sendResult;
                         if (!contentFailed && !resultState.outcome) resultState.outcome = sendResult?.outcome || 'U';
