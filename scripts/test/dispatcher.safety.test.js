@@ -5,7 +5,7 @@ const { readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const { compileFunction } = require('node:vm');
 
-function dispatcher() {
+function dispatcher(overrides = {}) {
     const filename = require.resolve('../../src/providers/_dispatcher');
     const actualRequire = createRequire(filename), mod = { exports: {} };
     const mocks = {
@@ -16,11 +16,65 @@ function dispatcher() {
         '../sharedPostHistory': { run: (_message, steps, _context, send) => send(steps) },
         '../mediaGallery': { prepare: async step => ({ step }) },
         '../personalLinks/cards': { prepare: async step => ({ step }) },
+        ...overrides,
     };
     compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports', 'console'], { filename })(
         id => mocks[id] || actualRequire(id), mod, mod.exports, { warn() {}, log() {} });
     return mod.exports;
 }
+
+test('Instagram image preparation failure occurs before Discord and preserves the original', async () => {
+    let sends = 0;
+    const message = source(async () => { sends++; return { id: 'sent' }; });
+    const result = await dispatcher({ './instagram/attachment-preflight': { prepare: async () => { throw Object.assign(new Error('prepare failed'), { code: 'INSTAGRAM_ATTACHMENT_PREPARE_FAILED' }); } } }).runSendSteps(message, [
+        { files: [{ name: 'instagram-1.jpg', attachment: 'https://scontent.cdninstagram.com/a.jpg' }], deleteSource: true, suppressSourceEmbeds: true },
+    ], 'instagram');
+    assert.equal(sends, 0); assert.equal(result.outcome, 'E'); assert.deepEqual(message.postprocess, []);
+});
+
+test('other providers do not enter Instagram image preparation', async () => {
+    let sends = 0, preparations = 0;
+    const message = source(async () => { sends++; return { id: 'sent' }; });
+    const result = await dispatcher({ './instagram/attachment-preflight': { prepare: async () => { preparations++; throw Error('unexpected'); } } }).runSendSteps(message, [
+        { files: [{ name: 'image.jpg', attachment: 'https://scontent.cdninstagram.com/a.jpg' }] },
+    ], 'pixiv');
+    assert.equal(preparations, 0); assert.equal(sends, 1); assert.equal(result.outcome, 'F');
+});
+
+test('a Discord timeout after successful image preparation is still unknown and never retried', async () => {
+    let sends = 0, releases = 0;
+    const message = source(async payload => { sends++; assert.ok(Buffer.isBuffer(payload.files[0].attachment)); throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ETIMEDOUT' } }); });
+    const result = await dispatcher({ './instagram/attachment-preflight': { prepare: async files => ({ files: files.map(file => ({ ...file, fallbackUrl: file.attachment, attachment: Buffer.from('image') })), release: () => { releases++; } }) } }).runSendSteps(message, [
+        { files: [{ name: 'instagram-1.jpg', attachment: 'https://scontent.cdninstagram.com/a.jpg' }], deleteSource: true, suppressSourceEmbeds: true },
+    ], 'instagram');
+    assert.equal(sends, 1); assert.equal(releases, 1); assert.equal(result.outcome, 'U'); assert.deepEqual(message.postprocess, []);
+});
+
+test('confirmed Discord size rejection retains the original attachment link fallback', async () => {
+    const payloads = [], events = [];
+    const message = source(async payload => { payloads.push(structuredClone(payload)); if (payloads.length === 1) throw { status: 413 }; return { id: 'sent' }; });
+    const result = await dispatcher({
+        '../adminSupport/telemetry': { event: (_type, _state, data) => events.push(data), errorData: value => value, serializable: value => value },
+        './instagram/attachment-preflight': { prepare: async files => ({ files: files.map(file => ({ ...file, fallbackUrl: file.attachment, attachment: Buffer.from('image') })), release() {} }) },
+    }).runSendSteps(message, [
+        { files: [{ name: 'instagram-1.jpg', attachment: 'https://scontent.cdninstagram.com/a.jpg?oh=signed' }] },
+    ], 'instagram');
+    assert.equal(payloads.length, 2); assert.equal(payloads[1].content, 'https://scontent.cdninstagram.com/a.jpg?oh=signed'); assert.equal(result.outcome, 'D');
+    assert.equal(JSON.stringify(events).includes('oh=signed'), false);
+});
+
+test('Instagram attachment telemetry receives bounded binary metadata and no signed CDN URL', async () => {
+    const events = [];
+    const bytes = Buffer.alloc(8 * 1024 * 1024); bytes.toJSON = () => { throw new Error('binary must not be serialized'); };
+    const message = source(async payload => { assert.equal(payload.files[0].attachment, bytes); return { id: 'sent' }; });
+    await dispatcher({
+        '../adminSupport/telemetry': { event: (_type, _state, data) => events.push(data), errorData: value => value, serializable: value => JSON.parse(JSON.stringify(value)) },
+        './instagram/attachment-preflight': { prepare: async files => ({ files: files.map(file => ({ ...file, fallbackUrl: file.attachment, attachment: bytes })), release() {} }) },
+    }).runSendSteps(message, [{ embeds: [{ image: { url: 'https://scontent.cdninstagram.com/a.jpg?oh=signed' } }], files: [{ name: 'instagram-1.jpg', description: 'https://scontent.cdninstagram.com/a.jpg?oh=signed', attachment: 'https://scontent.cdninstagram.com/a.jpg?oh=signed' }] }], 'instagram');
+    const attempt = events.find(item => item?.payload)?.payload;
+    assert.equal(attempt.files[0].attachment.type, 'binary'); assert.equal(attempt.files[0].attachment.byteLength, bytes.length);
+    assert.equal(Buffer.isBuffer(attempt.files[0].attachment), false); assert.equal(JSON.stringify(attempt).includes('oh=signed'), false);
+});
 
 function source(send) {
     const postprocess = [];

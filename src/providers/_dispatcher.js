@@ -9,6 +9,7 @@
  */
 
 const telemetry = require('../adminSupport/telemetry');
+const { binaryMetadata } = require('../adminSupport/telemetryPayload');
 const { MessageFlags } = require('discord.js');
 
 const { isMissingPermissionsError, isUnknownMessageError } = require('../utils');
@@ -57,6 +58,32 @@ function hasSendablePayload(messageObject) {
         || (Array.isArray(messageObject.embeds) && messageObject.embeds.length > 0)
         || (Array.isArray(messageObject.files) && messageObject.files.length > 0)
     );
+}
+
+function telemetryPayload(payload, providerId) {
+    if (providerId !== 'instagram') return payload;
+    const ancestors = new Set();
+    const safe = value => {
+        // Replace bytes before JSON.stringify invokes Buffer.toJSON, which
+        // would otherwise create an enormous temporary numeric array.
+        if (Buffer.isBuffer(value)) return binaryMetadata(value);
+        if (typeof value === 'string') return value.replace(/https:\/\/[^\s<>"'()]+/gi, url => {
+            try {
+                const host = new URL(url).hostname.toLowerCase();
+                return host === 'cdninstagram.com' || host.endsWith('.cdninstagram.com') || host === 'fbcdn.net' || host.endsWith('.fbcdn.net') ? '[Instagram media]' : url;
+            } catch { return url; }
+        });
+        if (!value || typeof value !== 'object') return value;
+        if (ancestors.has(value)) return '[circular]';
+        ancestors.add(value);
+        try {
+            const normalized = typeof value.toJSON === 'function' ? value.toJSON() : value;
+            if (normalized !== value) return safe(normalized);
+            if (Array.isArray(value)) return value.map(safe);
+            return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'fallbackUrl').map(([key, item]) => [key, safe(item)]));
+        } finally { ancestors.delete(value); }
+    };
+    return safe(payload);
 }
 
 const FILE_FALLBACK_HTTP_STATUSES = new Set([400, 413, 415, 422]);
@@ -178,7 +205,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
 
         const originalSender = sender;
         sender = async payload => {
-            const attempt = { stepIndex: i, payload: telemetry.serializable(payload), startedAt: new Date().toISOString() };
+            const attempt = { stepIndex: i, payload: telemetry.serializable(telemetryPayload(payload, providerId)), startedAt: new Date().toISOString() };
             telemetry.event('discord_send', 'started', attempt);
             try {
                 const output = await originalSender(payload);
@@ -197,9 +224,18 @@ async function runSendStepsNow(message, steps, trackingContext) {
         };
         let sent = null;
         let sendFailure = null;
+        let releasePreparedImages = () => {};
+        let originalImageFiles = null;
         const startedAt = Date.now();
         recordMetric('discord_send_attempt', trackingContext);
         try {
+            if (providerId === 'instagram' && messageObject.files?.length) {
+                // Acquire supported image attachments before entering Discord's
+                // send path, so retrying an acquisition cannot repeat a POST.
+                const prepare = require('./instagram/attachment-preflight').prepare;
+                const prepared = await prepare(messageObject.files);
+                if (prepared) { originalImageFiles = messageObject.files; messageObject.files = prepared.files; releasePreparedImages = prepared.release; }
+            }
             sent = await sender(messageObject);
         } catch (err) {
             if (isUnknownMessageError(err)) {
@@ -293,7 +329,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 sendFailure = 'send_failed';
                 console.log(err);
             }
-        }
+        } finally { if (originalImageFiles) messageObject.files = originalImageFiles; releasePreparedImages(); }
         previousSent = sent ?? previousSent;
         if (sent) {
             if (personal.cardId) {
