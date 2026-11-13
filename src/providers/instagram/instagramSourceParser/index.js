@@ -14,8 +14,7 @@ function parseInstagramGraphql(text, shortcode = '') {
 
 function parseInstagramGraphqlSource(text, shortcode = '') {
     if (text.includes('require_login')) return { data: null };
-    const node = parsing.findMediaNode([parsing.tryParseJson(text)], shortcode);
-    const data = parsing.normalizeMediaNode(node);
+    const { node, data } = parsing.findAndNormalizeMedia([parsing.tryParseJson(text)], shortcode);
     if (data || !node) return { data };
     const source = parsing.sidecarNodes(node);
     return { data: null, incompleteMedia: true, expectedMediaCount: source.length,

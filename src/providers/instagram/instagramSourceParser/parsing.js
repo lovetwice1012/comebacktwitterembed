@@ -319,14 +319,20 @@ function mediaNodeScore(node) {
     if (childCount === 0 && !hasImage && !hasVideo) return 0;
 
     let score = hasImage ? 100 : 0;
-    if (hasVideo) score += 10_000;
+    if (hasVideo) {
+        score += 10_000;
+        // Instagram can expose a matching video summary with only a poster
+        // before the full matching record. Prefer the playable record rather
+        // than letting two identically scored records select the poster.
+        if (videoSourceFromNode(node)) score += 1_000;
+    }
     // A carousel parent must win over one of its child preview records.
     if (childCount > 0) score += 1_000_000 + Math.min(childCount, MAX_CAROUSEL_SCORE_ITEMS) * 100;
     if (node.owner || node.user) score += 10;
     return score;
 }
 
-function findMediaNode(candidates, shortcode = '') {
+function findMediaNode(candidates, shortcode = '', matchingMetadata = null) {
     let best = null;
     let bestScore = 0;
     let bestMatch = null;
@@ -349,6 +355,18 @@ function findMediaNode(candidates, shortcode = '') {
         if (score > 0) {
             const code = firstString(value, ['shortcode', 'code']);
             if (code) hasIdentifiedMedia = true;
+            if (shortcode && code === shortcode && matchingMetadata) {
+                // Some page records omit caption or author. Only matching
+                // media records with an explicit identity may fill gaps;
+                // conflicting values remain unresolved rather than guessed.
+                for (const [field, paths] of /** @type {Array<[string, string[]]>} */ ([
+                    ['username', ['owner.username', 'user.username', 'owner.full_name']],
+                    ['caption', ['edge_media_to_caption.edges.0.node.text', 'caption.text', 'accessibility_caption']],
+                ])) {
+                    const candidate = firstString(value, paths);
+                    if (candidate && matchingMetadata[field].size < 2) matchingMetadata[field].add(candidate);
+                }
+            }
             if (shortcode && code === shortcode && score > bestMatchScore) {
                 bestMatch = value;
                 bestMatchScore = score;
@@ -413,9 +431,13 @@ function isVideoSourceUrl(rawUrl) {
 }
 
 function videoSourceFromNode(node) {
-    const candidates = [node?.video_url, ...(Array.isArray(node?.video_versions) ? node.video_versions.map(item => item?.url) : []), videoUrlFromManifest(node?.video_dash_manifest)];
+    const candidates = [node?.video_url, ...(Array.isArray(node?.video_versions) ? node.video_versions.map(item => item?.url) : [])];
     const video = candidates.find(isVideoSourceUrl);
-    return video ? normalizeCdnUrl(video) : '';
+    // DASH manifests can be large; do not parse one when a direct version is
+    // already available, especially while ranking repeated page candidates.
+    if (video) return normalizeCdnUrl(video);
+    const fromManifest = videoUrlFromManifest(node?.video_dash_manifest);
+    return isVideoSourceUrl(fromManifest) ? normalizeCdnUrl(fromManifest) : '';
 }
 
 function mediaUrlFromNode(node) {
@@ -517,10 +539,23 @@ function parseInstagramHtml(html, shortcode = '') {
     return parseInstagramHtmlSource(html, shortcode).data;
 }
 
+// Both crawler HTML and GraphQL can contain repeated records for one post.
+// Resolve and fill metadata identically after enforcing the shortcode fence.
+function findAndNormalizeMedia(candidates, shortcode = '') {
+    const matchingMetadata = { username: new Set(), caption: new Set() };
+    const node = findMediaNode(candidates, shortcode, matchingMetadata);
+    const data = normalizeMediaNode(node);
+    if (data && shortcode) {
+        for (const field of ['username', 'caption']) {
+            if (!data[field] && matchingMetadata[field].size === 1) data[field] = [...matchingMetadata[field]][0];
+        }
+    }
+    return { node, data };
+}
+
 function parseInstagramHtmlSource(html, shortcode = '') {
-    const node = findMediaNode(collectJsonCandidates(html), shortcode);
-    const normalized = normalizeMediaNode(node);
-    if (normalized) return { data: normalized, previewOnly: normalized.medias.length === 1 && hasResizedImage(normalized) };
+    const { node, data } = findAndNormalizeMedia(collectJsonCandidates(html), shortcode);
+    if (data) return { data, previewOnly: data.medias.length === 1 && hasResizedImage(data) };
     if (node) {
         const source = sidecarNodes(node);
         return { data: null, previewOnly: true, incompleteMedia: true, expectedMediaCount: source.length,
@@ -675,5 +710,6 @@ module.exports = {
     normalizeProfileData,
     normalizeProfileHtmlData,
     findMediaNode,
+    findAndNormalizeMedia,
     tryParseJson,
 };
