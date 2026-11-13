@@ -123,6 +123,7 @@ export function xReason(code: string | null | undefined): string {
 }
 export function xFeedback(cause: unknown): string {
   const error = cause && typeof cause === "object" ? cause as { code?: string; status?: number } : {};
+  if (error.code === "X_MONITOR_RECEIVER_REENROLL_REQUIRED") return "この接続の受信情報を登録し直してください。入力内容は保持しています。";
   if (error.code === "X_REALTIME_COST_CONFLICT") return "必要な枠数が変わりました。一覧を更新し、使用する枠数を確認し直してください。";
   if (error.code === "X_REALTIME_SLOT_LIMIT") return "リアルタイム通知に必要な個人枠が不足しています。利用状況を確認してください。";
   if (error.code === "X_MONITOR_SUPPORTER_POOL_FULL") return "支援者優先枠は現在すべて利用中です。空き状況を再確認してください。選択した通知方法と入力内容は保持しています。";

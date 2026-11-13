@@ -93,7 +93,7 @@ function createXMonitorQuota(db, options = {}) {
         if (specialUsed < await paidLimit(query, plan)) return 'special';
         return null;
     }
-    async function verifySettings(query, actor, config, requireDestinationEnabled = false) {
+    async function verifySettings(query, actor, config, requireDestinationEnabled = false, previousSubscriptionId = null) {
         for (const [key, table] of [['workflowId','automation_workflows'],['destinationId','automation_destinations']]) if (config[key]) {
             const rows = await query(`SELECT * FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL FOR UPDATE`, [config[key], actor.userId]);
             if (!rows.length) fail('NOT_FOUND', '自分のルール・通知先を指定してください。', 404);
@@ -104,8 +104,14 @@ function createXMonitorQuota(db, options = {}) {
             }
         }
         if (config.subscriptionId) {
-            const rows = await query('SELECT id FROM automation_x_subscriptions WHERE id=? AND owner_user_id=?', [config.subscriptionId, actor.userId]);
+            // Match the push worker/intake lock order: owner is already locked,
+            // then lock the owner's subscription before reading its receiver.
+            const rows = await query('SELECT id FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE', [config.subscriptionId, actor.userId]);
             if (!rows.length) fail('NOT_FOUND', '自分の登録済み受信情報を指定してください。', 404);
+            if (config.subscriptionId !== previousSubscriptionId) {
+                const receiver = (await query('SELECT state FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE', [config.subscriptionId]))[0];
+                if (receiver?.state === 'requires_reenrollment') fail('X_MONITOR_RECEIVER_REENROLL_REQUIRED', 'この接続の受信情報を登録し直してください。', 409);
+            }
         }
     }
     async function item(row, plan, query = db.queryDatabase) {
@@ -231,7 +237,7 @@ function createXMonitorQuota(db, options = {}) {
         if (changed) fail('X_MONITOR_REGISTRATION_CONFLICT', 'このXアカウントは登録済みです。一覧の「編集」から通知先や通知方法を変更してください。', 409);
         // A retried enabled registration may omit settings. Its authoritative
         // stored destination still needs the same fresh acceptance check.
-        if (Number(row.enabled)) await verifySettings(query, actor, currentSettings, true);
+        if (Number(row.enabled)) await verifySettings(query, actor, currentSettings, true, currentSettings.subscriptionId || null);
         if (input.poolPreference === 'supporter') {
             // A retried create is idempotent only for the same explicit choice.
             // Never turn a duplicate request into an implicit pool move or edit.
@@ -294,7 +300,6 @@ function createXMonitorQuota(db, options = {}) {
             await lockGlobal(query, actor); await entitlements.lockOwner(query, actor.userId);
             await requireXEnrollment(query, actor, rolloutOptions);
             await grants.migrateLegacyGrants(query, actor.userId, { now: now() });
-            await verifySettings(query, actor, parsed.notificationSettings, true);
             const existing = (await query('SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND account_id=?', [actor.userId, parsed.accountId]))[0];
             if (existing && existing.state !== 'deleted') return duplicateRegistration(query, actor, input, existing);
             // All registrations/edits hold global->owner locks, so matching a
@@ -304,6 +309,7 @@ function createXMonitorQuota(db, options = {}) {
                 if (input.accountId !== undefined && /^[1-9]\d{0,19}$/.test(sameHandle.account_id) && sameHandle.account_id !== input.accountId) fail('X_MONITOR_HANDLE_CONFLICT', '同じ@ユーザー名の監視が登録されています。一覧から編集してください。', 409);
                 return duplicateRegistration(query, actor, input, sameHandle);
             }
+            await verifySettings(query, actor, parsed.notificationSettings, true);
             const before = await quota(query, actor);
             if (!before.personal.available) fail('X_MONITOR_PERSONAL_LIMIT', '個人の総登録上限に達しています。通常通知とX監視で枠を共有しています。');
             // Automatic allocation stays free-first. The verified legacy donor
@@ -355,7 +361,7 @@ function createXMonitorQuota(db, options = {}) {
                 // Stopping or editing an unchanged, already stored binding
                 // remains possible after the destination was removed. New
                 // bindings still require owner-scoped resource validation.
-                if (Object.keys(supplied).length !== Object.keys(stored).length || Object.keys(supplied).some(key => supplied[key] !== stored[key])) await verifySettings(query, actor, supplied);
+                if (Object.keys(supplied).length !== Object.keys(stored).length || Object.keys(supplied).some(key => supplied[key] !== stored[key])) await verifySettings(query, actor, supplied, false, oldSettings.subscriptionId || null);
             }
             if (input.enabled === true) {
                 await requireXEnrollment(query, actor, rolloutOptions);
@@ -369,7 +375,7 @@ function createXMonitorQuota(db, options = {}) {
             const plan = await planFor(query, actor.userId), selectedPool = input.poolKind ?? row.pool_kind;
             const nextSettings = input.notificationSettings === undefined ? { ...oldSettings } : { ...inputSettings(input.notificationSettings),
                 ...(oldSettings.processingMode === undefined ? {} : { processingMode: oldSettings.processingMode }) };
-            if ((input.enabled === true || input.notificationSettings !== undefined) && activeAfter) await verifySettings(query, actor, nextSettings, true);
+            if ((input.enabled === true || input.notificationSettings !== undefined) && activeAfter) await verifySettings(query, actor, nextSettings, true, oldSettings.subscriptionId || null);
             let beforeProcessing, afterSlotCost;
             if (input.processingMode !== undefined) {
                 beforeProcessing = await processing.inspectXMonitorProcessing(query, row, now(), { plan });

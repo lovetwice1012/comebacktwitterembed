@@ -12,7 +12,7 @@ export function AutomationPageFrame({ locale, isAdmin = false, section, title, d
   const ja = locale === "ja";
   const pages = [
     { id: "notifications", href: "/dashboard/automation", icon: Bell, label: ja ? "通知を管理" : "Notifications" },
-    { id: "plans", href: "/dashboard/automation/plans", icon: CreditCard, label: ja ? "利用状況とプラン" : "Usage and plans" },
+    { id: "plans", href: "/dashboard/automation/plans", icon: CreditCard, label: ja ? "プラン・枠" : "Plans and usage" },
     { id: "support", href: "/dashboard/automation/support", icon: Heart, label: ja ? "支援" : "Support" },
   ];
   const content = <div className="notification-workspace">

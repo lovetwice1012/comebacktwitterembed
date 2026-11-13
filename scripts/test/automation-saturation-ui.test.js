@@ -126,7 +126,8 @@ test('S24-2 a committed workflow save advances its local revision even when the 
 for (const [ruleScope, listScope] of [['private', 'guild'], ['guild', 'private']]) test(`T3 clones preserve displayed ${ruleScope} scope despite hidden ${listScope} creation preference`, async () => {
     const f = await workspaceFixture({ guildId: '111111111111111111', ruleScope });
     try {
-        await f.fill(f.field('作成先'), listScope); await openRule(f);
+        await f.click('通知ルール'); await f.settle(); await f.fill(f.field('作成する範囲'), listScope);
+        await click(f, [...f.container.querySelectorAll('.studio-rule-card')].find(node => node.textContent.includes('Rule A'))); await tick(f, 450);
         await f.click('ルールを複製'); await tick(f, 450);
         const create = f.requests.find(row => row.route === 'workflows' && row.method === 'POST'); assert.equal(create.body.scope, ruleScope); assert.equal(create.body.sourceWorkflowId, "A"); assert.equal(create.body.expectedSourceRevision, 2);
         assert.equal(f.stored.get('copy').scope, ruleScope);

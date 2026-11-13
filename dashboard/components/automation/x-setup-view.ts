@@ -6,7 +6,7 @@ export const X_SETUP_CHROME_DOWNLOAD_URL = "/api/automation/x-setup/download-chr
 export type XReceiverState = "awaiting" | "connecting" | "listening" | "requires_reenrollment" | "stopped" | "error";
 export type XReceiptCounts = { received: number; routed: number; unsupported: number; decryptionFailed: number; unmatched?: number };
 export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserKind: "firefox" | "chrome" | "brave"; browserVersion: string; receiverState: XReceiverState; boundMonitorCount: number; lastReceivedAtMs: number | null; lastProviderLossAtMs?: number; receiptCounts?: XReceiptCounts };
-export type XSetupStatus = { available: boolean; receiverEnabled: boolean; chromeEnabled: boolean; braveEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
+export type XSetupStatus = { available: boolean; reasonCode: string | null; receiverEnabled: boolean; chromeEnabled: boolean; braveEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
 export type XSetupSession = { sessionId: string; expiresAtMs: number };
 export type XSetupPreview = { browserVersion: string; scope: string; formatVersion: 1 | 2; browserKind?: "brave" };
 const invalid = () => new Error("Invalid X setup response");
@@ -36,12 +36,12 @@ export function parseXSetupStatus(value: unknown): XSetupStatus {
   if (!["disabled", "supporters", "public"].includes(String(rollout.mode)) || typeof rollout.eligible !== "boolean"
     || rollout.reasonCode != null && (typeof rollout.reasonCode !== "string" || rollout.reasonCode.length > 80)
     || rollout.reason != null && (typeof rollout.reason !== "string" || rollout.reason.length > 500)) throw invalid();
-  if (typeof item.available !== "boolean" || typeof item.receiverEnabled !== "boolean" || item.chromeEnabled !== undefined && typeof item.chromeEnabled !== "boolean" || item.braveEnabled !== undefined && typeof item.braveEnabled !== "boolean" || !Array.isArray(item.subscriptions)
+  if (typeof item.available !== "boolean" || item.reasonCode != null && (typeof item.reasonCode !== "string" || item.reasonCode.length > 80) || typeof item.receiverEnabled !== "boolean" || item.chromeEnabled !== undefined && typeof item.chromeEnabled !== "boolean" || item.braveEnabled !== undefined && typeof item.braveEnabled !== "boolean" || !Array.isArray(item.subscriptions)
     || download.url !== X_SETUP_DOWNLOAD_URL || typeof download.version !== "string" || !/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/u.test(download.version)
     || typeof download.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(download.sha256)
     || item.nextCursor != null && (typeof item.nextCursor !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(item.nextCursor))
     || !Number.isSafeInteger(item.maxFileBytes) || Number(item.maxFileBytes) < 1 || Number(item.maxFileBytes) > X_SETUP_MAX_FILE_BYTES) throw invalid();
-  return { available: item.available && rollout.eligible && rollout.mode !== "disabled", receiverEnabled: item.receiverEnabled, chromeEnabled: item.chromeEnabled === true, braveEnabled: item.braveEnabled === true && item.chromeEnabled === true, rollout: { mode: rollout.mode as XSetupStatus["rollout"]["mode"], eligible: rollout.eligible, reasonCode: rollout.reasonCode as string | null ?? null, reason: rollout.reason as string | null ?? null }, download: { url: download.url, version: download.version, sha256: download.sha256 },
+  return { available: item.available && rollout.eligible && rollout.mode !== "disabled", reasonCode: item.reasonCode as string | null ?? null, receiverEnabled: item.receiverEnabled, chromeEnabled: item.chromeEnabled === true, braveEnabled: item.braveEnabled === true && item.chromeEnabled === true, rollout: { mode: rollout.mode as XSetupStatus["rollout"]["mode"], eligible: rollout.eligible, reasonCode: rollout.reasonCode as string | null ?? null, reason: rollout.reason as string | null ?? null }, download: { url: download.url, version: download.version, sha256: download.sha256 },
     subscriptions: item.subscriptions.map(parseXSetupSubscription), maxFileBytes: item.maxFileBytes as number, nextCursor: item.nextCursor as string | null ?? null };
 }
 export function parseXSetupSession(value: unknown): XSetupSession {
@@ -62,10 +62,10 @@ export function parseXSetupPreview(value: unknown): XSetupPreview {
 }
 export function xSetupFeedback(cause: unknown): string {
   const code = cause && typeof cause === "object" ? (cause as { code?: unknown }).code : undefined;
-  if (code === "X_ROLLOUT_DISABLED") return "X通知は現在、公開準備中です。保存ツールのダウンロードと手順の確認ができます。ファイルの登録や監視の開始は、受付開始後にご案内します。";
+  if (code === "X_ROLLOUT_DISABLED") return "X通知は現在、公開準備中です。受付開始後にご案内します。";
   if (code === "X_ROLLOUT_SUPPORTERS_ONLY") return "現在は、これまでに寄付いただいた方を対象にしたベータ版です。受付対象の拡大をお待ちください。寄付はサービスへの支援であり、ベータ参加や利用枠の購入ではありません。";
   if (["X_SETUP_SESSION_INVALID", "X_SETUP_SESSION_EXPIRED", "X_SETUP_SESSION_USED"].includes(String(code))) return "ファイルを選び直して、もう一度内容を確認してください。確認から時間が経ったか、別の画面で登録操作が進んでいます。";
-  if (code === "X_SETUP_NOT_CONFIGURED") return "現在、ファイルの受付は準備中です。手順の確認と保存ツールのダウンロードができます。";
+  if (code === "X_SETUP_NOT_CONFIGURED") return "現在、受信情報の受付は準備中です。受付開始後にご案内します。";
   if (code === "X_SETUP_FILE_TOO_LARGE") return "保存ツールで作成した32 KiB以下のJSONファイルを選んでください。選択したファイルは容量の上限を超えています。";
   if (code === "X_SETUP_INVALID_FILE") return "保存ツールでX通知データを作り直してください。ファイルの形式を確認できませんでした。";
   if (code === "X_SETUP_CHROME_NOT_READY") return "このブラウザーの接続は準備中です。受付開始までお待ちください。";
@@ -74,6 +74,17 @@ export function xSetupFeedback(cause: unknown): string {
   if (code === "X_SETUP_SUBSCRIPTION_CONFLICT") return "ご自身の登録一覧を確認してください。受信情報が別の登録と重複しているか、作成時から変わっています。内容を確認したうえで、必要な場合は古い登録を削除し、ファイルを作り直してください。";
   if (code === "REVISION_CONFLICT" || code === "NOT_FOUND") return "一覧を更新してから、もう一度確認してください。別の操作で登録情報が更新・削除されています。";
   return "受付状態と登録一覧を更新して、もう一度お試しください。今回の操作中にエラーが発生しました。";
+}
+export function xSetupStatusFailure(cause: unknown): string {
+  const error = cause && typeof cause === "object" ? cause as { code?: unknown; status?: unknown } : {};
+  if (error.code === "AUTH_REQUIRED" || error.status === 401) return "ログインの有効期限が切れました。ログインし直してから、受付状態を更新してください。";
+  if (error.code === "X_SETUP_PRIVATE_ONLY") return "受信情報は個人ページで確認できます。";
+  if (error.code === "X_ROLLOUT_DISABLED" || error.code === "X_ROLLOUT_SUPPORTERS_ONLY" || error.code === "X_SETUP_NOT_CONFIGURED") return xSetupFeedback(cause);
+  if (error.status === 403) return "受信情報を確認する権限がありません。ログイン中のアカウントを確認してください。";
+  if (error.code === "AUTOMATION_NETWORK_ERROR" || error.status === 0) return "通信できませんでした。接続を確認して、受付状態を更新してください。";
+  if (error.code === "AUTOMATION_RATE_LIMITED" || error.code === "AUTOMATION_RATE_LIMIT_UNAVAILABLE" || error.status === 429) return "操作が集中しています。少し待ってから、受付状態を更新してください。";
+  if (typeof error.status === "number" && error.status >= 500) return "サービス側で受付状態を確認できませんでした。時間をおいて更新してください。";
+  return "受付状態と登録一覧を取得できませんでした。更新してもう一度お試しください。";
 }
 export function xReceiverLabel(state: XReceiverState): string {
   return ({ awaiting: "サーバー接続待ち", connecting: "サーバー接続中", listening: "サーバー接続を確認済み", requires_reenrollment: "受信情報の再登録が必要", stopped: "サーバー受信は停止中", error: "サーバー接続の確認が必要" })[state];

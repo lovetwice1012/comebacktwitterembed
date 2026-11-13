@@ -58,7 +58,7 @@ test('channel failures retry in place and loading blocks progression without los
         };
         function Fixture() {
             const [monitor, setMonitor] = f.React.useState({ source: 'https://store.steampowered.com/app/730', providerId: 'steam', name: '保持する名前', locale: 'ja', destinationId: '', mode: 'threshold', maxPriceAmount: '980', minDiscountPercent: '', workflowId: '' });
-            return f.React.createElement(f.exports.MonitorRegistration, { api, monitor, kind: 'price', scope: 'guild', guildId: 'guild', destinations: [], rules: [], catalog: { price: [{ id: 'steam' }] }, busy: false,
+            return f.React.createElement(f.exports.MonitorRegistration, { api, monitor, kind: 'price', scope: 'guild', guildId: 'guild', canShare: true, destinations: [], rules: [], catalog: { price: [{ id: 'steam' }] }, busy: false,
                 onChange: setMonitor, onSourceChange: source => setMonitor({ ...monitor, source }), onSave: async () => { saved++; }, run: async work => work(), refresh: async () => {} });
         }
         await f.render(f.React.createElement(Fixture)); await f.submit(); await f.settle();
@@ -78,8 +78,11 @@ test('notification and webhook dialog drafts resume after closing; webhook secre
         await f.render(f.React.createElement(f.exports.MonitorManager, { api, guildId: 'guild', canEdit: true, scope: 'private', destinations: [], rules: [], refresh: async () => {} })); await tick(f);
         await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '途中の通知'); await f.submit();
         await f.click('キャンセル'); assert.equal(f.container.querySelector('dialog[open]'), null);
-        await f.click('通知の入力を再開'); assert(f.container.querySelector('dialog[open]').textContent.includes('通知先の種類'));
-        await f.click('キャンセル'); await f.click('通知先を追加');
+        await f.click('通知の入力を再開'); assert(f.container.querySelector('dialog[open]').textContent.includes('通知先'));
+        await f.click('キャンセル');
+        const destinationsPanel = f.container.querySelector('#notification-destinations'); assert(destinationsPanel);
+        await f.act(async () => { destinationsPanel.open = true; });
+        await f.click('通知先を追加');
         const dialog = f.container.querySelector('dialog[open]');
         await f.click('既存のWebhook URLで追加');
         const secret = 'https://discord.com/api/webhooks/123/fixture-private-secret';

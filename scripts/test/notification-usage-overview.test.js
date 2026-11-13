@@ -25,13 +25,13 @@ async function fixture(responses = defaults()) {
 test('usage displays one notification plan for native and X and counts registrations, boosts and permanent additions', async () => {
     const f = await fixture();
     try {
-        const slots = article(f, '通知の登録枠'), native = article(f, '通知プラン'), x = article(f, 'X通知の設定を開く');
+        const slots = article(f, '通知の登録枠'), native = article(f, '通知プラン'), x = f.container.querySelector('#x-capacity');
         assert.equal(fact(slots, '新しく使える枠'), '3枠'); assert.equal(fact(slots, '登録している通知'), '3件');
         assert.equal(fact(slots, '通知方法に使う追加枠'), '2枠'); assert.equal(fact(slots, '支援による恒久追加'), '3枠');
         assert.match(native.textContent, /支援者.*1日48通・1分7通/);
-        assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(native.textContent, /通常通知とX通知に同じプランを適用/); assert.doesNotMatch(f.container.textContent, /Xの処理プラン/);
-        assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録');
-        assert.equal(x.querySelector('details').open, false);
+        assert.doesNotMatch(f.container.textContent, /Xの処理プラン|個別設定のない既存監視の初期設定/);
+        assert.equal(fact(x, '登録しているX通知'), '1件');
+        assert.equal(x.querySelector('details'), null);
         assert.match(slots.textContent, /月額プランの解約後も引き継ぎ/);
         assert.equal(fact(f.container, '共用無料枠の空き'), '1 / 50枠');
         assert.equal(fact(f.container, '支援者優先枠の全体空き'), '98 / 100枠');
@@ -46,38 +46,38 @@ test('paid plan names do not imply realtime or replace server-provided special c
     data['x-processing-settings'] = processing({ planLabel: 'ベーシック＋', realtimeAllowed: false, requestedMode: 'realtime' });
     const f = await fixture(data);
     try {
-        const x = article(f, 'X通知の設定を開く');
-        assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(x.querySelector('details').textContent, /リアルタイムの希望は保存済み/);
+        const x = f.container.querySelector('#x-capacity');
+        assert.equal(x.querySelector('details'), null);
         assert(!x.textContent.includes('リアルタイムも選べます'));
         assert.equal(fact(f.container, 'プランの特殊枠の残り'), '12 / 17枠');
     } finally { await f.close(); }
 });
 
-test('a legacy realtime default is kept in details without asserting every monitor uses it', async () => {
+test('a legacy realtime default does not add an account-wide setting to the overview', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ effectiveMode: 'realtime', requestedMode: 'realtime', realtimeAllowed: true, intervalMinutes: null });
     const f = await fixture(data);
-    try { const x = article(f, 'X通知の設定を開く'); assert.match(x.querySelector('details').textContent, /個別設定のない既存監視の初期設定リアルタイム/); assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録'); assert(!x.textContent.includes('null分')); }
+    try { const x = f.container.querySelector('#x-capacity'); assert.equal(x.querySelector('details'), null); assert.equal(fact(x, '登録しているX通知'), '1件'); assert(!x.textContent.includes('null分')); }
     finally { await f.close(); }
 });
 
-test('a missing default interval is disclosed without showing an account-wide configuration block', async () => {
+test('a missing default interval does not invent a value or hide the registered count', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ configured: false, intervalMinutes: null });
     const f = await fixture(data);
     try {
-        const x = article(f, 'X通知の設定を開く');
-        assert.match(x.querySelector('details').textContent, /管理者の間隔設定待ち/);
-        assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録');
+        const x = f.container.querySelector('#x-capacity');
+        assert.equal(x.querySelector('details'), null);
+        assert.equal(fact(x, '登録しているX通知'), '1件');
         assert.equal(f.container.querySelector('.notification-next-step'), null);
         assert(!x.textContent.includes('購入'));
     } finally { await f.close(); }
 });
 
-test('missing batch defaults retain the route to actual per-monitor settings without inferring realtime eligibility', async () => {
+test('missing batch defaults do not invent realtime eligibility', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ configured: false, intervalMinutes: null, realtimeAllowed: true });
     const f = await fixture(data);
     try {
-        const x = article(f, 'X通知の設定を開く');
-        assert.equal(x.querySelector('a').getAttribute('href'), '/dashboard/automation#x-notifications');
+        const x = f.container.querySelector('#x-capacity');
+        assert.equal(fact(x, '登録しているX通知'), '1件');
         assert.equal(f.container.querySelector('.notification-next-step'), null);
         assert(!x.textContent.includes('購入'));
     } finally { await f.close(); }
@@ -96,7 +96,7 @@ test('partial failed reads preserve verified data and show unknown capacities in
     const data = defaults(); data['x-monitor-quota'] = async () => { throw new Error('private-upstream-webhook-token'); };
     const f = await fixture(data);
     try {
-        assert.match(f.container.textContent, /一部の利用状況は確認待ち/);
+        assert.match(f.container.textContent, /一部の利用状況を確認できません/);
         assert.equal(fact(article(f, '通知の登録枠'), '登録している通知'), '3件');
         assert.equal(fact(article(f, '通知の登録枠'), '通知方法に使う追加枠'), '2枠');
         assert.equal(fact(f.container, '共用無料枠の空き'), '確認待ち'); assert.equal(fact(f.container, 'プランの特殊枠の残り'), '確認待ち');

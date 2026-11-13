@@ -14,6 +14,19 @@ async function openNotification(f, kind) {
     await f.act(async () => button.click());
     await f.settle();
 }
+async function openXDestinationDraft(f, handle) {
+    await openNotification(f, 'x');
+    await f.click('あとで接続する');
+    await f.fill(f.field('Xアカウント名'), handle);
+    const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+    if (!form) throw new Error('X notification form is missing');
+    const checkbox = form.querySelector('.nx-firefox-ack input');
+    if (!checkbox || checkbox.disabled) throw new Error('Browser notification acknowledgement is unavailable');
+    if (!checkbox.checked) await f.act(async () => checkbox.click());
+    const next = [...form.querySelectorAll('button')].find(button => button.textContent.trim() === '次へ' && !button.closest('[hidden]'));
+    if (!next || next.disabled) throw new Error('X notification destination step is unavailable');
+    await f.act(async () => next.click());
+}
 function xFixtureResponse(path) {
     const rollout = { mode: 'supporters', eligible: true, reasonCode: null, reason: null };
     const quality = { planId: 'free', label: '無料', tier: 'free', baseSlotLimit: 5, priority: 0, minuteLimit: 5, dayLimit: 24, intervalMinutes: 60 };
@@ -35,4 +48,11 @@ function xDestinationSelect(f) {
     if (!select) throw new Error('X notification destination selector is missing');
     return select;
 }
-module.exports = { openNotification, xFixtureResponse, xDestinationSelect };
+async function continueNotificationSource(f) {
+    const form = f.container.querySelector('form.monitor-registration');
+    const button = form && [...f.container.querySelectorAll('button[type="submit"]')].find(node => node.getAttribute('form') === form.id);
+    if (!button || !['通知先を選ぶ', 'Xの設定へ'].includes(button.textContent.trim())) throw new Error('Notification source action is missing');
+    await f.act(async () => button.click());
+    await f.settle();
+}
+module.exports = { openNotification, openXDestinationDraft, xFixtureResponse, xDestinationSelect, continueNotificationSource };

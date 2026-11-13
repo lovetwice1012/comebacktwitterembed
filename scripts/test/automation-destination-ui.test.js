@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
-const { openNotification, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
+const { openNotification, openXDestinationDraft, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
 const G1 = '111111111111111111', G2 = '222222222222222222';
 const C1 = '333333333333333333', C2 = '444444444444444444';
 const button = (f, text) => [...f.container.querySelectorAll('button')].find(item => item.textContent.trim() === text);
@@ -86,16 +86,14 @@ test('changing to server scope removes the X filter and keeps browsing available
     } finally { await f.close(); }
 });
 
-test('the notification destinations shortcut opens the existing panel and moves focus', async () => {
+test('notification destinations have one panel before the list and open without writes', async () => {
     const f = await fixture();
     try {
-        const panel = f.container.querySelector('#notification-destinations'); let scrolled = 0;
-        panel.scrollIntoView = () => { scrolled++; };
-        assert.equal(panel.open, false); await f.click('通知先を見る'); await f.settle();
-        assert.equal(panel.open, true); assert.equal(scrolled, 1);
-        assert.equal(f.dom.window.document.activeElement, panel.querySelector('summary'));
-        assert.equal(button(f, '通知先を見る').getAttribute('aria-expanded'), 'true');
-        await f.click('通知先を見る'); assert.equal(scrolled, 2); assert.equal(f.writes().length, 0);
+        const panel = f.container.querySelector('#notification-destinations');
+        assert.equal(f.container.querySelectorAll('#notification-destinations').length, 1);
+        assert(panel.compareDocumentPosition(f.container.querySelector('[aria-label="通知一覧"]')) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert.equal(panel.open, false); await f.act(async () => panel.querySelector('summary').click());
+        assert.equal(panel.open, true); assert.equal(f.writes().length, 0);
     } finally { await f.close(); }
 });
 
@@ -104,7 +102,7 @@ test('shared scope does not offer X registration and respects server edit permis
     try {
         const picker = f.container.querySelector('select[aria-label="通知の種類"]');
         assert.deepEqual([...picker.options].map(option => option.value), ['all', 'auto', 'price']);
-        assert.equal(button(f, '通知を追加').disabled, true); assert.equal(button(f, '通知先を見る').disabled, false); assert.equal(f.writes().length, 0);
+        assert.equal(button(f, '通知を追加').disabled, true); assert(f.container.querySelector('#notification-destinations summary')); assert.equal(f.writes().length, 0);
     } finally { await f.close(); }
 });
 
@@ -246,23 +244,27 @@ const originalDestination = { id: 'original-destination', name: '元のDM', scop
 async function retainNormalDraft(f) {
     await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/octocat'); await f.fill(f.field('名前'), '通常通知の下書き'); await f.submit(); await f.click('キャンセル');
 }
-const normalDestinations = f => f.container.querySelector('form.monitor-registration').querySelectorAll('select');
+const normalDestination = f => {
+    const form = f.container.querySelector('form.monitor-registration');
+    const label = form && [...form.querySelectorAll('label')].find(node => node.firstChild?.textContent?.trim() === '通知先');
+    const select = label?.querySelector('select'); assert(select, 'normal destination selection'); return select;
+};
 
 test('adding from an X draft selects its new destination while a retained ordinary draft keeps its original destination', async () => {
     const f = await fixture({ destinations: [originalDestination], respond: async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : undefined });
     try {
-        await retainNormalDraft(f); await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'preserved_x');
+        await retainNormalDraft(f); await openXDestinationDraft(f, 'preserved_x');
         await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), 'X専用DM'); await submitDestination(f);
         assert.equal(xDestinationSelect(f).value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'preserved_x');
-        await f.click('キャンセル'); await f.click('通知の入力を再開'); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
+        await f.click('あとで続ける'); await f.click('通知の入力を再開'); assert.equal(normalDestination(f).value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
     } finally { await f.close(); }
 });
 
 test('ordinary destination creation still selects its destination in the requesting ordinary draft', async () => {
     const f = await fixture({ destinations: [originalDestination], respond: async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : undefined });
     try {
-        await retainNormalDraft(f); await f.click('通知先を追加'); await f.fill(f.field('通知先の名前'), '通常通知の新しいDM'); await submitDestination(f); await f.click('通知の入力を再開');
-        assert.equal(normalDestinations(f)[1].value, 'new-destination');
+        await retainNormalDraft(f); await f.act(async () => { f.container.querySelector('#notification-destinations').open = true; }); await f.click('通知先を追加'); await f.fill(f.field('通知先の名前'), '通常通知の新しいDM'); await submitDestination(f); await f.click('通知の入力を再開');
+        assert.equal(normalDestination(f).value, 'new-destination');
     } finally { await f.close(); }
 });
 
@@ -274,7 +276,7 @@ test('normal registration adds a channel in place and returns to its retained so
         await f.fill(f.field('通知先の名前'), '通常通知のチャンネル'); await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
         await f.fill(f.field('通知先のサーバー'), G1); await f.settle(); await f.fill(f.field('Webhookを作成するチャンネル'), C1);
         assert.equal(f.writes().filter(call => call.route.startsWith('destinations')).length, 0); await submitDestination(f);
-        assert.equal(f.container.querySelectorAll('dialog[open]').length, 1); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'new-destination');
+        assert.equal(f.container.querySelectorAll('dialog[open]').length, 1); assert.equal(normalDestination(f).value, 'new-destination');
         assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
         assert.equal(f.writes().filter(call => call.route.startsWith('destinations')).length, 1);
         assert.equal(f.writes().filter(call => call.route.startsWith('monitors/') && !call.route.endsWith('/preview')).length, 0);

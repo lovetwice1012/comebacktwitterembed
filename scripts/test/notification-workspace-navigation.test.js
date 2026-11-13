@@ -2,10 +2,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
-const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
+const { continueNotificationSource, openNotification } = require('./helpers/notification-registration-fixture.cjs');
 
 async function fixture({ scope = 'private', hash = '' } = {}) {
     const f = await reactFixture('export { MonitorManager } from "./components/automation/monitor-manager"; export { xRegistrationHandle } from "./components/automation/notification-registration-source";');
+    f.confirmAnswer = true; f.confirmCalls = 0; f.set('confirm', () => { f.confirmCalls++; return f.confirmAnswer; });
     f.calls = [];
     if (hash) f.dom.window.history.replaceState({}, '', hash);
     const quality = { planId: 'free', priority: 0, minuteLimit: 5, dayLimit: 24, intervalMinutes: 5 };
@@ -46,8 +47,8 @@ test('X draft survives closing and normal filters without extra X reads or write
     const f = await fixture();
     try {
         const xCalls = () => f.calls.filter(call => call.path === 'x-monitors').length;
-        assert(xCalls() > 0); await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'keep_my_target');
-        assert(f.container.querySelector('form[aria-label="X監視の登録設定"]')); await f.click('キャンセル');
+        assert(xCalls() > 0); await openNotification(f, 'x'); await f.click('あとで接続する'); await f.fill(f.field('Xアカウント名'), 'keep_my_target');
+        assert(f.container.querySelector('form[aria-label="X監視の登録設定"]')); await f.click('あとで続ける');
         const before = xCalls(); await select(f, 'price'); await select(f, 'auto'); await select(f, 'x');
         assert.equal(xCalls(), before);
         await f.click('編集中の設定を開く'); assert.equal(f.field('Xアカウント名').value, 'keep_my_target');
@@ -68,7 +69,7 @@ test('the common add action routes an X profile URL to its editor without ordina
     const f = await fixture();
     try {
         await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://x.com/Example_User');
-        await f.fill(f.field('名前（省略可）'), '共通入口の監視'); await f.click('対象を確認'); await f.settle();
+        await f.fill(f.field('名前（省略可）'), '共通入口の監視'); await continueNotificationSource(f); await f.settle();
         assert.equal(f.field('Xアカウント名（@ユーザー名）').value, 'Example_User');
         assert.equal(f.field('監視の表示名').value, '共通入口の監視');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
@@ -79,10 +80,22 @@ test('the common add action routes an X profile URL to its editor without ordina
 test('choosing X through the common registration retains an existing X draft', async () => {
     const f = await fixture();
     try {
-        await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'retained_x'); await f.click('キャンセル');
+        await openNotification(f, 'x'); await f.click('あとで接続する'); await f.fill(f.field('Xアカウント名'), 'retained_x'); await f.click('あとで続ける'); f.confirmAnswer = false;
         await openNotification(f, 'auto'); await f.fill(f.field('サービス'), 'twitter');
-        await f.fill(f.field('Xアカウント名・プロフィールURL'), '@new_candidate'); await f.click('対象を確認'); await f.settle();
+        await f.fill(f.field('Xアカウント名・プロフィールURL'), '@new_candidate'); await continueNotificationSource(f); await f.settle();
         assert.equal(f.field('Xアカウント名（@ユーザー名）').value, 'retained_x');
+        assert.equal(f.confirmCalls, 1); assert.match(f.container.textContent, /新しい入力は引き継がれていません/);
+        assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('replacing a different X draft requires explicit confirmation and keeps the new account', async () => {
+    const f = await fixture();
+    try {
+        await openNotification(f, 'x'); await f.click('あとで接続する'); await f.fill(f.field('Xアカウント名'), 'retained_x'); await f.click('あとで続ける');
+        await openNotification(f, 'auto'); await f.fill(f.field('サービス'), 'twitter'); await f.fill(f.field('Xアカウント名・プロフィールURL'), '@new_candidate');
+        f.confirmAnswer = true; await continueNotificationSource(f); await f.settle();
+        assert.equal(f.confirmCalls, 1); assert.equal(f.field('Xアカウント名').value, 'new_candidate');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
     } finally { await f.close(); }
 });
@@ -95,7 +108,7 @@ test('X profile input validation rejects nonprofile, credentialed and misleading
         for (const value of ['https://x.com/i/web/status/123', 'https://x.com/user/status/123', 'https://x.com/home', 'https://user@x.com/valid_user', 'https://x.com.attacker.test/valid_user', 'https://attacker.x.com/valid_user', 'http://x.com/valid_user', '@this_handle_is_far_too_long'])
             assert.throws(() => f.exports.xRegistrationHandle(value), /プロフィール/);
         await openNotification(f, 'auto'); await f.fill(f.field('対象のURL・ID'), 'https://x.com/user/status/123');
-        await f.click('対象を確認'); await f.settle();
+        await continueNotificationSource(f); await f.settle();
         assert.match(f.container.textContent, /プロフィールのURLを入力/);
         assert.equal(f.field('Xアカウント名・プロフィールURL').value, 'https://x.com/user/status/123');
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);

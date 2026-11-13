@@ -131,7 +131,8 @@ for (const [page, sibling, manager] of [
             }).default;
             const content = await Page();
             assert.equal(sessionChecks, 1);
-            assert.equal(content.props.children.at(-1).key, '222222222222222222', `${manager} stays scoped to the authenticated user`);
+            const managerElement = Array.isArray(content.props.children) ? content.props.children.at(-1) : content.props.children;
+            assert.equal(managerElement.key, '222222222222222222', `${manager} stays scoped to the authenticated user`);
             await f.render(content);
             for (const href of ['/dashboard/automation', `/dashboard/automation/${sibling}`]) {
                 assert.equal(await clickNavigation(f, href), false, `${href} must fetch a new document`);

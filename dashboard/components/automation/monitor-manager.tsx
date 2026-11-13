@@ -19,8 +19,8 @@ import type { XMonitor } from "./x-monitor-view";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
-type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; guildId?: string; canEdit: boolean; scope: string; destinations: any[]; rules: any[]; refresh: () => Promise<void>; refreshDestination?: (id: string) => Promise<void>; onOpenWorkflow?: (id: string) => void; externalError?: string; active?: boolean };
-type DestinationOrigin = { kind: "normal"; monitor: any } | { kind: "x"; onCreated?: (id: string) => void };
+type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; personalSetupApi?: (path: string, method?: string, body?: any) => Promise<any>; guildId?: string; canEdit: boolean; scope: string; destinations: any[]; rules: any[]; refresh: () => Promise<void>; refreshDestination?: (id: string) => Promise<void>; onOpenWorkflow?: (id: string) => void; externalError?: string; active?: boolean };
+type DestinationOrigin = { kind: "normal"; monitor: any; onCreated?: (id: string) => void } | { kind: "x"; onCreated?: (id: string) => void };
 type NormalKind = "auto" | "price";
 type UnifiedXRow = { key: string; item: XMonitor; node: ReactNode; filterState: "active" | "attention" | "paused"; searchText: string };
 const newMonitor = (kind: string) => ({ kind, name: "", providerId: kind === "auto" ? "youtube" : "amazon", source: "", locale: "ja", destinationId: "", enabled: true, mode: "change", maxPriceAmount: "", minDiscountPercent: "", workflowId: "" });
@@ -32,14 +32,13 @@ function receiveSummary(row: any) {
   return [row.maxPriceAmount != null && `価格が${row.maxPriceAmount}以下`, row.minDiscountPercent != null && `割引率が${row.minDiscountPercent}%以上`].filter(Boolean).join(" または ");
 }
 
-export function MonitorManager({ api, guildId, canEdit, scope, destinations: suppliedDestinations, rules, refresh, refreshDestination, onOpenWorkflow, externalError, active = true }: Props) {
+export function MonitorManager({ api, personalSetupApi, guildId, canEdit, scope, destinations: suppliedDestinations, rules, refresh, refreshDestination, onOpenWorkflow, externalError, active = true }: Props) {
   const [deletedDestinations, setDeletedDestinations] = useState<string[]>([]);
   const destinations = suppliedDestinations.filter(row => !deletedDestinations.includes(row.id));
   const [filterKind, setFilterKind] = useState("all");
   const [addOpen, setAddOpen] = useState(false);
-  const [destinationsOpen, setDestinationsOpen] = useState(false);
   const destinationsPanel = useRef<HTMLDetailsElement>(null);
-  const [xRegistrationRequest, setXRegistrationRequest] = useState<{ id: number; accountHandle?: string; name?: string; destinationId?: string }>();
+  const [xRegistrationRequest, setXRegistrationRequest] = useState<{ id: number; accountHandle?: string; name?: string; destinationId?: string; workflowId?: string }>();
   const registrationSerial = useRef(0);
   const [kind, setKind] = useState("auto"), [items, setItems] = useState<any[]>([]), [cursors, setCursors] = useState<Record<NormalKind, string | null>>({ auto: null, price: null });
   const [catalog, setCatalog] = useState<any>(null), [monitor, setMonitor] = useState<any>(null), [dest, setDest] = useState<any>(null);
@@ -103,10 +102,11 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
     monitorOriginal.current = null; setMonitorConflict(false);
     setMonitorOpen(true);
   }
-  function beginDestination(onCreated?: (id: string) => void) {
-    destinationOrigin.current = onCreated ? { kind: "x", onCreated } : { kind: "normal", monitor };
+  function beginDestination(onCreated?: (id: string) => void, originKind: "normal" | "x" = "normal") {
+    destinationOrigin.current = originKind === "x" ? { kind: "x", onCreated } : { kind: "normal", monitor, onCreated };
     setError(""); setDestOpen(true);
-    if (!dest) setDest({ name: "", kind: "dm", scope: "private", guildId: guildId || "", webhookUrl: "", channelId: "", enabled: true });
+    const destinationScope = originKind === "normal" && monitor?.scope === "guild" && guildId && canEdit ? "guild" : "private";
+    if (!dest) setDest({ name: "", kind: destinationScope === "guild" ? "channel" : "dm", scope: destinationScope, guildId: guildId || "", webhookUrl: "", channelId: "", enabled: true });
   }
   function openWorkflow(id: string) { setMonitorOpen(false); onOpenWorkflow?.(id); }
   function cancelDestination() {
@@ -124,8 +124,8 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
         const path = `destinations${dest.id ? `/${dest.id}` : ""}${destinationGuild && destinationGuild !== guildId ? `?guildId=${encodeURIComponent(destinationGuild)}` : ""}`;
         const saved = await api(path, dest.id ? "PATCH" : "POST", { ...dest, expectedRevision: dest.revision });
         if (!dest.id && mounted.current && workspaceActiveRef.current && origin && destinationOrigin.current === origin) {
-          if (origin.kind === "x") origin.onCreated?.(saved.id);
-          else setMonitor((current: any) => current && current === origin.monitor ? { ...current, destinationId: saved.id } : current);
+          if (origin.onCreated) origin.onCreated(saved.id);
+          else if (origin.kind === "normal") setMonitor((current: any) => current && current === origin.monitor ? { ...current, destinationId: saved.id } : current);
         }
         // Clear only after a successful write. A subsequent refresh failure
         // must not make retry create another destination or webhook.
@@ -366,7 +366,12 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
   }
   return <div className="monitor-workspace notification-center">
     {error && error !== externalError && !monitorOpen && !destOpen && <div role="alert" className="space-y-2 rounded border border-destructive p-3 text-sm text-destructive"><p>{error}</p><button className={button} disabled={busy} onClick={() => void task(async () => { await reloadAll(true); await refresh(); })}>一覧を再読み込み</button></div>}{notice && !monitorOpen && !destOpen && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
-    <div className="notification-center-toolbar"><div className="notification-add-controls"><button className="rounded border bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-40" disabled={busy || monitorOpen || destOpen || addOpen || !active || scope === "guild" && !canEdit} onClick={() => setAddOpen(true)}>通知を追加</button><button type="button" className={`${button} notification-destination-shortcut`} disabled={!active || busy || monitorOpen || destOpen || addOpen} aria-controls="notification-destinations" aria-expanded={destinationsOpen} onClick={openDestinations}>通知先を見る</button></div></div>
+    <div className="notification-center-toolbar"><div className="notification-add-controls"><button className="rounded border bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-40" disabled={busy || monitorOpen || destOpen || addOpen || !active || scope === "guild" && !canEdit} onClick={() => setAddOpen(true)}>通知を追加</button></div></div>
+    <details ref={destinationsPanel} id="notification-destinations" className="notification-destinations"><summary className="font-semibold">通知先を管理</summary>
+      {dest && !destOpen && <div role="status" className="automation-draft-banner"><span>通知先の入力を保持しています</span><button className={button} onClick={() => setDestOpen(true)}>通知先の入力を再開</button><button className={button} onClick={() => { if (confirm("通知先の入力を破棄しますか？")) setDest(null); }}>通知先の入力を破棄</button></div>}
+      <button className={button} disabled={busy} onClick={() => beginDestination()}>通知先を追加</button>
+      <div className="grid gap-2 md:grid-cols-2">{destinations.map(d => <div key={d.id} className="rounded border p-3"><h3 className="text-sm font-medium">{d.name}</h3><div className="automation-meta"><span>{d.kind === "dm" ? "DM" : d.createdByBot ? "チャンネル" : "Webhook"}</span><span>{d.enabled ? "有効" : "停止中"}</span></div><div className="mt-2 flex gap-2"><button className={button} disabled={busy || !editable(d)} onClick={() => { if (dest && !confirm("保持中の通知先の入力を破棄しますか？")) return; setDestOpen(true); setDest({ ...d, webhookUrl: "" }); }}>名前・状態を編集</button><button className={button} disabled={busy || !editable(d)} onClick={() => { if (confirm("この通知先を削除しますか？割り当て済みの通知は送信できなくなります。")) void task(() => removeDestination(d)); }}>削除</button></div></div>)}</div>
+    </details>
     {addOpen && <AutomationDialog title="通知の種類を選択" open={active} onCancel={() => setAddOpen(false)} busy={busy}><div className="notification-add-options"><button type="button" className={button} onClick={() => begin("auto")}><strong>新着通知</strong><span>YouTube、配信、投稿など</span></button><button type="button" className={button} onClick={() => begin("price")}><strong>価格通知</strong><span>商品の値下げや価格の変化</span></button>{scope === "private" ? <button type="button" className={button} onClick={() => begin("x")}><strong>X通知</strong><span>Xアカウントの新しい投稿</span></button> : null}</div></AutomationDialog>}
     <section className="space-y-4" aria-label="通知一覧">
       {monitor && !monitorOpen && <div role="status" className="automation-draft-banner"><span>通知の入力を保持しています</span><button className={button} onClick={() => { setKind(monitor.kind || kind); setFilterKind(monitor.kind || kind); setMonitorOpen(true); }}>通知の入力を再開</button><button className={button} onClick={() => { if (confirm("通知の入力を破棄しますか？")) setMonitor(null); }}>通知の入力を破棄</button></div>}
@@ -375,23 +380,19 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
       {scope === "guild" && !canEdit && <p className="automation-critical-note"><LockKeyhole size={16} aria-hidden="true" />通知の変更にはサーバーの編集権限が必要です。</p>}
       {kind === "auto" && catalog && !autoRegistrationAllowed && <p role="status" className="automation-critical-note"><LockKeyhole size={16} aria-hidden="true" />現在は新着通知を追加・再開できません。利用枠と通知の状態を確認してください。</p>}
       <div className="monitor-toolbar"><label className="monitor-search">通知を検索<input type="search" className={field} placeholder="名前・サービス・URLで検索" value={query} onChange={e => setQuery(e.target.value)} /></label><label>種類<select aria-label="通知の種類" className={field} value={filterKind} onChange={e => setFilterKind(e.target.value)}><option value="all">すべて</option><option value="auto">新着通知</option><option value="price">価格通知</option>{scope === "private" ? <option value="x">X通知</option> : null}</select></label><label>状態<select className={field} value={state} onChange={e => setState(e.target.value)}><option value="all">すべて</option><option value="active">監視中</option><option value="attention">確認・待機が必要</option><option value="paused">停止中</option></select></label></div>
-      <XMonitorManager api={api} active={active && scope === "private"} allowSetup={!guildId} initiallyOpen setupPlacement="compact" hideAddAction unified listFilter={filterKind === "x" ? "x" : filterKind === "all" ? "all" : "other"} suppressReadErrors={Boolean(externalError) || filterKind !== "all" && filterKind !== "x"} renderUnifiedList={(rows, status) => scope === "private" ? renderUnifiedList(rows, status) : renderUnifiedList([], { loading: false, failed: false, reload: status.reload })} registrationRequest={xRegistrationRequest} destinations={destinations} rules={rules} onAddDestination={beginDestination} onOpenWorkflow={onOpenWorkflow} />
+      <XMonitorManager api={api} setupApi={personalSetupApi} active={active && scope === "private"} allowSetup={!guildId || Boolean(personalSetupApi)} initiallyOpen setupPlacement="compact" hideAddAction unified listFilter={filterKind === "x" ? "x" : filterKind === "all" ? "all" : "other"} suppressReadErrors={Boolean(externalError) || filterKind !== "all" && filterKind !== "x"} renderUnifiedList={(rows, status) => scope === "private" ? renderUnifiedList(rows, status) : renderUnifiedList([], { loading: false, failed: false, reload: status.reload })} registrationRequest={xRegistrationRequest} destinations={destinations} rules={rules} onAddDestination={callback => beginDestination(callback, "x")} onOpenWorkflow={onOpenWorkflow} />
       {monitor && <AutomationDialog title={monitor.id ? "通知設定" : "通知を追加"} busy={busy || cadenceBusy} error={error} errorAction={<button type="button" className={button} disabled={busy || cadenceBusy} onClick={() => void task(async () => { await reloadAll(true); await refresh(); })}>一覧を再読み込み</button>} open={monitorOpen} onCancel={() => { setMonitorOpen(false); setError(""); }}>
         {notice && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
-        <MonitorRegistration key={`${monitor.id ? `saved-${monitor.kind || kind}-${monitor.id}` : "new-monitor"}-${monitorEditVersion}`} api={api} monitor={monitor} original={monitorOriginal.current} saveBlocked={monitorConflict} kind={monitor.kind || kind} scope={scope} guildId={guildId} destinations={destinations} rules={rules} catalog={catalog} busy={busy || cadenceBusy} onChange={setMonitor} onSourceChange={changeSource} onSave={saveMonitor} run={task} refresh={refresh} onAddDestination={beginDestination} onOpenWorkflow={onOpenWorkflow ? openWorkflow : undefined}
+        <MonitorRegistration key={`${monitor.id ? `saved-${monitor.kind || kind}-${monitor.id}` : "new-monitor"}-${monitorEditVersion}`} api={api} monitor={monitor} original={monitorOriginal.current} saveBlocked={monitorConflict} kind={monitor.kind || kind} scope={scope} guildId={guildId} canShare={Boolean(guildId && canEdit)} destinations={destinations} rules={rules} catalog={catalog} busy={busy || cadenceBusy} onChange={setMonitor} onSourceChange={changeSource} onSave={saveMonitor} run={task} refresh={refresh} onAddDestination={beginDestination} onOpenWorkflow={onOpenWorkflow ? openWorkflow : undefined}
           timingEditor={monitor.id && (monitor.kind || kind) === "auto" && monitorOriginal.current?.canAllocateCadence === true ? <section className="space-y-2" aria-label="通知タイミングの設定"><h3 className="text-sm font-medium">通知タイミング</h3><MonitorCadenceEditor row={monitorOriginal.current} pool={profileError ? null : profile?.slots ?? null} api={api} disabled={busy || !active || monitorConflict || !editable(monitor)} draftValue={cadenceDrafts.current.get(monitor.id)} onDraft={value => cadenceDrafts.current.set(monitor.id, value)} onReload={() => reloadEditedCadence(monitor.id)} onBusyChange={setCadenceBusy} /></section> : monitor.id ? <p className="text-sm text-muted-foreground">通知タイミング {monitor.intervalMinutes ? `約${monitor.intervalMinutes}分ごとに確認` : "現在のサービス設定を使用"}</p> : null}
-          onXRegistration={scope === "private" ? accountHandle => {
-            setXRegistrationRequest({ id: ++registrationSerial.current, accountHandle, name: monitor.name, destinationId: monitor.destinationId });
+          onXRegistration={scope === "private" ? (accountHandle, transfer) => {
+            setXRegistrationRequest({ id: ++registrationSerial.current, accountHandle, name: transfer ? transfer.name : monitor.name, destinationId: transfer ? transfer.destinationId : monitor.destinationId, workflowId: transfer ? transfer.workflowId : monitor.workflowId });
             setMonitorOpen(false); setError("");
           } : undefined} />
         {monitorConflict && <section className="rounded border p-3 text-sm" aria-label="通知設定の再確認"><p>別の操作で設定が変更されました。変更した入力を保持して、最新の設定と確認できます。</p><button type="button" className={button} disabled={busy} onClick={() => void task(reloadMonitorDraft)}>最新設定を取得して入力を引き継ぐ</button></section>}
       </AutomationDialog>}
     </section>
-    <details ref={destinationsPanel} id="notification-destinations" className="notification-destinations" onToggle={event => setDestinationsOpen(event.currentTarget.open)}><summary className="font-semibold">通知先を管理</summary>
-      {dest && !destOpen && <div role="status" className="automation-draft-banner"><span>通知先の入力を保持しています</span><button className={button} onClick={() => setDestOpen(true)}>通知先の入力を再開</button><button className={button} onClick={() => { if (confirm("通知先の入力を破棄しますか？")) setDest(null); }}>通知先の入力を破棄</button></div>}
-      <button className={button} disabled={busy} onClick={() => beginDestination()}>通知先を追加</button>
-      <div className="grid gap-2 md:grid-cols-2">{destinations.map(d => <div key={d.id} className="rounded border p-3"><h3 className="text-sm font-medium">{d.name}</h3><div className="automation-meta"><span>{d.kind === "dm" ? "DM" : d.createdByBot ? "チャンネル" : "Webhook"}</span><span>{d.enabled ? "有効" : "停止中"}</span></div><div className="mt-2 flex gap-2"><button className={button} disabled={busy || !editable(d)} onClick={() => { if (dest && !confirm("保持中の通知先の入力を破棄しますか？")) return; setDestOpen(true); setDest({ ...d, webhookUrl: "" }); }}>名前・状態を編集</button><button className={button} disabled={busy || !editable(d)} onClick={() => { if (confirm("この通知先を削除しますか？割り当て済みの通知は送信できなくなります。")) void task(() => removeDestination(d)); }}>削除</button></div></div>)}</div>
-    </details>
-      {dest && <AutomationDialog title={dest.id ? "通知先を編集" : "通知先を追加"} busy={busy} error={error} open={destOpen} onCancel={cancelDestination}><DestinationEditor api={api} draft={dest} onChange={setDest} guildId={guildId} scope={scope} canEdit={canEdit} busy={busy} open={destOpen} onSave={() => void saveDestination()} /></AutomationDialog>}
+
+      {dest && <AutomationDialog title={dest.id ? "通知先を編集" : "通知先を追加"} busy={busy} error={error} open={destOpen} onCancel={cancelDestination}><DestinationEditor api={api} draft={dest} onChange={setDest} guildId={guildId} scope={destinationOrigin.current?.kind === "normal" ? destinationOrigin.current.monitor?.scope || scope : "private"} canEdit={canEdit} busy={busy} open={destOpen} onSave={() => void saveDestination()} /></AutomationDialog>}
   </div>;
 }

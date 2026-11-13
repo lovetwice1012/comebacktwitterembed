@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const { xFixtureResponse } = require('./helpers/notification-registration-fixture.cjs');
 
 test('registration validates without saving, fetches channel choices automatically, and retains a created destination on retry', async () => {
     const f = await reactFixture('export { MonitorRegistration } from "./components/automation/monitor-registration";');
@@ -31,8 +32,8 @@ test('registration validates without saving, fetches channel choices automatical
         await f.render(React.createElement(Fixture));
         await f.submit();
         assert.equal(calls.length, 1); assert.equal(calls[0].route, 'monitors/auto/preview');
-        assert(f.container.textContent.includes('URL形式を確認')); assert.equal(saved.length, 0);
-        await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
+        assert(f.container.textContent.includes('通知先と通知内容')); assert(f.container.textContent.includes('https://github.com/octocat')); assert.equal(saved.length, 0);
+        await f.fill(f.field('通知先'), 'new:channel'); await f.settle();
         assert.equal(calls.at(-1).route, 'channels');
         await f.submit(); assert.match(error, /チャンネルを選んで/); assert.equal(saved.length, 0);
         await f.fill(f.field('チャンネル'), 'channel'); await f.submit();
@@ -80,6 +81,9 @@ test('obsolete list responses cannot overwrite a refresh or a newer server searc
         const api = async route => {
             if (route === 'providers') return { autoRegistration: { eligible: true }, auto: [{ id: 'github' }] };
             if (route === 'entitlements') return { plan: { name: '無料プラン', priority: 0, slotLimit: 5, dayLimit: 24, minuteLimit: 5 }, slots: { used: 1, max: 5, available: 4 }, usage: { entries: [] } };
+            if (xFixtureResponse(route) !== undefined) return xFixtureResponse(route);
+            if (route.startsWith('monitors/price?')) return { items: [], nextCursor: null };
+            if (!route.startsWith('monitors/auto?')) return { items: [], nextCursor: null };
             reads++;
             if (reads === 1) return new Promise(resolve => { finishFirst = resolve; });
             if (reads === 3) return new Promise(resolve => { finishRefresh = resolve; });

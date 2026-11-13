@@ -12,14 +12,17 @@ import { youtubeReceiveSummary } from "./youtube-watch-options";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; monitor: any; original?: any; saveBlocked?: boolean; kind: string; scope: string;
-  guildId?: string; destinations: any[]; rules: any[]; catalog: any; busy: boolean;
+  guildId?: string; canShare?: boolean; destinations: any[]; rules: any[]; catalog: any; busy: boolean;
   onChange: (value: any) => void; onSourceChange: (source: string) => void; onSave: (value: any) => Promise<void>;
-  run: (work: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onXRegistration?: (accountHandle: string) => void;
+  run: (work: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onXRegistration?: (accountHandle: string, transfer?: { name?: string; destinationId?: string; workflowId?: string }) => void;
   onAddDestination?: (onCreated: (id: string) => void) => void; onOpenWorkflow?: (id: string) => void; timingEditor?: ReactNode };
 const languages = [["ja", "日本語 / 日本"], ["en-US", "English / US"], ["en-GB", "English / UK"], ["de", "Deutsch"], ["fr", "Français"], ["ko", "한국어"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"]];
 const sourceHints: Record<string, string> = { youtube: "チャンネルURL・@ハンドル・UCから始まるID", github: "プロフィールURL・ユーザー名", twitch: "配信チャンネルURL・チャンネル名", spotify: "アーティストURL・ID", pixiv: "作者のプロフィールURL・ユーザーID", booth: "ショップURL・ショップ名", amazon: "短縮URLは商品ページを開いてコピー", steam: "ゲーム・パッケージ・バンドルのURL" };
+const destinationOptionLabel = (destination: { name: string; kind: string }) => destination.kind === "dm"
+  ? /dm/i.test(destination.name) ? destination.name : `${destination.name}（DM）`
+  : destination.name.includes("チャンネル") ? destination.name : `${destination.name}（チャンネル）`;
 
-export function MonitorRegistration({ api, monitor, original, saveBlocked = false, kind, scope, guildId, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh, onXRegistration, onAddDestination, onOpenWorkflow, timingEditor }: Props) {
+export function MonitorRegistration({ api, monitor, original, saveBlocked = false, kind, scope, guildId, canShare = false, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh, onXRegistration, onAddDestination, onOpenWorkflow, timingEditor }: Props) {
   const [step, setStep] = useState(0), [preview, setPreview] = useState<any>(null);
   const [reviewedRule, setReviewedRule] = useState<any>(null);
   const initial = useRef(monitor.id ? { ...monitor } : null), saving = useRef(false);
@@ -27,13 +30,23 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const editing = Boolean(monitor.id), baseline = original || initial.current;
   const currentScope = monitor.scope || scope;
-  const available = destinations.filter(d => d.enabled && (currentScope !== "guild" || d.scope === "guild"));
+  const available = destinations.filter(d => d.enabled && (currentScope !== "guild" || d.scope === "guild" && d.kind !== "dm"));
+  const existingDm = currentScope === "private" ? available.find(d => d.kind === "dm" && d.scope === "private") : undefined;
   const [destinationMode, setDestinationMode] = useState(monitor.destinationId && (editing || available.some(d => d.id === monitor.destinationId)) ? "existing" : currentScope === "guild" ? "channel" : "dm");
   const [channelId, setChannelId] = useState(""), [channels, setChannels] = useState<any[]>([]), [channelsLoading, setChannelsLoading] = useState(false), [channelError, setChannelError] = useState("");
   const [channelRetry, setChannelRetry] = useState(0);
+  const [scopeNotice, setScopeNotice] = useState("");
   const hintId = useId(), formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
-  useEffect(() => { if (busy) return; if (step === 2) formRef.current?.querySelector<HTMLElement>('[aria-label="保存する通知の確認"]')?.focus(); else formRef.current?.querySelector<HTMLElement>('input,select')?.focus(); }, [step, busy]);
+  const lastStep = useRef(step), pendingStepFocus = useRef(false);
+  useEffect(() => {
+    if (lastStep.current !== step) { lastStep.current = step; pendingStepFocus.current = true; }
+    if (busy || !pendingStepFocus.current) return;
+    const target = step === 2 ? formRef.current?.querySelector<HTMLElement>('[aria-label="保存する通知の確認"]')
+      : step === 1 ? formRef.current?.querySelector<HTMLElement>('[data-registration-step="destination"]')
+      : formRef.current?.querySelector<HTMLElement>('input,select');
+    if (target) { pendingStepFocus.current = false; target.focus(); }
+  }, [step, busy]);
   useEffect(() => {
     if (!(step === 1 || editing && step === 0) || destinationMode !== "channel") return;
     let active = true; setChannelsLoading(true); setChannelError("");
@@ -43,7 +56,7 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
   }, [api, step, destinationMode, channelRetry, editing]);
   const hint = sourceGuidance(monitor.providerId);
   const destinationLabel = destinationMode === "existing" ? available.find(d => d.id === monitor.destinationId)?.name || "未選択"
-    : destinationMode === "dm" ? "自分のDM" : `#${channels.find(c => c.id === channelId)?.name || "未選択"}`;
+    : destinationMode === "dm" ? existingDm?.name || "自分のDM" : `#${channels.find(c => c.id === channelId)?.name || "未選択"}`;
   const channelDelivery = destinationMode === "channel" || destinationMode === "existing" && available.find(d => d.id === monitor.destinationId)?.kind !== "dm";
   const needsReview = !editing || destinationMode !== "existing" || monitorBehaviorChanged(baseline, monitor, kind) || monitorWorkflowChanged(baseline, monitor);
   const reviewed = preview || { source: monitor.source, providerId: monitor.providerId, intervalMinutes: monitor.intervalMinutes };
@@ -54,9 +67,37 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
     catch { setReviewedRule({ id: monitor.workflowId }); }
   }
   function validateDestination() {
+    if (!editing && currentScope === "guild" && (!guildId || !canShare)) throw new Error("共有設定にはサーバーの編集権限が必要です。");
+    if (currentScope === "guild" && destinationMode === "dm") throw new Error("共有する通知にはチャンネルの通知先を選んでください。");
     if (destinationMode === "existing" && !available.some(d => d.id === monitor.destinationId)) throw new Error("有効な通知先を選んでください。");
     if (destinationMode === "channel" && !channels.some(c => c.id === channelId && c.canCreateWebhook)) throw new Error("通知できるチャンネルを選んでください。");
     if (kind === "price" && monitor.mode === "threshold" && monitor.maxPriceAmount === "" && monitor.minDiscountPercent === "") throw new Error("価格か割引率の条件を1つ以上入力してください。");
+  }
+  function changeScope(next: string) {
+    if (editing || !guildId || !canShare || !["private", "guild"].includes(next) || next === currentScope) return;
+    const selectedDestination = destinations.find(d => d.id === monitor.destinationId && d.enabled);
+    const destinationAllowed = Boolean(selectedDestination && (next !== "guild" || selectedDestination.scope === "guild" && selectedDestination.kind !== "dm"));
+    const ruleAllowed = Boolean(monitor.workflowId && rules.some(rule => rule.id === monitor.workflowId && rule.scope === next));
+    const resetDestination = Boolean(monitor.destinationId && !destinationAllowed);
+    const resetRule = Boolean(monitor.workflowId && !ruleAllowed);
+    const sharedDestinations = destinations.filter(d => d.enabled && d.scope === "guild" && d.kind !== "dm");
+    if (next === "guild" && (destinationMode === "dm" || destinationMode === "existing" && sharedDestinations.length === 0)) setDestinationMode(sharedDestinations.length ? "existing" : "channel");
+    setReviewedRule(null);
+    setScopeNotice(resetDestination || resetRule ? "選べる通知先やルールが変わりました。内容を確認してください。" : "");
+    onChange({ ...monitor, scope: next, ...(resetDestination ? { destinationId: "" } : {}), ...(resetRule ? { workflowId: "" } : {}) });
+  }
+  function changeDestination(value: string) {
+    const selected = available.find(destination => destination.id === value);
+    if (selected) {
+      setDestinationMode("existing");
+      onChange({ ...monitor, destinationId: selected.id });
+    } else if (value === "new:dm" && currentScope !== "guild" || value === "new:channel" && Boolean(guildId)) {
+      setDestinationMode(value === "new:dm" ? "dm" : "channel");
+      onChange({ ...monitor, destinationId: "" });
+    } else if (value === "") {
+      setDestinationMode("existing");
+      onChange({ ...monitor, destinationId: "" });
+    }
   }
   async function advance() {
     if (editing && step === 0) {
@@ -72,7 +113,16 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
     if (step === 0) {
       const detected = sourceProvider(monitor.source);
       if (onXRegistration && !monitor.id && (monitor.providerId === "twitter" || detected === "twitter")) {
-        onXRegistration(xRegistrationHandle(monitor.source)); return;
+        const accountHandle = xRegistrationHandle(monitor.source);
+        const privateDestination = destinations.find(destination => destination.id === monitor.destinationId && destination.enabled && destination.scope === "private");
+        const privateRule = rules.find(rule => rule.id === monitor.workflowId && rule.scope === "private");
+        const incompatible = Boolean(monitor.destinationId && !privateDestination || monitor.workflowId && !privateRule
+          || destinationMode === "channel" && channelId);
+        if ((currentScope === "guild" || incompatible) && !confirm(currentScope === "guild"
+          ? "X通知は自分のみ編集できます。X通知で使えない通知先とルールは引き継がれません。続けますか？"
+          : "X通知で使えない通知先とルールは引き継がれません。続けますか？")) return;
+        onXRegistration(accountHandle, { name: monitor.name, destinationId: privateDestination?.id, workflowId: privateRule?.id });
+        return;
       }
       if (detected && !catalog?.[kind]?.some((p: any) => p.id === detected)) throw new Error(`${valueLabels[detected] || detected}は対象外です。対応サービスのURLを入力してください。`);
       if (kind === "auto" && !monitor.id && catalog?.autoRegistration?.eligible !== true) throw new Error("現在は新着通知を追加できません。利用枠と通知の状態を確認してください。");
@@ -84,7 +134,9 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
       await checkRule(); setStep(2); return;
     }
     let current = monitor;
-    if (destinationMode !== "existing") {
+    if (destinationMode === "dm" && existingDm) {
+      current = { ...monitor, destinationId: existingDm.id }; onChange(current); setDestinationMode("existing");
+    } else if (destinationMode !== "existing") {
       const destination = await api("destinations", "POST", { name: destinationMode === "dm" ? "自分のDM" : destinationLabel,
         kind: destinationMode, scope: destinationMode === "dm" ? "private" : currentScope,
         ...(destinationMode === "channel" ? { channelId } : {}), enabled: true });
@@ -97,9 +149,11 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
   }
   const priceCondition = monitor.mode === "change" ? "価格が変わるたびに通知"
     : [monitor.maxPriceAmount !== "" && `価格が${monitor.maxPriceAmount}以下`, monitor.minDiscountPercent !== "" && `割引率が${monitor.minDiscountPercent}%以上`].filter(Boolean).join(" または ");
+  const beginsXSetup = !editing && Boolean(onXRegistration) && (monitor.providerId === "twitter" || sourceProvider(monitor.source) === "twitter");
   return <fieldset disabled={busy} className="space-y-5"><form ref={formRef} id={formId} className="monitor-registration space-y-5" onSubmit={event => { event.preventDefault(); if (saving.current || busy || saveBlocked) return; saving.current = true; void run(advance).finally(() => { saving.current = false; }); }}>
     {!editing && <ol className="monitor-steps" aria-label="登録の手順">{["対象", "通知先", "確認"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>}
     {step === 0 && <>
+      {!editing ? <h3 className="text-base font-semibold">通知する対象</h3> : null}
       <label className="block text-sm">{monitor.providerId === "twitter" ? "Xアカウント名・プロフィールURL" : kind === "auto" ? "対象のURL・ID" : "商品URL"}<input autoFocus required maxLength={2000} aria-describedby={hintId} placeholder={monitor.providerId === "twitter" ? "@ユーザー名 または https://x.com/ユーザー名" : hint.placeholder} className={field} value={monitor.source} onChange={e => { setPreview(null); onSourceChange(e.target.value); }} /></label>
       <p id={hintId} className="text-sm text-muted-foreground">{monitor.providerId === "twitter" ? "@ユーザー名 または プロフィールのURL" : sourceHints[monitor.providerId]}</p>
       <details className="rounded border p-3" open={editing || undefined}><summary>表示名・サービス{kind === "price" ? "・地域" : ""}</summary><div className="mt-3 space-y-3"><label className="block text-sm">サービス<select className={field} value={monitor.providerId} onChange={e => { setPreview(null); onChange({ ...monitor, providerId: e.target.value }); }}>{catalog?.[kind]?.map((p: any) => <option key={p.id} value={p.id}>{valueLabels[p.id] || p.id}</option>)}{onXRegistration && !monitor.id ? <option value="twitter">X</option> : null}</select></label>
@@ -107,14 +161,16 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
       {kind === "price" && monitor.providerId !== "twitter" && <label className="block text-sm">価格の地域<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></details>
     </>}
     {(step === 1 || editing && step === 0) && <>
+      {!editing ? <h3 data-registration-step="destination" tabIndex={-1} className="text-base font-semibold">通知先と通知内容</h3> : null}
       {kind === "auto" && monitor.providerId === "youtube" && <fieldset className="rounded border p-3 space-y-3"><legend className="px-1 text-sm">YouTubeの通知対象</legend>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={monitor.youtubeOptions?.releases !== false} onChange={e => onChange({ ...monitor, youtubeOptions: { releases: e.target.checked, community: monitor.youtubeOptions?.community === true } })} />リリース</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={monitor.youtubeOptions?.community === true} onChange={e => onChange({ ...monitor, youtubeOptions: { releases: monitor.youtubeOptions?.releases !== false, community: e.target.checked } })} />コミュニティ投稿</label>
         <p className="text-sm text-muted-foreground">動画・ショート・配信も通知します。追加した通知対象は、初回確認後の新着から届きます。</p>
       </fieldset>}
-      {!editing && <div className="monitor-confirm"><strong>{valueLabels[preview.providerId] || preview.providerId}</strong><p className="break-all">{preview.source}</p><small>URL形式を確認済み</small></div>}
-      <label className="block text-sm">通知先の種類<select className={field} value={destinationMode} onChange={e => setDestinationMode(e.target.value)}>{available.length > 0 && <option value="existing">登録済みの通知先</option>}{currentScope !== "guild" && <option value="dm">自分のDM</option>}{guildId && <option value="channel">サーバーのチャンネル</option>}</select></label>
-      {destinationMode === "existing" && <label className="block text-sm">通知先<select required className={field} value={monitor.destinationId} onChange={e => onChange({ ...monitor, destinationId: e.target.value })}><option value="">選んでください</option>{monitor.destinationId && !available.some(d => d.id === monitor.destinationId) && <option value={monitor.destinationId} disabled>現在の通知先（利用状態を確認）</option>}{available.map(d => <option key={d.id} value={d.id}>{d.name}{d.kind === "dm" ? "（DM）" : "（チャンネル）"}</option>)}</select></label>}
+      {!editing && <div className="monitor-confirm"><strong>{valueLabels[preview.providerId] || preview.providerId}</strong><p className="break-all">{preview.source}</p></div>}
+      {!editing && guildId && canShare ? <label className="block text-sm">通知を編集できる人<select className={field} value={currentScope} onChange={event => changeScope(event.target.value)}><option value="private">自分のみ</option><option value="guild">サーバーの編集権限を持つ人</option></select></label> : null}
+      {scopeNotice ? <p role="status" className="automation-critical-note">{scopeNotice}</p> : null}
+      <label className="block text-sm">通知先<select required className={field} value={destinationMode === "existing" ? monitor.destinationId || "" : destinationMode === "dm" && existingDm ? existingDm.id : `new:${destinationMode}`} onChange={event => changeDestination(event.target.value)}><option value="">選んでください</option>{destinationMode === "existing" && monitor.destinationId && !available.some(d => d.id === monitor.destinationId) && <option value={monitor.destinationId} disabled>現在の通知先（利用状態を確認）</option>}{available.map(d => <option key={d.id} value={d.id}>{destinationOptionLabel(d)}</option>)}{currentScope !== "guild" && !existingDm ? <option value="new:dm">自分のDM</option> : null}{guildId ? <option value="new:channel">新しいチャンネルを選ぶ</option> : null}</select></label>
       {onAddDestination && <button type="button" className={button} onClick={() => {
         const requested = monitor;
         onAddDestination(id => { if (!mounted.current || currentDraft.current !== requested) return; onChange({ ...requested, destinationId: id }); setDestinationMode("existing"); });
@@ -124,8 +180,8 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
       {kind === "price" && <><label className="block text-sm">通知する条件<select className={field} value={monitor.mode} onChange={e => onChange({ ...monitor, mode: e.target.value })}><option value="change">価格が変わるたび</option><option value="threshold">価格または割引率を指定</option></select></label>{monitor.mode === "threshold" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">指定価格以下（商品表示通貨）<input type="number" min="0" step="0.0001" className={field} value={monitor.maxPriceAmount} onChange={e => onChange({ ...monitor, maxPriceAmount: e.target.value })} /></label><label className="text-sm">割引率以上（%）<input type="number" min="0.01" max="100" step="0.01" className={field} value={monitor.minDiscountPercent} onChange={e => onChange({ ...monitor, minDiscountPercent: e.target.value })} /></label><p className="automation-critical-note sm:col-span-2"><Info size={16} aria-hidden="true" />どちらかの条件を満たすと通知します。</p></div>}</>}
       <details className="rounded border p-3"><summary>詳細ルール{kind === "auto" ? "と言語" : ""}</summary><div className="mt-3 space-y-3"><label className="block text-sm">詳細ルール<select className={field} value={monitor.workflowId} onChange={e => onChange({ ...monitor, workflowId: e.target.value })}><option value="">なし（通常の通知）</option>{monitor.workflowId && !rules.some(rule => rule.id === monitor.workflowId && rule.scope === currentScope) ? <option value={monitor.workflowId} disabled>現在のルール（状態を確認）</option> : null}{rules.filter(r => r.scope === currentScope).map(r => <option key={r.id} value={r.id}>{r.name}{workflowStatus(r.id, [r]) === "active" ? "" : `（${workflowStatusLabel(workflowStatus(r.id, [r]))}）`}</option>)}</select></label>{kind === "auto" && <label className="block text-sm">通知の言語<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></details>
     </>}
-    {step === 2 && <section tabIndex={-1} className="monitor-review" aria-label="保存する通知の確認"><h3>{monitor.name || "通知を追加"}</h3><dl><dt>対象</dt><dd className="break-all">{reviewed.source}</dd><dt>通知先</dt><dd>{destinationLabel}</dd><dt>通知する内容</dt><dd>{kind === "auto" ? monitor.providerId === "youtube" ? youtubeReceiveSummary(monitor.youtubeOptions) : "新しい投稿" : priceCondition}</dd><dt>通知タイミング</dt><dd>{reviewed.intervalMinutes ? `約${reviewed.intervalMinutes}分ごとに確認` : "現在の確認間隔を維持"}</dd><dt>詳細ルール</dt><dd>{(reviewedRule?.id === monitor.workflowId ? reviewedRule.name : null) || rules.find(rule => rule.id === monitor.workflowId)?.name || (monitor.workflowId ? "割り当てたルール" : "通常の通知")}<span className="block">{workflowStatusLabel(ruleState)}</span>{monitor.workflowId && onOpenWorkflow ? <button type="button" className={button} onClick={() => onOpenWorkflow(monitor.workflowId)}>選択したルールを開く</button> : null}</dd><dt>編集できる人</dt><dd>{currentScope === "guild" ? "サーバーの編集権限を持つ人" : "自分のみ"}</dd></dl>{ruleState && ruleState !== "active" ? <p role="status" className="automation-critical-note"><Info size={16} aria-hidden="true" />{ruleState === "unapplied" ? "ルールを適用すると通知を開始できます。" : ruleState === "paused" ? "ルールを再開すると通知を開始できます。" : "配信を始める前に、選択したルールを確認してください。"}</p> : null}{!channelDelivery && kind === "auto" && !monitor.workflowId ? <p className="automation-critical-note"><Mail size={16} aria-hidden="true" />DMは投稿タイトルとURLで通知します。</p> : null}{channelDelivery && <p className="automation-critical-note automation-critical-note-warning"><Users size={16} aria-hidden="true" />通知はチャンネルを見られる人に届きます。</p>}{destinationMode === "channel" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />登録時に、Botが選択したチャンネルへ通知用Webhookを作成または再利用します。</p>}{!monitor.id && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{kind === "auto" ? "初回確認より前の投稿は通知しません。" : "初回の価格を基準に通知します。"}</p>}{monitor.id && needsReview && <p className="automation-critical-note automation-critical-note-warning"><Info size={16} aria-hidden="true" />変更前の未送信通知を取り消します。送信開始後は取り消せない場合があります。</p>}</section>}
+    {step === 2 && <section tabIndex={-1} className="monitor-review" aria-label="保存する通知の確認"><h3>{monitor.name || "通知を追加"}</h3><dl><dt>対象</dt><dd className="break-all">{reviewed.source}</dd><dt>通知先</dt><dd>{destinationLabel}</dd><dt>通知する内容</dt><dd>{kind === "auto" ? monitor.providerId === "youtube" ? youtubeReceiveSummary(monitor.youtubeOptions) : "新しい投稿" : priceCondition}</dd><dt>通知タイミング</dt><dd>{reviewed.intervalMinutes ? `約${reviewed.intervalMinutes}分ごとに確認` : "現在の確認間隔を維持"}</dd><dt>詳細ルール</dt><dd>{(reviewedRule?.id === monitor.workflowId ? reviewedRule.name : null) || rules.find(rule => rule.id === monitor.workflowId)?.name || (monitor.workflowId ? "割り当てたルール" : "通常の通知")}{ruleState !== null ? <span className="block">{workflowStatusLabel(ruleState)}</span> : null}{monitor.workflowId && onOpenWorkflow ? <button type="button" className={button} onClick={() => onOpenWorkflow(monitor.workflowId)}>選択したルールを開く</button> : null}</dd><dt>編集できる人</dt><dd>{currentScope === "guild" ? "サーバーの編集権限を持つ人" : "自分のみ"}</dd></dl>{ruleState && ruleState !== "active" ? <p role="status" className="automation-critical-note"><Info size={16} aria-hidden="true" />{ruleState === "unapplied" ? "ルールを適用すると通知を開始できます。" : ruleState === "paused" ? "ルールを再開すると通知を開始できます。" : "配信を始める前に、選択したルールを確認してください。"}</p> : null}{!channelDelivery && kind === "auto" && !monitor.workflowId ? <p className="automation-critical-note"><Mail size={16} aria-hidden="true" />DMは投稿タイトルとURLで通知します。</p> : null}{channelDelivery && <p className="automation-critical-note automation-critical-note-warning"><Users size={16} aria-hidden="true" />通知はチャンネルを見られる人に届きます。</p>}{destinationMode === "channel" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />登録時に、Botが選択したチャンネルへ通知用Webhookを作成または再利用します。</p>}{!monitor.id && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{kind === "auto" ? "初回確認より前の投稿は通知しません。" : "初回の価格を基準に通知します。"}</p>}{monitor.id && needsReview && <p className="automation-critical-note automation-critical-note-warning"><Info size={16} aria-hidden="true" />変更前の未送信通知を取り消します。送信開始後は取り消せない場合があります。</p>}</section>}
   </form>{editing && step === 0 ? timingEditor : null}
-    <div className="monitor-form-actions notification-editor-actions">{step > 0 && <button type="button" className={button} onClick={() => setStep(editing ? 0 : step - 1)}>戻る</button>}<button type="submit" form={formId} className={button + " bg-primary text-primary-foreground hover:bg-primary/90"} disabled={busy || saveBlocked || (step === 1 || editing && step === 0) && destinationMode === "channel" && (channelsLoading || !!channelError)}>{busy ? "処理中…" : editing && step === 0 ? needsReview ? "変更内容を確認" : "変更を保存" : step === 0 ? "対象を確認" : step === 1 ? "通知内容を確認" : editing ? "この内容で変更" : "通知を登録"}</button></div>
+    <div className="monitor-form-actions notification-editor-actions">{step > 0 && <button type="button" className={button} onClick={() => setStep(editing ? 0 : step - 1)}>戻る</button>}<button type="submit" form={formId} className={button + " bg-primary text-primary-foreground hover:bg-primary/90"} disabled={busy || saveBlocked || (step === 1 || editing && step === 0) && destinationMode === "channel" && (channelsLoading || !!channelError)}>{busy ? "処理中…" : editing && step === 0 ? needsReview ? "変更内容を確認" : "変更を保存" : step === 0 ? beginsXSetup ? "Xの設定へ" : "通知先を選ぶ" : step === 1 ? "通知内容を確認" : editing ? "この内容で変更" : "通知を登録"}</button></div>
   </fieldset>;
 }

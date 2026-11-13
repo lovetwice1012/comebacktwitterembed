@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, Bell, Clock3, Layers3, RefreshCw } from "lucide-react";
+import { ArrowRight, Bell, Layers3, RefreshCw } from "lucide-react";
 import { parseXQuota, type XMonitorQuota } from "./x-monitor-view";
 import "./notification-billing.css";
 
@@ -63,13 +63,11 @@ export function NotificationUsageOverview({ api = notificationUsageAPI }: { api?
   const specialAvailable = quota ? Math.max(0, quota.x.specialLimit - quota.x.specialUsed) : null;
   const unavailable = "確認待ち";
   const metric = (value: number | null | undefined, unit = "枠") => value == null ? unavailable : `${value}${unit}`;
-  const xTiming = processing ? !processing.eligible ? "受付資格を確認してください" : !processing.configured ? "管理者の間隔設定待ち"
-    : processing.effectiveMode === "realtime" ? "リアルタイム" : `${processing.intervalMinutes}分ごとにまとめて通知` : unavailable;
   return <section className="notification-usage" aria-label="ご利用中の機能と利用枠" aria-busy={loading}>
-    <div className="notification-section-heading"><div><h2>利用状況</h2><p>登録枠と現在のプラン</p></div>
+    <div className="notification-section-heading"><div><h2>利用状況</h2></div>
       <button type="button" className="notification-text-action" disabled={loading} onClick={() => void load()}><RefreshCw size={15} aria-hidden />利用状況を更新</button></div>
     {loading ? <p role="status" className="notification-inline-status">利用状況を読み込み中…</p> : null}
-    {failed ? <p role="status" className="notification-inline-status">一部の利用状況は確認待ちです。表示できた情報を残しています。「利用状況を更新」から再確認できます。</p> : null}
+    {failed ? <p role="status" className="notification-inline-status">一部の利用状況を確認できません。</p> : null}
     <div className="notification-usage-grid">
       <article className="notification-usage-primary"><div className="notification-card-heading"><Layers3 size={19} aria-hidden /><h3>通知の登録枠</h3></div>
         <p className="notification-usage-value">{used ?? "—"}<span> / {total ?? "—"} 枠使用</span></p>
@@ -81,20 +79,11 @@ export function NotificationUsageOverview({ api = notificationUsageAPI }: { api?
       </article>
       <article className="notification-usage-card"><div className="notification-card-heading"><Bell size={19} aria-hidden /><h3>通知プラン</h3></div>
         <p className="notification-plan-name">{normal?.plan.name ?? unavailable}</p>
-        <p className="notification-card-note">通常通知とX通知に同じプランを適用します。</p>
         {normal ? <p className="notification-card-note">1枠あたり1日{normal.plan.dayLimit}通・1分{normal.plan.minuteLimit}通まで。</p> : null}
-        <a className="notification-inline-link" href="/dashboard/automation">通知を管理する<ArrowRight size={15} aria-hidden /></a>
-      </article>
-      <article className="notification-usage-card"><div className="notification-card-heading"><Clock3 size={19} aria-hidden /><h3>X通知</h3></div>
-        <p className="notification-plan-name">{metric(quota?.x.used, "件登録")}</p>
-        <a className="notification-inline-link" href="/dashboard/automation#x-notifications">X通知の設定を開く<ArrowRight size={15} aria-hidden /></a>
-        <details className="notification-card-note"><summary>個別設定のない既存監視の初期設定</summary><p>{xTiming}</p>
-          {processing?.requestedMode === "realtime" && processing.effectiveMode === "batch" ? <p>リアルタイムの希望は保存済みです。利用できる特典と使用枠は各監視の通知設定で確認できます。</p> : null}
-        </details>
       </article>
     </div>
     <section id="x-capacity" className="notification-x-availability" aria-label="X監視の利用状況"><h3>X監視の利用状況</h3>
-      <dl><div><dt>追加できる監視（1枠利用）</dt><dd>{metric(quota?.x.available, "件")}</dd></div><div><dt>共用無料枠の空き</dt><dd>{quota ? `${quota.pools.free.available} / ${quota.pools.free.limit}枠` : unavailable}</dd></div>
+      <dl><div><dt>登録しているX通知</dt><dd>{metric(quota?.x.used, "件")}</dd></div><div><dt>追加できる監視（1枠利用）</dt><dd>{metric(quota?.x.available, "件")}</dd></div><div><dt>共用無料枠の空き</dt><dd>{quota ? `${quota.pools.free.available} / ${quota.pools.free.limit}枠` : unavailable}</dd></div>
         <div><dt>支援者優先枠の全体空き</dt><dd>{quota ? `${quota.pools.supporter.available} / ${quota.pools.supporter.limit}枠` : unavailable}</dd></div><div><dt>プランの特殊枠の残り</dt><dd>{quota ? `${specialAvailable} / ${quota.x.specialLimit}枠` : unavailable}</dd></div></dl>
     </section>
     {quota?.x.reasonCode === "X_MONITOR_PERSONAL_LIMIT" ? <div className="notification-next-step" role="status"><p>個人の登録枠をすべて使用しています。登録や確認間隔の配分を見直すと、空き枠を確保できます。</p><a href="/dashboard/automation">使用中の通知を確認する<ArrowRight size={16} aria-hidden /></a></div>

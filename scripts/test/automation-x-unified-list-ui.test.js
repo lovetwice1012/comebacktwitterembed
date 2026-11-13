@@ -31,6 +31,13 @@ async function fixture({ failList = false, failSetup = false, delayed = false, c
             if (failList) throw new Error('PRIVATE_TEST_FAILURE');
             return { items: f.items, ...(listQuota === undefined ? {} : { quota: listQuota }) };
         }
+        if (route === 'x-monitors' && method === 'POST') {
+            if (f.rejectRegistration) throw Object.assign(new Error('synthetic rejection'), { code: 'X_MONITOR_RECEIVER_REENROLL_REQUIRED', status: 409 });
+            if (f.blockCreate) await new Promise(resolve => { f.releaseCreate = resolve; });
+            const saved = makeRow({ id: '4', accountHandle: body.accountHandle, name: body.name || body.accountHandle,
+                notificationSettings: body.notificationSettings || {}, subscriptionState: 'unconfigured' });
+            f.items = [...f.items, saved]; return saved;
+        }
         if (route.startsWith('x-monitors/') && method === 'PATCH') {
             if (f.blockMutation) await new Promise(resolve => { f.releaseMutation = resolve; });
             const id = route.split('/')[1], old = f.items.find(item => item.id === id);
@@ -69,7 +76,8 @@ test('unified X rows expose stable kind-prefixed keys, readiness and cards witho
         assert.match(first.querySelector('header').textContent, /X\s+@fixture_user/);
         const details = first.querySelector('[aria-label="X通知の接続と利用状況"]');
         assert(details && details.tagName === 'DETAILS' && !details.open);
-        assert.match(details.textContent, /使用枠.*接続.*通知データの受信.*Discordへの送信.*利用枠/);
+        assert.match(details.textContent, /使用枠.*接続.*通知データの受信.*利用枠/);
+        assert(first.querySelector('.monitor-delivery-activity'));
         assert.equal(first.querySelector('.monitor-facts').textContent.includes('使用枠'), false);
         const stop = [...first.querySelectorAll('button')].find(button => button.textContent === '停止');
         await f.act(async () => stop.click()); await f.settle();
@@ -246,13 +254,206 @@ test('new X registration presents its connection first and labels review and reg
         assert(receiver.compareDocumentPosition(account) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
         assert(account.compareDocumentPosition(destination) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
         assert.match(form.textContent, /使う接続を選択/); assert.equal(receiver.value, '');
-        const review = [...form.querySelectorAll('button')].find(button => button.textContent === '登録内容を確認'); assert(review);
-        assert.equal(review.disabled, true);
+        const initialNext = [...form.querySelectorAll('button')].find(button => button.textContent === '次へ' && !button.closest('[hidden]')); assert(initialNext && initialNext.disabled);
+        await f.fill(receiver, subscriptionId); await f.act(async () => initialNext.click());
+        assert.equal(account.closest('[hidden]'), null); assert(destination.closest('[hidden]'));
+        const accountNext = [...form.querySelectorAll('button')].find(button => button.textContent === '次へ' && !button.closest('[hidden]')); assert(accountNext && accountNext.disabled);
         await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
-        assert.equal(review.disabled, false); await f.submit();
+        assert.equal(accountNext.disabled, false); await f.act(async () => accountNext.click());
+        assert.equal(destination.closest('[hidden]'), null);
+        const review = [...form.querySelectorAll('button')].find(button => button.textContent === '登録内容を確認'); assert(review && !review.disabled); await f.submit();
         assert(form.querySelector('[aria-label="X監視の変更確認"]'));
         assert([...form.querySelectorAll('button')].some(button => button.textContent === '通知を登録'));
         assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('explicitly postponing connection warns before registering and repeated clicks create once', async () => {
+    const f = await fixture({ initialItems: [] });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]'); assert(form);
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        await f.act(async () => visibleButton('あとで接続する').click());
+        assert.equal(f.field('Xアカウント名').closest('[hidden]'), null);
+        await f.fill(f.field('Xアカウント名'), 'new_account');
+        const next = visibleButton('次へ'); assert(next.disabled);
+        await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
+        await f.act(async () => next.click());
+        await f.submit(); const review = form.querySelector('[aria-label="X監視の変更確認"]'); assert(review);
+        assert.match(review.textContent, /接続するまで通知は届きません/);
+        f.blockCreate = true;
+        const save = [...review.querySelectorAll('button')].find(button => button.textContent === '通知を登録');
+        await f.act(async () => { save.click(); save.click(); }); await f.settle();
+        assert.equal(f.calls.filter(call => call.route === 'x-monitors' && call.method === 'POST').length, 1);
+        assert.equal(typeof f.releaseCreate, 'function');
+        f.blockCreate = false; await f.act(async () => f.releaseCreate()); await f.settle();
+        assert.equal(f.calls.filter(call => call.route === 'x-monitors' && call.method === 'POST').length, 1);
+        assert.match(f.container.textContent, /接続設定から受信情報を選んでください/);
+    } finally { if (f.releaseCreate) f.releaseCreate(); await f.close(); }
+});
+
+test('moving back between X registration steps preserves the chosen connection and draft', async () => {
+    const f = await fixture({ initialItems: [] });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        const receiver = f.field('使用する自分の受信情報'); await f.fill(receiver, subscriptionId);
+        await f.act(async () => visibleButton('次へ').click());
+        await f.fill(f.field('Xアカウント名'), 'kept_target'); await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
+        await f.act(async () => visibleButton('戻る').click()); assert.equal(receiver.value, subscriptionId);
+        await f.act(async () => visibleButton('次へ').click());
+        assert.equal(f.field('Xアカウント名').value, 'kept_target'); assert.equal(form.querySelector('.nx-firefox-ack input').checked, true);
+        await f.act(async () => visibleButton('次へ').click()); await f.act(async () => visibleButton('戻る').click());
+        assert.equal(f.field('Xアカウント名').value, 'kept_target'); assert.equal(receiver.value, subscriptionId);
+        assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('postponed connection still lets a new user prepare the browser before confirming the account', async () => {
+    const f = await fixture({ initialItems: [], setupData: { ...setup, subscriptions: [] } });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        await f.click('あとで接続する'); await f.fill(f.field('Xアカウント名'), 'new_account');
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const ack = form.querySelector('.nx-firefox-ack input'); assert.equal(ack.checked, false);
+        const next = [...form.querySelectorAll('button')].find(button => button.textContent === '次へ' && !button.closest('[hidden]'));
+        assert(next.disabled); await f.click('設定用ブラウザーを準備');
+        assert(f.container.querySelector('[aria-label="X通知の接続手順"]'));
+        const setupDialog = [...f.container.querySelectorAll('dialog[open]')].find(dialog => dialog.querySelector('h2')?.textContent === 'Xとの接続');
+        const back = [...setupDialog.querySelectorAll('button')].find(button => button.textContent === '戻る');
+        await f.act(async () => back.click()); assert.equal(f.field('Xアカウント名').value, 'new_account');
+        assert.equal(ack.checked, false); assert(next.disabled); assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('choosing a different receiver requires a new account acknowledgement while the same receiver keeps it', async () => {
+    const otherId = 'dd2cb493-a60d-41d6-936f-2ed33d7ea2c7';
+    const f = await fixture({ initialItems: [], setupData: { ...setup, subscriptions: [
+        { ...setup.subscriptions[0], browserKind: 'chrome' },
+        { ...setup.subscriptions[0], id: otherId, browserKind: 'brave' },
+    ] } });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        await f.fill(f.field('使用する自分の受信情報'), subscriptionId); await f.act(async () => visibleButton('次へ').click());
+        await f.fill(f.field('Xアカウント名'), 'new_account'); const ack = form.querySelector('.nx-firefox-ack input');
+        await f.act(async () => ack.click()); assert(ack.checked);
+        await f.click('更新した通知データを登録');
+        let card = f.container.querySelector('[aria-label="受信情報2"]'); assert(card);
+        let choose = [...card.querySelectorAll('button')].find(button => button.textContent.includes('この接続を使う')); assert(choose);
+        await f.act(async () => choose.click()); await f.settle();
+        assert.equal(f.field('使用する自分の受信情報').value, otherId); assert.equal(ack.checked, false);
+        await f.act(async () => ack.click()); await f.click('更新した通知データを登録');
+        card = f.container.querySelector('[aria-label="受信情報2"]'); choose = [...card.querySelectorAll('button')].find(button => button.textContent.includes('この接続を使う'));
+        await f.act(async () => choose.click()); await f.settle();
+        assert.equal(f.field('使用する自分の受信情報').value, otherId); assert.equal(ack.checked, true);
+        assert.equal(f.field('Xアカウント名').value, 'new_account'); assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('new registrations cannot select a receiver that requires reenrollment', async () => {
+    const f = await fixture({ initialItems: [], setupData: { ...setup, subscriptions: [{ ...setup.subscriptions[0], receiverState: 'requires_reenrollment' }] } });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const select = f.field('使用する自分の受信情報'), option = select.querySelector(`option[value="${subscriptionId}"]`);
+        assert(option && option.disabled);
+        // A manipulated client can still change a select; the editor must not proceed.
+        await f.fill(select, subscriptionId);
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const next = [...form.querySelectorAll('button')].find(button => button.textContent === '次へ' && !button.closest('[hidden]'));
+        assert(next.disabled); assert.match(f.container.textContent, /この接続は受信情報を登録し直してください/);
+        await f.click('受信情報を登録し直す'); assert(f.container.querySelector('[aria-label="X通知の受信設定"]'));
+        assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('a receiver becoming ineligible during a new registration blocks review and offers reenrollment', async () => {
+    const mutableSetup = structuredClone(setup), f = await fixture({ initialItems: [], setupData: mutableSetup });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        await f.fill(f.field('使用する自分の受信情報'), subscriptionId); await f.act(async () => visibleButton('次へ').click());
+        await f.fill(f.field('Xアカウント名'), 'new_account'); await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
+        assert.equal(visibleButton('次へ').disabled, false);
+        mutableSetup.subscriptions[0].receiverState = 'requires_reenrollment';
+        await f.act(async () => f.latestStatus.reload()); await f.settle();
+        assert.equal(visibleButton('次へ').disabled, true);
+        assert.match(f.container.textContent, /この接続は受信情報を登録し直してください/);
+        await f.click('受信情報を登録し直す'); assert(f.container.querySelector('[aria-label="X通知の受信設定"]'));
+        assert.equal(f.field('Xアカウント名').value, 'new_account'); assert.equal(f.calls.filter(call => call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('a receiver that becomes ineligible after review cannot be registered', async () => {
+    const mutableSetup = structuredClone(setup), f = await fixture({ initialItems: [], setupData: mutableSetup });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        await f.fill(f.field('使用する自分の受信情報'), subscriptionId); await f.act(async () => visibleButton('次へ').click());
+        await f.fill(f.field('Xアカウント名'), 'new_account'); await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
+        await f.act(async () => visibleButton('次へ').click()); await f.submit();
+        const review = form.querySelector('[aria-label="X監視の変更確認"]'); assert(review);
+        const save = [...review.querySelectorAll('button')].find(button => button.textContent === '通知を登録'); assert.equal(save.disabled, false);
+        mutableSetup.subscriptions[0].receiverState = 'requires_reenrollment';
+        await f.act(async () => f.latestStatus.reload()); await f.settle();
+        assert.equal(save.disabled, true); await f.act(async () => save.click());
+        assert.equal(f.calls.filter(call => call.route === 'x-monitors' && call.method === 'POST').length, 0);
+        assert.match(f.container.textContent, /受信情報を登録し直してください/);
+    } finally { await f.close(); }
+});
+
+test('a server-side reenrollment rejection preserves input, blocks repeat writes and offers the setup flow', async () => {
+    const f = await fixture({ initialItems: [] });
+    try {
+        await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
+        const form = f.container.querySelector('form[aria-label="X監視の登録設定"]');
+        const visibleButton = text => [...form.querySelectorAll('button')].find(button => button.textContent === text && !button.closest('[hidden]'));
+        await f.fill(f.field('使用する自分の受信情報'), subscriptionId); await f.act(async () => visibleButton('次へ').click());
+        await f.fill(f.field('Xアカウント名'), 'new_account'); await f.act(async () => form.querySelector('.nx-firefox-ack input').click());
+        await f.act(async () => visibleButton('次へ').click()); await f.submit();
+        const save = [...form.querySelectorAll('button')].find(button => button.textContent === '通知を登録'); assert(save);
+        f.rejectRegistration = true; await f.act(async () => save.click()); await f.settle();
+        assert.equal(f.calls.filter(call => call.route === 'x-monitors' && call.method === 'POST').length, 1);
+        assert.equal(f.field('Xアカウント名').value, 'new_account');
+        assert.match(f.container.textContent, /この接続の受信情報を登録し直してください/);
+        const review = visibleButton('登録内容を確認'); assert(review && review.disabled); await f.act(async () => review.click());
+        assert.equal(f.calls.filter(call => call.route === 'x-monitors' && call.method === 'POST').length, 1);
+        await f.click('受信情報を登録し直す'); assert(f.container.querySelector('[aria-label="X通知の受信設定"]'));
+    } finally { await f.close(); }
+});
+
+test('editing an existing monitor cannot switch to a different receiver requiring reenrollment', async () => {
+    const otherId = 'dd2cb493-a60d-41d6-936f-2ed33d7ea2c7';
+    const row = makeRow({ id: '1', name: '既存の監視' });
+    const f = await fixture({ initialItems: [row], setupData: { ...setup, subscriptions: [setup.subscriptions[0], { ...setup.subscriptions[0], id: otherId, receiverState: 'requires_reenrollment' }] } });
+    try {
+        await f.settle(); const card = f.container.querySelector('[aria-label="既存の監視のX監視"]');
+        await f.act(async () => [...card.querySelectorAll('button')].find(button => button.textContent === '設定を変更').click());
+        const select = f.field('使用する自分の受信情報'); assert(select.querySelector(`option[value="${otherId}"]`).disabled);
+        await f.fill(select, otherId); await f.submit();
+        assert.equal(f.calls.filter(call => call.method === 'PATCH').length, 0);
+        assert.match(f.container.textContent, /受信情報を登録し直してください/);
+    } finally { await f.close(); }
+});
+
+test('an existing monitor can edit its name while retaining the same ineligible receiver', async () => {
+    const row = makeRow({ id: '1', name: '既存の監視' });
+    const f = await fixture({ initialItems: [row], setupData: { ...setup, subscriptions: [{ ...setup.subscriptions[0], receiverState: 'requires_reenrollment' }] } });
+    try {
+        await f.settle(); const card = f.container.querySelector('[aria-label="既存の監視のX監視"]'); assert(card);
+        const edit = [...card.querySelectorAll('button')].find(button => button.textContent === '設定を変更'); await f.act(async () => edit.click());
+        const select = f.field('使用する自分の受信情報'); assert.equal(select.value, subscriptionId);
+        assert.equal(select.querySelector(`option[value="${subscriptionId}"]`).disabled, false);
+        assert.match(f.container.textContent, /この接続は受信情報を登録し直してください/);
+        await f.fill(f.field('監視の表示名'), '名前だけ変更'); await f.submit();
+        const writes = f.calls.filter(call => call.method === 'PATCH'); assert.equal(writes.length, 1);
+        assert.equal(writes[0].body.expectedRevision, 1); assert.equal(writes[0].body.name, '名前だけ変更');
+        assert.equal(Object.hasOwn(writes[0].body, 'notificationSettings'), false);
     } finally { await f.close(); }
 });
 
@@ -279,6 +480,6 @@ test('a disabled receiver selector does not receive focus when X registration is
         await f.settle(); f.registrationRequest = { id: 1 }; await f.renderManager(); await f.settle();
         assert.equal(f.field('使用する自分の受信情報').disabled, true);
         assert.equal(f.dom.window.document.activeElement.textContent, 'PCの通知データを登録');
-        assert([...f.container.querySelectorAll('button')].find(button => button.textContent === '登録内容を確認').disabled);
+        assert([...f.container.querySelectorAll('button')].find(button => button.textContent === '次へ' && !button.closest('[hidden]')).disabled);
     } finally { await f.close(); }
 });

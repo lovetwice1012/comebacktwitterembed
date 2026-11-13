@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
-const { openNotification } = require('./helpers/notification-registration-fixture.cjs');
+const { continueNotificationSource, openNotification } = require('./helpers/notification-registration-fixture.cjs');
 
 const tick = f => f.act(async () => new Promise(resolve => setTimeout(resolve, 20)));
 const field = (f, name) => [...f.container.querySelectorAll('form.monitor-registration label')].find(label => label.firstChild?.textContent.trim() === name)?.querySelector('input,select');
@@ -123,7 +123,7 @@ test('creating with a failed optional rule keeps the new monitor ID and retries 
     const f = await fixture({ respond: route => { if (route === 'workflows/rule-b/attach' && ++attempts === 1) throw new Error('fixture attachment failure'); } });
     try {
         await openNotification(f, 'auto'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user');
-        await f.fill(field(f, '名前（省略可）'), '新しい通知'); await f.click('対象を確認');
+        await f.fill(field(f, '名前（省略可）'), '新しい通知'); await continueNotificationSource(f);
         await f.fill(field(f, '詳細ルール'), 'rule-b'); await f.click('通知内容を確認'); await f.click('通知を登録');
         assert.equal(f.current.id, '303'); assert.match(f.container.querySelector('dialog[open]').textContent, /通知は保存済みです/);
         assert.equal(field(f, '対象のURL・ID').value, 'https://github.com/new-user');
@@ -140,12 +140,12 @@ test('a new-registration duplicate response keeps the editable draft instead of 
         if (route === 'monitors/auto' && method === 'POST' && rejectDuplicate) { rejectDuplicate = false; throw Object.assign(new Error('同じ対象の通知が登録済みです。'), { code: 'MONITOR_EXISTS', status: 409 }); }
     } });
     try {
-        await openNotification(f, 'auto'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user'); await f.click('対象を確認');
+        await openNotification(f, 'auto'); await f.fill(field(f, '対象のURL・ID'), 'https://github.com/new-user'); await continueNotificationSource(f);
         await f.click('通知内容を確認'); await f.click('通知を登録');
         assert.equal(f.container.querySelector('[aria-label="通知設定の再確認"]'), null);
         assert.match(f.container.querySelector('dialog[open]').textContent, /登録済みです/);
         await f.click('戻る'); await f.click('戻る'); assert.equal(field(f, '対象のURL・ID').value, 'https://github.com/new-user');
-        await f.fill(field(f, '対象のURL・ID'), 'https://github.com/other-user'); await f.click('対象を確認'); await f.click('通知内容を確認'); await f.click('通知を登録');
+        await f.fill(field(f, '対象のURL・ID'), 'https://github.com/other-user'); await continueNotificationSource(f); await f.click('通知内容を確認'); await f.click('通知を登録');
         assert.equal(f.current.source, 'https://github.com/other-user'); assert.equal(f.container.querySelector('dialog[open]'), null);
     } finally { await f.close(); }
 });
@@ -281,7 +281,7 @@ test('S24-2 a committed resume updates the displayed state and retry revision be
 
 
 for (const mode of ['dm', 'channel']) test(`N2 a retained ${mode} confirmation cannot leak into another monitor and same-monitor resume keeps it`, async () => {
-    const rows = [row('auto', { id: 'A', name: 'Monitor A', destinationId: 'dm-one' }), row('auto', { id: 'B', name: 'Monitor B', destinationId: 'channel-two', source: 'https://github.com/torvalds' })];
+    const rows = [row('auto', { id: 'A', name: 'Monitor A', destinationId: mode === 'dm' ? 'channel-two' : 'dm-one' }), row('auto', { id: 'B', name: 'Monitor B', destinationId: 'channel-two', source: 'https://github.com/torvalds' })];
     const f = await fixture({ respond: (route, method, _body, state) => {
         if (route.startsWith('monitors/auto?') && method === 'GET') return { items: rows, nextCursor: null };
         if (route === 'destinations' && method === 'POST') assert.fail('No destination should be implicitly created for monitor B');
@@ -289,12 +289,12 @@ for (const mode of ['dm', 'channel']) test(`N2 a retained ${mode} confirmation c
     } });
     try {
         const openCard = async index => f.act(async () => [...f.container.querySelectorAll('.monitor-card')][index].querySelector('.monitor-card-actions button').click());
-        await openCard(0); await f.fill(field(f, '通知先の種類'), mode);
+        await openCard(0); await f.fill(field(f, '通知先'), mode === 'dm' ? 'dm-one' : 'new:channel');
         if (mode === 'channel') { await tick(f); await f.fill(field(f, 'チャンネル'), 'owned-channel'); }
         await f.click('変更内容を確認'); assert(f.container.querySelector('[aria-label="保存する通知の確認"]').textContent.includes('Monitor A'));
         await f.click('キャンセル'); await f.click('通知の入力を再開'); assert(f.container.querySelector('[aria-label="保存する通知の確認"]'));
         await f.click('キャンセル'); await openCard(1); assert.equal(f.container.querySelector('[aria-label="保存する通知の確認"]'), null);
-        assert.equal(field(f, '対象のURL・ID').value, rows[1].source); assert.equal(field(f, '通知先の種類').value, 'existing'); assert.equal(field(f, '通知先').value, 'channel-two');
+        assert.equal(field(f, '対象のURL・ID').value, rows[1].source); assert.equal(field(f, '通知先').value, 'channel-two');
         await f.fill(field(f, '名前（省略可）'), 'B rename'); await f.click('変更を保存');
         assert.deepEqual(f.writes().at(-1).body, { name: 'B rename', expectedRevision: 1 });
     } finally { await f.close(); }

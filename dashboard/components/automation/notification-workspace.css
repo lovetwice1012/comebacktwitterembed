@@ -6,6 +6,21 @@
   gap: 24px;
 }
 
+/* Keep controls and secondary copy readable across the personal and server views. */
+:is(.notification-workspace, .automation-app) .text-xs {
+  font-size: .875rem;
+  line-height: 1.5;
+}
+
+:is(.notification-workspace, .automation-app) .text-sm {
+  font-size: .9375rem;
+  line-height: 1.55;
+}
+
+:is(.notification-workspace, .automation-app) :is(input, select, textarea) {
+  font-size: 1rem;
+}
+
 .notification-page-heading {
   display: grid;
   gap: 9px;
@@ -14,7 +29,7 @@
 
 .notification-page-heading > p {
   color: hsl(var(--primary));
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: .04em;
 }
@@ -89,7 +104,7 @@
 }
 
 .notification-section-navigation small {
-  font-size: 11px;
+  font-size: 14px;
   color: hsl(var(--muted-foreground));
   line-height: 1.5;
 }
@@ -114,7 +129,7 @@
 .notification-workspace .automation-navigation > button {
   border-radius: 8px;
   padding: 9px 13px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .notification-workspace .automation-navigation > button[aria-current="page"] {
@@ -126,7 +141,7 @@
 .notification-workspace .automation-more-navigation > summary {
   border-radius: 8px;
   padding: 9px 13px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .notification-workspace .automation-more-navigation[data-active="true"] > summary {
@@ -168,7 +183,7 @@
 
 .notification-add-options > button > span {
   color: hsl(var(--muted-foreground));
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -181,7 +196,7 @@
   display: grid;
   gap: 5px;
   min-width: 150px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -213,7 +228,7 @@
 .notification-type-navigation button {
   padding: 8px 15px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
@@ -242,7 +257,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
   background: hsl(var(--card));
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .notification-capacity-summary strong {
@@ -252,7 +267,7 @@
 .notification-capacity-summary a {
   margin-left: auto;
   color: hsl(var(--primary));
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .notification-destinations {
@@ -372,12 +387,12 @@
     flex-direction: column;
     justify-content: center;
     text-align: center;
-    padding: 10px 12px;
+    padding: 10px 8px;
     gap: 5px;
   }
 
   .notification-section-navigation strong {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .notification-section-navigation small {

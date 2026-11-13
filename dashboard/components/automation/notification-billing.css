@@ -16,7 +16,7 @@
 .notification-billing-navigation a {
   min-height: 42px;
   padding: 9px 0;
-  font-size: 13px;
+  font-size: 14px;
   color: hsl(var(--muted-foreground));
   border-bottom: 2px solid transparent;
 }
@@ -29,12 +29,12 @@
 
 .notification-support-conditions {
   padding: 0 0 4px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.85;
 }
 
 .notification-support-conditions > p {
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 10px;
   color: hsl(var(--muted-foreground));
 }
@@ -45,7 +45,7 @@
   padding: 15px 18px;
   border-left: 2px solid hsl(var(--border));
   background: hsl(var(--muted) / 20%);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.85;
   color: hsl(var(--muted-foreground));
 }
@@ -88,7 +88,7 @@
 
 .notification-eyebrow {
   color: hsl(var(--muted-foreground));
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: .13em;
 }
@@ -100,7 +100,7 @@
   gap: 7px;
   min-height: 40px;
   padding: 6px 0;
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
   color: hsl(var(--muted-foreground));
 }
@@ -116,7 +116,7 @@
 
 .notification-usage-grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -136,7 +136,7 @@
 .notification-usage-details {
   margin-top: 16px;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
 }
 
@@ -161,7 +161,7 @@
 }
 
 .notification-card-heading h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -174,7 +174,7 @@
 }
 
 .notification-usage-value span {
-  font-size: 13px;
+  font-size: 14px;
   color: hsl(var(--muted-foreground));
   font-weight: 400;
   letter-spacing: 0;
@@ -203,7 +203,7 @@
 }
 
 .notification-usage-facts dt {
-  font-size: 11px;
+  font-size: 14px;
   color: hsl(var(--muted-foreground));
 }
 
@@ -215,7 +215,7 @@
 
 .notification-card-note {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
@@ -235,7 +235,7 @@
   gap: 8px;
   margin-top: 17px;
   color: hsl(var(--primary));
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 550;
 }
 
@@ -250,14 +250,14 @@
 }
 
 .notification-x-availability h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .notification-x-availability p {
   margin-top: 5px;
   max-width: 35ch;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
   color: hsl(var(--muted-foreground));
 }
@@ -270,7 +270,7 @@
 
 .notification-x-availability dt {
   color: hsl(var(--muted-foreground));
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .notification-x-availability dd {
@@ -288,7 +288,7 @@
   border-radius: 12px;
   padding: 15px 18px;
   background: hsl(var(--primary) / 3.5%);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -305,7 +305,7 @@
   border-left: 2px solid hsl(var(--border));
   padding: 2px 0 2px 12px;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
 }
 
@@ -341,7 +341,7 @@
 
 .notification-billing-intro p {
   margin-top: 8px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.85;
   color: hsl(var(--muted-foreground));
 }
@@ -351,7 +351,7 @@
   padding: 7px 11px;
   border-radius: 8px;
   background: hsl(var(--muted));
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 550;
 }
 
@@ -361,7 +361,7 @@
   align-items: center;
   gap: 12px;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .notification-checkout-progress {
@@ -377,7 +377,7 @@
   align-items: center;
   gap: 8px;
   color: hsl(var(--muted-foreground));
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -390,7 +390,7 @@
   border-radius: 50%;
   border: 1px solid hsl(var(--border));
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .notification-checkout-progress li[aria-current="step"] {
@@ -417,13 +417,13 @@
 }
 
 .notification-billing-context h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .notification-billing-context p {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
   color: hsl(var(--muted-foreground));
 }
@@ -483,13 +483,13 @@
 }
 
 .notification-billing-legacy {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
 }
 
 .notification-billing-legacy summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: hsl(var(--muted-foreground));
 }
@@ -499,12 +499,14 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .notification-usage-primary {
-    grid-row: span 2;
-  }
 }
 
 @media (width <= 720px) {
+  .notification-checkout-progress li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
   .notification-plan-selection > form {
     flex-direction: column;
     align-items: stretch;

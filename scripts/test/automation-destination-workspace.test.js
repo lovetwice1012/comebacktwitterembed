@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
-const { openNotification, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
+const { openNotification, openXDestinationDraft, xDestinationSelect } = require('./helpers/notification-registration-fixture.cjs');
 const { catalog } = require('../../src/automation/catalog');
 const USER = '222222222222222222';
 const destination = index => ({ id: `destination-${index}`, name: `通知先${index}`, kind: 'dm', scope: 'private', enabled: true, revision: 1 });
@@ -41,7 +41,7 @@ async function fixture({ list = () => ({ items: [], nextCursor: null }), failInd
     return f;
 }
 async function openXDraft(f) {
-    await openNotification(f, 'x'); await f.fill(f.field('Xアカウント名'), 'workspace_x');
+    await openXDestinationDraft(f, 'workspace_x');
 }
 const choices = f => xDestinationSelect(f);
 async function saveXDestination(f) {
@@ -77,7 +77,7 @@ test('an individual workspace refresh failure keeps the destination saved and of
     try {
         await openXDraft(f); await saveXDestination(f); assert.equal(f.destinationWrites().length, 1);
         assert.equal(f.container.querySelector('form[aria-label="通知先の登録設定"]'), null); assert.match(f.container.textContent, /通知先は保存済みです/);
-        await f.settle(); await f.click('キャンセル'); await f.click('更新'); await f.settle();
+        await f.settle(); await f.click('あとで続ける'); await f.click('更新'); await f.settle();
         await f.click('編集中の設定を開く'); assert.equal(f.destinationWrites().length, 1); assert.equal(f.field('Xアカウント名').value, 'workspace_x');
     } finally { await f.close(); }
 });

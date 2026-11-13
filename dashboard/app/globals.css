@@ -98,12 +98,12 @@ html[data-dashboard-ui="preview"] .dashboard-brand { display: flex; align-items:
 html[data-dashboard-ui="preview"] .dashboard-brand-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); flex-shrink: 0; }
 html[data-dashboard-ui="preview"] .dashboard-brand > span:last-child { display: grid; min-width: 0; }
 html[data-dashboard-ui="preview"] .dashboard-brand strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
-html[data-dashboard-ui="preview"] .dashboard-brand small { font-size: 11px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-brand small { font-size: 14px; color: hsl(var(--muted-foreground)); }
 html[data-dashboard-ui="preview"] .dashboard-header-context { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
-html[data-dashboard-ui="preview"] .dashboard-scope-label, html[data-dashboard-ui="preview"] .dashboard-readonly { display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--muted-foreground)); font-size: 12px; white-space: nowrap; }
+html[data-dashboard-ui="preview"] .dashboard-scope-label, html[data-dashboard-ui="preview"] .dashboard-readonly { display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--muted-foreground)); font-size: 14px; white-space: nowrap; }
 html[data-dashboard-ui="preview"] .dashboard-readonly { padding: 6px 8px; border-radius: 6px; background: hsl(var(--muted)); }
 html[data-dashboard-ui="preview"] .dashboard-account { position: relative; flex-shrink: 0; }
-html[data-dashboard-ui="preview"] .dashboard-account summary { display: flex; align-items: center; gap: 7px; min-height: 44px; cursor: pointer; padding: 8px 10px; border-radius: 8px; list-style: none; font-size: 12px; }
+html[data-dashboard-ui="preview"] .dashboard-account summary { display: flex; align-items: center; gap: 7px; min-height: 44px; cursor: pointer; padding: 8px 10px; border-radius: 8px; list-style: none; font-size: 14px; }
 html[data-dashboard-ui="preview"] .dashboard-account summary::-webkit-details-marker, html[data-dashboard-ui="preview"] .guild-directory-actions summary::-webkit-details-marker, html[data-dashboard-ui="preview"] .dashboard-navigation-tools summary::-webkit-details-marker { display: none; }
 html[data-dashboard-ui="preview"] .dashboard-account summary:hover { background: hsl(var(--muted)); }
 html[data-dashboard-ui="preview"] .dashboard-account-panel { position: absolute; right: 0; top: calc(100% + 8px); display: grid; gap: 8px; min-width: 200px; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 12px; background: hsl(var(--card)); box-shadow: 0 12px 36px rgb(20 24 36 / .12); }
@@ -111,14 +111,14 @@ html[data-dashboard-ui="preview"] .dashboard-layout { display: grid; grid-templa
 html[data-dashboard-ui="preview"] .dashboard-primary-navigation { position: sticky; top: calc(var(--dashboard-header-height, 76px) + 20px); align-self: start; max-height: calc(100dvh - var(--dashboard-header-height, 76px) - 40px); overflow-y: auto; }
 html[data-dashboard-ui="preview"] .dashboard-navigation-panel { display: grid; gap: 18px; }
 html[data-dashboard-ui="preview"] .dashboard-navigation-group { display: grid; gap: 4px; }
-html[data-dashboard-ui="preview"] .dashboard-navigation-group p { margin: 0 10px 6px; font-size: 11px; font-weight: 600; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-group p { margin: 0 10px 6px; font-size: 14px; font-weight: 600; color: hsl(var(--muted-foreground)); }
 html[data-dashboard-ui="preview"] .dashboard-navigation-server { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-dashboard-ui="preview"] .dashboard-navigation-panel a { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; font-size: 13px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel a { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; font-size: 14px; color: hsl(var(--muted-foreground)); }
 html[data-dashboard-ui="preview"] .dashboard-navigation-panel a svg { flex-shrink: 0; }
 html[data-dashboard-ui="preview"] .dashboard-navigation-panel a:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 html[data-dashboard-ui="preview"] .dashboard-navigation-panel a[aria-current="page"] { color: hsl(var(--primary)); background: hsl(var(--primary) / .09); font-weight: 600; }
 html[data-dashboard-ui="preview"] .dashboard-navigation-tools { border-top: 1px solid hsl(var(--border)); padding-top: 10px; }
-html[data-dashboard-ui="preview"] .dashboard-navigation-tools summary { list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px; cursor: pointer; font-size: 12px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-tools summary { list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px; cursor: pointer; font-size: 14px; color: hsl(var(--muted-foreground)); }
 html[data-dashboard-ui="preview"] .dashboard-navigation-tools[open] summary svg { transform: rotate(180deg); }
 html[data-dashboard-ui="preview"] .dashboard-navigation-tools > div { display: grid; gap: 4px; }
 html[data-dashboard-ui="preview"] .dashboard-mobile-menu { display: none; }
@@ -167,7 +167,7 @@ html[data-dashboard-ui="preview"] .guild-directory-empty p { display: flex; alig
 @media (max-width: 960px) {
   html[data-dashboard-ui="preview"] .dashboard-app-header-inner { padding: 10px 16px; min-height: 68px; gap: 12px; flex-wrap: wrap; }
   html[data-dashboard-ui="preview"] .dashboard-brand { flex: 1; }
-  html[data-dashboard-ui="preview"] .dashboard-brand strong { font-size: 12px; }
+  html[data-dashboard-ui="preview"] .dashboard-brand strong { font-size: 14px; }
   html[data-dashboard-ui="preview"] .dashboard-header-context { order: 3; width: 100%; margin-left: 0; }
   html[data-dashboard-ui="preview"] .dashboard-header-context > div { flex: 1; }
   html[data-dashboard-ui="preview"] .dashboard-header-context button { max-width: none; }
@@ -175,7 +175,7 @@ html[data-dashboard-ui="preview"] .guild-directory-empty p { display: flex; alig
   html[data-dashboard-ui="preview"] .dashboard-account summary span { display: none; }
   html[data-dashboard-ui="preview"] .dashboard-layout { grid-template-columns: minmax(0,1fr); gap: 18px; padding: 16px 16px 36px; }
   html[data-dashboard-ui="preview"] .dashboard-primary-navigation { position: static; max-height: none; overflow: visible; }
-  html[data-dashboard-ui="preview"] .dashboard-mobile-menu { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 9px; background: hsl(var(--card)); font-size: 12px; }
+  html[data-dashboard-ui="preview"] .dashboard-mobile-menu { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 9px; background: hsl(var(--card)); font-size: 14px; }
   html[data-dashboard-ui="preview"] .dashboard-mobile-menu strong { margin-left: auto; min-width: 0; font-weight: 500; color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   html[data-dashboard-ui="preview"] .dashboard-navigation-panel[data-open="false"] { display: none; }
   html[data-dashboard-ui="preview"] .dashboard-navigation-panel { margin-top: 8px; padding: 16px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); }

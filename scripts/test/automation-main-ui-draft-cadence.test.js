@@ -53,13 +53,19 @@ async function scenario({ autoId = '42', priceId = '42', operation = 'delete-pri
         await fixture.click('キャンセル');
         assert.match(fixture.container.textContent, /通知の入力を保持しています/);
 
-        if (operation === 'delete-auto') {
-            await fixture.click('削除');
-        } else {
+        if (operation !== 'delete-auto') {
             await fixture.fill(fixture.container.querySelector('select[aria-label="通知の種類"]'), 'price'); await settle(fixture);
-            if (operation === 'toggle-price') await fixture.click('停止');
-            else await fixture.click('削除');
         }
+        // The destination panel now appears before the cards and also has a
+        // delete button. Exercise the selected notification, not a hidden
+        // destination action with the same label.
+        const wantedName = operation === 'delete-auto' ? 'Auto retained draft' : 'Price target';
+        const wantedCard = [...fixture.container.querySelectorAll('article.monitor-card')].find(node => node.textContent.includes(wantedName));
+        assert(wantedCard, `missing card: ${wantedName}`);
+        const label = operation === 'toggle-price' ? '停止' : '削除';
+        const action = [...wantedCard.querySelectorAll('button')].find(node => node.textContent.trim() === label);
+        assert(action, `missing card action: ${label}`);
+        await fixture.act(async () => { const menu = action.closest('details'); if (menu) menu.open = true; action.click(); });
         await settle(fixture);
 
         const retained = fixture.container.textContent.includes('通知の入力を保持しています');

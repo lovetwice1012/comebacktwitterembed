@@ -18,6 +18,7 @@ const supporterQuote = changes => processingQuote({ realtimeSource: 'supporter',
     additionalSlotsNeeded: 0, poolKind: 'supporter', eligible: true, available: true, reason: null, ...changes });
 async function fixture({ currentQuota = quota(), items = [row()], respond, opened = true, active = true, parent = false, scope = 'private', guildId, compact = false, registrationRequest, hideAddAction = false, search = "", timing = false } = {}) {
     const f = await reactFixture('export { XMonitorManager } from "./components/automation/x-monitor-manager"; export { MonitorManager } from "./components/automation/monitor-manager"; export { parseXQuota,parseXMonitor,xFeedback } from "./components/automation/x-monitor-view";');
+    f.confirmDecision = false; f.confirmCount = 0; f.set('confirm', () => { f.confirmCount++; return f.confirmDecision; });
     if (timing) f.dom.window.sessionStorage.setItem('cbte.pageTiming', '1');
     if (search) f.dom.window.history.replaceState({}, "", `/${search}`);
     f.calls = []; f.items = items; f.quota = currentQuota; f.setup = setup();
@@ -134,7 +135,7 @@ test('a required username keeps invalid and reserved names in the form without c
             assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
             assert.equal(f.field('Xアカウント名').value, value);
         }
-        assert.match(f.form().textContent, /相手の現在の@ユーザー名を入力/);
+        assert.match(f.field('Xアカウント名').closest('label').textContent, /@ユーザー名/);
     } finally { await f.close(); }
 });
 
@@ -283,7 +284,7 @@ test('an existing owner corrects only the handle with an explicit review while n
         await f.inClick(f.target(), '通知設定');
         assert.equal(f.form().textContent.includes('XアカウントID'), false); assert.equal(f.field('Xアカウント名').disabled, false);
         assert.match([...f.target().querySelectorAll('details')].find(item => item.textContent.includes('登録情報の詳細')).textContent, /XアカウントID：18446744073709551615/);
-        assert.match(f.form().textContent, /相手の現在の@ユーザー名を入力/); assert.equal(f.field('Xアカウント名').disabled, false);
+        assert.match(f.field('Xアカウント名').closest('label').textContent, /@ユーザー名/); assert.equal(f.field('Xアカウント名').disabled, false);
         await f.fill(f.field('Xアカウント名'), '@correct_handle'); await f.submitX();
         const review = f.container.querySelector('[aria-label="X監視の変更確認"]');
         assert.match(review.textContent, /Xアカウント @correct_handle/);
@@ -568,8 +569,7 @@ test('monitor stages distinguish a shared connection receipt from this monitor a
         const stages = f.target().querySelector('[aria-label="X通知の状況"]');
         assert.match(stages.textContent, /接続.*サーバー接続を確認済み/);
         assert.match(stages.textContent, /通知データの受信.*最終受信.*接続単位/);
-        assert.match(stages.textContent, /この監視の振り分け.*配信予定・履歴で確認/);
-        assert.match(stages.textContent, /Discordへの送信.*配信予定・履歴で確認/);
+        assert.doesNotMatch(stages.textContent, /この監視の振り分け|Discordへの送信/);
         assert.doesNotMatch(stages.textContent, /送信済み|振り分け済み/);
         assert(f.target().querySelector('.monitor-delivery-activity'));
         assert.equal(f.calls.some(call => call.route.startsWith('jobs?')), false);
@@ -583,7 +583,7 @@ test('new registration exposes connection preparation, the browser notification 
     try {
         await f.click('X監視を追加');
         const steps = f.form().querySelector('[aria-label="X監視の登録手順"]');
-        assert.match(steps.textContent, /接続を準備.*ブラウザーで通知をON.*通知先とタイミング.*確認して登録/);
+        assert.match(steps.textContent, /接続.*アカウント.*通知先とタイミング.*確認して登録/);
         assert(f.form().querySelector('[aria-label="Xの接続準備"]'));
         await f.fill(f.field('Xアカウント名'), '@example');
         assert.match(f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]').textContent, /@example/);
@@ -612,7 +612,7 @@ test('the shared registration request waits for the active X panel, prefills a u
         assert.equal(f.calls.length, 0); assert.equal(f.form(), null); await f.renderManager(true); await f.settle();
         assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(f.dom.window.document.activeElement.textContent, '接続を準備する');
         await f.click('あとで続ける'); await f.renderManager(false); await f.renderManager(true); assert.equal(f.container.querySelector('dialog[open]'), null);
-        f.registrationRequest = { id: 2, accountHandle: 'next_entry' }; await f.renderManager(true); assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(writes(f).length, 0);
+        f.registrationRequest = { id: 2, accountHandle: 'next_entry' }; await f.renderManager(true); assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(f.confirmCount, 1); assert.match(f.container.textContent, /新しい入力は引き継がれていません/); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 
@@ -623,6 +623,7 @@ test('a repeated shared-entry request resumes an existing X draft without replac
         await f.fill(f.field('監視の表示名'), '保持する入力'); await f.fill(f.field('通知先'), 'dm-own'); await f.submitX();
         f.registrationRequest = { id: 2, accountHandle: 'not_applied' }; await f.renderManager(true);
         assert.equal(f.field('Xアカウント名').value, 'original_entry'); assert.equal(f.field('監視の表示名').value, '保持する入力'); assert.equal(f.field('通知先').value, 'dm-own'); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
+        assert.equal(f.confirmCount, 1); assert.match(f.container.textContent, /新しい入力は引き継がれていません/);
         assert.equal(f.dom.window.document.activeElement.textContent, '接続を準備する'); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
@@ -796,7 +797,7 @@ test('a shared registration can hide the duplicate X action and inherit only a f
         assert.equal([...f.container.querySelectorAll('button')].some(item => item.textContent === 'X監視を追加'), false);
         assert.equal(f.field('Xアカウント名').value, 'shared_target'); assert.equal(f.field('監視の表示名').value, '共通入口の名前'); assert.equal(f.field('通知先').value, 'dm-own');
         f.registrationRequest = { id: 2, accountHandle: 'other_target', name: '上書きしない', destinationId: 'different-dm' }; await f.renderManager(true);
-        assert.equal(f.field('Xアカウント名').value, 'shared_target'); assert.equal(f.field('監視の表示名').value, '共通入口の名前'); assert.equal(f.field('通知先').value, 'dm-own'); assert.equal(writes(f).length, 0);
+        assert.equal(f.field('Xアカウント名').value, 'shared_target'); assert.equal(f.field('監視の表示名').value, '共通入口の名前'); assert.equal(f.field('通知先').value, 'dm-own'); assert.equal(f.confirmCount, 1); assert.match(f.container.textContent, /新しい入力は引き継がれていません/); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 
@@ -884,7 +885,7 @@ test('a new X target requires its own browser notification acknowledgement even 
     const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
-        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.doesNotMatch(guide.textContent, /設定用Chrome・Brave/);
+        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザーで通知を許可.*このアカウント.*投稿通知のベルをオン/); assert.doesNotMatch(guide.textContent, /もう一度登録/);
         await f.submitX(false); assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
         await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click()); await f.submitX(false); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
         await f.fill(f.field('Xアカウント名'), 'other_author'); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false); await f.submitX(false); assert.equal(writes(f).length, 0);
@@ -904,15 +905,15 @@ test('switching the receiver requires notification confirmation for the selected
         assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, true);
         await f.fill(f.field('使用する自分の受信情報'), other);
         assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false);
-        assert.match(f.form().textContent, /選択中の受信情報：Chrome/);
-        assert.match(f.form().textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        assert.match(f.field('使用する自分の受信情報').selectedOptions[0].textContent, /Chrome/);
+        assert.match(f.form().textContent, /PCの通知データを登録.*もう一度登録/);
         await f.submitX(false); assert.equal(writes(f).length, 0);
         assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
         await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click());
         await f.fill(f.field('使用する自分の受信情報'), brave);
         assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false);
-        assert.match(f.form().textContent, /選択中の受信情報：Brave/);
-        assert.match(f.form().textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        assert.match(f.field('使用する自分の受信情報').selectedOptions[0].textContent, /Brave/);
+        assert.match(f.form().textContent, /PCの通知データを登録.*もう一度登録/);
         await f.submitX(false); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
@@ -923,8 +924,7 @@ test('monitor registration identifies the browser used by its selected receiver'
         respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ browserKind: 'chrome', receiverState: 'listening' })] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
-        assert.match(f.form().textContent, /選択中の受信情報：Chrome/);
-        assert.match(f.field('使用する自分の受信情報').textContent, /Chrome/);
+        assert.match(f.field('使用する自分の受信情報').selectedOptions[0].textContent, /Chrome/);
     } finally { await f.close(); }
 });
 
@@ -934,7 +934,8 @@ test('closing and resuming inline connection selection retains target, destinati
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'kept_author'); await f.fill(f.field('監視の表示名'), '編集中'); await f.fill(f.field('通知先'), 'dm-own'); await f.act(async () => { f.form().querySelector('input[value="realtime"]').click(); }); await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click());
         await f.click('PCの通知データを登録'); await f.settle(); await f.click('この接続を使う'); await f.settle();
-        assert.equal(f.field('使用する自分の受信情報').value, SUBSCRIPTION_ID); assert.equal(f.field('Xアカウント名').value, 'kept_author'); assert.equal(f.field('監視の表示名').value, '編集中'); assert.equal(f.field('通知先').value, 'dm-own'); assert.equal(f.form().querySelector('input[value="realtime"]').checked, true); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, true); assert.equal(writes(f).length, 0);
+        assert.equal(f.field('使用する自分の受信情報').value, SUBSCRIPTION_ID); assert.equal(f.field('Xアカウント名').value, 'kept_author'); assert.equal(f.field('監視の表示名').value, '編集中'); assert.equal(f.field('通知先').value, 'dm-own'); assert.equal(f.form().querySelector('input[value="realtime"]').checked, true); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false); assert.equal(writes(f).length, 0);
+        await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click());
         await f.click('あとで続ける'); assert.equal(f.container.querySelector('dialog[open]'), null); await f.click('編集中の設定を開く'); assert.equal(f.field('Xアカウント名').value, 'kept_author'); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, true); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
