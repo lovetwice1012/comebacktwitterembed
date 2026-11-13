@@ -592,11 +592,17 @@ function serializeSpec(spec: BotSettingSpec): SettingSpec | null {
   if (!key || !spec.kind) return null;
   const columns = getProviderSettingColumns();
   const override = SETTING_TEXT_OVERRIDES[key] || generatedSettingTextOverride(key);
+  const description = override?.description || spec.description;
+  // Image-grid settings have self-describing controls and intentionally empty
+  // helper text. Do not turn that explicit empty value into an internal key.
+  const blankGridDescription = key.startsWith("twitter_grid_") && description !== undefined
+    && (description === "" || typeof description === "object"
+      && Object.values(description).every(value => value === undefined || value.trim() === ""));
   return {
     key,
     settingKey: spec.settingKey || key,
     label: textValue(override?.label || spec.label, key),
-    description: textValue(override?.description || spec.description, key),
+    description: blankGridDescription ? (description ?? "") : textValue(description, key),
     kind: spec.kind,
     choices: choicesForSpec(key, spec),
     outputItems: spec.outputItems?.map((item) => ({

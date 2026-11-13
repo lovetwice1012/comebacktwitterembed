@@ -2,6 +2,40 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
+const loadDashboard = require('./helpers/load-dashboard.cjs');
+
+test('the real settings catalog and form do not expose internal X image setting keys', async () => {
+    const catalog = loadDashboard('lib/settings-catalog.ts');
+    const { settings: specs } = catalog.getProviderCatalog('twitter');
+    const gridSpecs = specs.filter(spec => spec.key.startsWith('twitter_grid_'));
+    assert.equal(gridSpecs.length, 9);
+    for (const spec of gridSpecs) assert.deepEqual(spec.description, { en: '', ja: '' }, spec.key);
+    // A regular setting still retains its existing helpful description.
+    const enabled = specs.find(spec => spec.key === 'enabled');
+    assert.ok(enabled.description.ja);
+    const defaults = catalog.getProviderDefaults();
+    const rows = gridSpecs.map(spec => ({ key: spec.key, kind: spec.kind, value: defaults[spec.key], warnings: [], spec }));
+    const f = await reactFixture('export { ProviderSettingsForm } from "./components/settings/provider-settings-form";');
+    try {
+        await f.render(f.React.createElement(f.exports.ProviderSettingsForm, {
+            guildId: '111111', providerId: 'twitter', providerLabel: 'Twitter', canEdit: true, locale: 'ja', settings: rows,
+            onSaveChanges: async () => {},
+        }));
+        for (const row of rows) {
+            const card = f.container.querySelector(`[id="setting-${row.key}"]`);
+            assert.ok(card, row.key);
+            assert.equal(card.textContent.includes(row.key), false, row.key);
+        }
+    } finally { await f.close(); }
+});
+
+test('other settings keep their fallback and explicit X image descriptions remain available', () => {
+    const { __test } = loadDashboard('lib/settings-catalog.ts', {}, ['serializeSpec']);
+    const regular = __test.serializeSpec({ key: 'custom_setting', kind: 'choice', label: 'Example', description: { en: '', ja: '' } });
+    assert.deepEqual(regular.description, { en: 'custom_setting', ja: 'custom_setting' });
+    const grid = __test.serializeSpec({ key: 'twitter_grid_custom', kind: 'choice', label: 'Example', description: { en: 'Visible', ja: '説明' } });
+    assert.deepEqual(grid.description, { en: 'Visible', ja: '説明' });
+});
 
 test('server settings accept precise grid defaults and stop invalid values before saving', async () => {
     const f = await reactFixture('export { ProviderSettingsForm } from "./components/settings/provider-settings-form";');
