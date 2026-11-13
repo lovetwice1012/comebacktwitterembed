@@ -77,16 +77,19 @@ async function replyComponentError(interaction, err) {
         return;
     }
 
-    recordError(err, {
-        errorType: 'component_failed',
-        source: 'messageComponents.handle',
-        interaction,
-    });
-    recordMetric('component_error', { interaction });
-    console.error('Failed to handle component interaction:', err);
+    const paused = err?.message === 'GRID_SPLIT_ACTION_PAUSED';
+    if (!paused) {
+        recordError(err, {
+            errorType: 'component_failed',
+            source: 'messageComponents.handle',
+            interaction,
+        });
+        recordMetric('component_error', { interaction });
+        console.error('Failed to handle component interaction:', err);
+    }
     const payload = { content: String(interaction.locale || '').startsWith('ja')
-        ? '操作を完了できませんでした。時間をおいて再試行してください。繰り返し失敗する場合は /support をご利用ください。'
-        : 'The action could not be completed. Please try again later, or use /support if it keeps failing.', ephemeral: true };
+        ? (paused ? '複数に分かれた投稿の一括操作は準備中です。' : '操作を完了できませんでした。時間をおいて再試行してください。繰り返し失敗する場合は /support をご利用ください。')
+        : (paused ? 'Actions for split posts are being prepared.' : 'The action could not be completed. Please try again later, or use /support if it keeps failing.'), ephemeral: true };
 
     if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload).catch(async () => {
@@ -139,6 +142,10 @@ function register(client) {
             }
             if ([InteractionType.ModalSubmit, InteractionType.MessageComponent].includes(interaction.type) && baseCustomId === 'tg') {
                 await require('../components/twitterGrid').handle(interaction);
+                return;
+            }
+            if (interaction.type === InteractionType.MessageComponent && baseCustomId === 'gcf') {
+                await require('../components/twitterGridConfirm').confirm(interaction, { handlers: HANDLERS });
                 return;
             }
             if (interaction.type === InteractionType.ModalSubmit || interaction.type === InteractionType.MessageComponent) {
@@ -235,10 +242,15 @@ function register(client) {
                 return;
             }
 
-            const ctx = { client, buttons: buildButtons(interaction) };
             if (['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete'].includes(baseCustomId)) {
-                await require('../twitterGridCards').withMessageLock(interaction, () => handler.handle(interaction, ctx));
-            } else await handler.handle(interaction, ctx);
+                try {
+                    await require('../twitterGridCards').withMessageLock(interaction, policy => handler.handle(interaction, { client, buttons: buildButtons(interaction), ...policy }));
+                } catch (error) {
+                    if (error?.code !== 'GRID_SNAPSHOT_MISMATCH') throw error;
+                    await require('../components/twitterGridConfirm').offer(interaction);
+                    return;
+                }
+            } else await handler.handle(interaction, { client, buttons: buildButtons(interaction) });
             recordMetric('component_success', { interaction, componentId: baseCustomId });
             recordAnalyticsEvent('component', {
                 source: 'messageComponents.handle',

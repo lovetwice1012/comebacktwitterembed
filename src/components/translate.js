@@ -21,7 +21,7 @@ function getAttachmentUrls(attachments) {
     return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
 }
 
-async function handle(interaction) {
+async function handle(interaction, context = {}) {
     const messageObject = { components: [], embeds: [] };
 
     const sourceEmbed = interaction.message.embeds[0];
@@ -69,7 +69,10 @@ async function handle(interaction) {
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
     messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
+    if (context.previewOnlyTranslation) messageObject.content = String(interaction.locale || '').startsWith('ja')
+        ? '翻訳はこの画面に表示します。' : 'The translation is shown here.';
     await interaction.editReply(messageObject);
+    if (context.previewOnlyTranslation) return;
 
     const editOriginalIfTranslate = await getSetting({ id: providerId || 'twitter' }, 'editOriginalIfTranslate', interaction.guildId) === true;
 

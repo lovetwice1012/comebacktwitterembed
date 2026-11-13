@@ -262,24 +262,47 @@ function gridIdFromMessage(message) {
     }
     return null;
 }
-async function withMessageLock(interaction, work, db = require('./db')) {
+async function withMessageLock(interaction, work, db = require('./db'), confirmation = null) {
     const id = gridIdFromMessage(interaction.message);
     if (!id || !interaction.guildId || !interaction.channelId) return work();
     const messageId = String(interaction.message.id || ''), before = fingerprint(interaction.message);
     return db.withDatabaseTransaction(async query => {
         const rows = await query('SELECT message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? LIMIT 1',
             [id, interaction.guildId, interaction.channelId]);
-        // If all saved metadata is already gone, no grid edit can begin.
-        if (!rows[0]) return work();
+        if (!rows[0]) throw new Error('GRID_LOCK_UNAVAILABLE');
         const payload = JSON.parse(rows[0].payload_json);
         if (payload.kind !== 'twitter-image-grid-v1' || !/^[a-f0-9]{32}$/.test(payload.lockId || '') || String(rows[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
         const locks = await query('SELECT message_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? FOR UPDATE',
             [payload.lockId, interaction.guildId, interaction.channelId]);
-        if (!locks[0]) return work();
+        if (!locks[0]) throw new Error('GRID_LOCK_UNAVAILABLE');
         if (String(locks[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
-        const current = await interaction.channel.messages.fetch({ message: messageId, force: true });
-        if (current?.author?.id !== interaction.client?.user?.id || fingerprint(current) !== before) throw new Error('GRID_SOURCE_CHANGED');
-        return work();
+        // Until the group-wide controls are available, never run a legacy
+        // action that can edit or delete only one message of a split post.
+        const latest = await query('SELECT message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
+            [id, interaction.guildId, interaction.channelId, Date.now()]);
+        if (!latest[0] || String(latest[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const saved = JSON.parse(latest[0].payload_json);
+        if (saved.id !== id || saved.kind !== 'twitter-image-grid-v1' || saved.lockId !== payload.lockId
+            || !Number.isInteger(saved.totalParts) || saved.totalParts < 1 || saved.totalParts > 20) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const action = String(confirmation?.actionId || interaction.customId || '').split(':')[0];
+        if (saved.totalParts > 1 && ['delete', 'showMediaAsAttachments', 'showAttachmentsAsEmbedsImage'].includes(action))
+            throw new Error('GRID_SPLIT_ACTION_PAUSED');
+        if (confirmation) {
+            if (id !== confirmation.galleryId
+                || saved.partsState && saved.partsState !== 'complete' || saved.replacePhase && saved.replacePhase !== 'done'
+                || saved.completedParts !== saved.totalParts || !Array.isArray(saved.messageIds)
+                || saved.messageIds[0] !== messageId || saved.messageIds.length !== saved.totalParts
+                || new Set(saved.messageIds).size !== saved.messageIds.length) throw new Error('GRID_LOCK_UNAVAILABLE');
+        }
+        if (confirmation?.revalidate) await confirmation.revalidate();
+        const current = await (confirmation?.channel || interaction.channel).messages.fetch({ message: messageId, force: true });
+        if (current?.author?.id !== interaction.client?.user?.id || String(current.id || '') !== messageId) throw new Error('GRID_SOURCE_CHANGED');
+        if (fingerprint(current) !== before) throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { code: 'GRID_SNAPSHOT_MISMATCH' });
+        if (confirmation && (fingerprint(current) !== confirmation.expectedFingerprint || gridIdFromMessage(current) !== id
+            || !require('./components/twitterGridConfirm')._internal.buttonExists(current, confirmation.actionId))) throw new Error('GRID_SOURCE_CHANGED');
+        if (confirmation?.deadlineCheck && !confirmation.deadlineCheck()) throw new Error('GRID_SOURCE_CHANGED');
+        interaction.message = current;
+        return work(saved.totalParts > 1 && action === 'translate' ? { previewOnlyTranslation: true } : undefined);
     });
 }
 module.exports = { safetyHash, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, embedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, withMessageLock };
