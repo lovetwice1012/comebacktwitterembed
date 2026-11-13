@@ -3,6 +3,7 @@
 // Assemble up to 20 photographs without retaining them on disk. This module has
 // no Discord side effects: callers decide who can see or replace the result.
 const https = require('node:https');
+const { createHash } = require('node:crypto');
 const { lookup } = require('../providers/autoWatch/publicDns');
 
 const MAX_IMAGES = 20;
@@ -152,11 +153,64 @@ function geometry(count, options) {
         height: rows * cellHeight + (rows - 1) * gap, scaled: scale < 1 };
 }
 
+// Contain derives height from the actual photographs, so do not shrink width
+// based on a hypothetical square-cell canvas before inspecting the images.
+function autoBase(count, options) {
+    const columns = Math.min(options.columns, count), rows = Math.ceil(count / columns);
+    const nominalWidth = columns * options.cellWidth + (columns - 1) * options.gap;
+    const scale = Math.min(1, MAX_DIMENSION / nominalWidth);
+    const gap = Math.floor(options.gap * scale);
+    return { columns, rows, width: Math.floor(nominalWidth * scale), gap, scaled: scale < 1 };
+}
+
+// Justify each row, distributing integer rounding without exposing the canvas.
+function autoGeometry(tiles, base) {
+    const groups = [];
+    for (let i = 0; i < tiles.length; i += base.columns) groups.push(tiles.slice(i, i + base.columns));
+    const ratios = groups.map(group => group.map(tile => tile.width / tile.height));
+    const heights = ratios.map(row => (base.width - base.gap * (row.length - 1)) / row.reduce((a, b) => a + b, 0));
+    const naturalHeight = heights.reduce((a, b) => a + b, 0) + base.gap * (groups.length - 1);
+    const scale = Math.min(1, (MAX_DIMENSION - groups.length) / naturalHeight, Math.sqrt(MAX_OUTPUT_PIXELS / (base.width * (naturalHeight + groups.length))));
+    const width = Math.floor(base.width * scale), gap = Math.floor(base.gap * scale);
+    const rowHeights = heights.map(height => Math.max(1, Math.round(height * scale)));
+    const height = rowHeights.reduce((a, b) => a + b, 0) + gap * (groups.length - 1);
+    const invalid = () => failure('IMAGE_GRID_LAYOUT', '画像の縦横比が大きいため、列数を変えてお試しください。');
+    if (width < 1 || height > MAX_DIMENSION || width * height > MAX_OUTPUT_PIXELS) throw invalid();
+    const placements = []; let top = 0;
+    for (let row = 0; row < groups.length; row++) {
+        const available = width - gap * (groups[row].length - 1), rowRatios = ratios[row];
+        if (available < rowRatios.length) throw invalid();
+        const sum = rowRatios.reduce((a, b) => a + b, 0);
+        const exact = rowRatios.map(ratio => available * ratio / sum);
+        const widths = exact.map(value => Math.max(1, Math.floor(value)));
+        let diff = available - widths.reduce((a, b) => a + b, 0);
+        const order = exact.map((value, i) => i).sort((a, b) => (exact[b] - Math.floor(exact[b])) - (exact[a] - Math.floor(exact[a])));
+        for (let j = 0; diff > 0; j++, diff--) widths[order[j % order.length]]++;
+        for (let j = 0; diff < 0 && j < widths.length; j++) {
+            const i = widths.indexOf(Math.max(...widths));
+            const take = Math.min(widths[i] - 1, -diff); widths[i] -= take; diff += take;
+        }
+        if (diff) throw invalid();
+        let left = 0;
+        for (let i = 0; i < widths.length; i++) {
+            // Some extreme aspect ratios cannot be represented at bounded size
+            // without severe distortion. Never silently crop or stretch them.
+            if (Math.abs(widths[i] - rowRatios[i] * rowHeights[row]) > Math.max(1.5, widths[i] * 0.02)) throw invalid();
+            placements.push({ left, top, width: widths[i], height: rowHeights[row] });
+            left += widths[i] + gap;
+        }
+        top += rowHeights[row] + gap;
+    }
+    return { ...base, width, height, gap, placements, scaled: base.scaled || scale < 1 };
+}
+
 async function composeTwitterImageGrid(urls, options, deps = {}) {
     if (!Array.isArray(urls) || urls.length < 1 || urls.length > MAX_IMAGES) throw failure('IMAGE_GRID_COUNT', '画像は1〜20枚で指定してください。');
     // Validate every URL before doing any I/O, including when tests inject a fetch.
     urls.forEach(validateUrl);
-    const config = gridOptions(options, urls.length), layout = geometry(urls.length, config);
+    const config = gridOptions(options, urls.length);
+    // For contain the width sets the nominal output width; height is automatic.
+    let layout = config.fit === 'contain' ? autoBase(urls.length, config) : geometry(urls.length, config);
     // A missing native addon must not prevent the rest of the Bot from starting.
     // The explicitly requested operation reports an error before any download.
     let sharp;
@@ -172,8 +226,8 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
         const fetchImpl = deps.fetch || require('node-fetch');
         const total = { bytes: 0 };
         // Do not retain all source files while decoding: fetch and resize one
-        // source within each bounded worker, then retain only its small tile.
-        const overlays = await mapConcurrent(urls, INPUT_CONCURRENCY, async (url, i) => {
+        // source within each bounded worker, retaining only a tile or metadata.
+        const tiles = await mapConcurrent(urls, INPUT_CONCURRENCY, async (url, i) => {
             let data = await fetchImage(url, fetchImpl, controller.signal, total);
             try {
                 const format = imageFormat(data);
@@ -182,12 +236,38 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
                 if (!Number.isSafeInteger(metadata.width) || !Number.isSafeInteger(metadata.height) || metadata.width < 1 || metadata.height < 1
                     || metadata.width * metadata.height > MAX_INPUT_PIXELS || (metadata.pages || 1) > 1
                     || format === 'avif' && (metadata.format !== 'heif' || metadata.compression !== 'av1')) throw new Error('invalid image');
-                const resized = await input.resize(layout.cellWidth, layout.cellHeight, { fit: config.fit, background: config.background }).png().toBuffer();
-                return { input: resized, left: (i % layout.columns) * (layout.cellWidth + layout.gap), top: Math.floor(i / layout.columns) * (layout.cellHeight + layout.gap) };
+                if (config.fit === 'cover') {
+                    const resized = await input.resize(layout.cellWidth, layout.cellHeight, { fit: 'cover', background: config.background }).png().toBuffer();
+                    return { input: resized, left: (i % layout.columns) * (layout.cellWidth + layout.gap), top: Math.floor(i / layout.columns) * (layout.cellHeight + layout.gap) };
+                }
+                const rotated = [5, 6, 7, 8].includes(metadata.orientation);
+                const width = rotated ? metadata.height : metadata.width, height = rotated ? metadata.width : metadata.height;
+                // Retain only metadata and a digest until final sizes are known.
+                const hash = createHash('sha256').update(data).digest('hex');
+                return { hash, width, height };
             } catch { throw failure('IMAGE_GRID_FORMAT', '画像を読み込めませんでした。'); }
             finally { data = null; }
         }, controller);
         if (controller.signal.aborted) throw failure('IMAGE_GRID_TIMEOUT', '画像の処理に時間がかかりました。再度お試しください。');
+        let overlays = tiles;
+        if (config.fit === 'contain') {
+            layout = autoGeometry(tiles, layout);
+            const secondPass = { bytes: 0 };
+            overlays = await mapConcurrent(tiles, INPUT_CONCURRENCY, async (tile, i) => {
+                let data = await fetchImage(urls[i], fetchImpl, controller.signal, secondPass);
+                try {
+                    if (createHash('sha256').update(data).digest('hex') !== tile.hash)
+                        throw failure('IMAGE_GRID_DOWNLOAD', '画像が変更されたため、もう一度お試しください。');
+                    const place = layout.placements[i];
+                    const input = await sharp(data, { failOn: 'warning', limitInputPixels: MAX_INPUT_PIXELS, autoOrient: true, animated: false })
+                        .resize(place.width, place.height, { fit: 'fill' }).png().toBuffer();
+                    return { input, left: place.left, top: place.top };
+                } catch (error) {
+                    if (error?.code?.startsWith('IMAGE_GRID_')) throw error;
+                    throw failure('IMAGE_GRID_FORMAT', '画像を読み込めませんでした。');
+                } finally { data = null; }
+            }, controller);
+        }
         const composite = sharp({ create: { width: layout.width, height: layout.height, channels: 4, background: config.background } }).composite(overlays);
         let data = await composite.png().toBuffer(), width = layout.width, height = layout.height;
         let quality = config.quality, adapted = layout.scaled;
@@ -211,4 +291,4 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
     } finally { clearTimeout(timeout); controller.abort(); release(); }
 }
 
-module.exports = { composeTwitterImageGrid, _internal: { validateUrl, imageFormat, gridOptions, geometry, fetchImage } };
+module.exports = { composeTwitterImageGrid, _internal: { validateUrl, imageFormat, gridOptions, geometry, autoBase, autoGeometry, fetchImage } };

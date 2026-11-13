@@ -17,6 +17,7 @@ const GRID_ERROR_TEXT = Object.freeze({
     IMAGE_GRID_DOWNLOAD: ['画像を取得できませんでした。元の投稿をご確認ください。', 'Could not retrieve the images. Check the original post.'],
     IMAGE_GRID_URL: ['画像のリンクを確認できませんでした。元の投稿をご確認ください。', 'Could not verify the image links. Check the original post.'],
     IMAGE_GRID_OPTIONS: ['画像の配置や設定を確認してください。', 'Check the image layout and settings.'],
+    IMAGE_GRID_LAYOUT: ['画像の縦横比に合わせられませんでした。並べ方を変えてお試しください。', 'Could not fit the image proportions. Try a different layout.'],
     IMAGE_GRID_COUNT: ['画像の枚数を確認してください。', 'Check the number of images.'],
     IMAGE_GRID_UNAVAILABLE: ['画像をまとめる機能を現在利用できません。', 'Image combining is currently unavailable.'],
     IMAGE_GRID_PROCESS: ['画像をまとめられませんでした。時間をおいて再試行してください。', 'Could not combine the images. Try again later.'],
@@ -71,7 +72,7 @@ function view(id, owner, state, settings, locale, message, canReplace = false, i
     const choice = (label, value, selected) => ({ label, value: String(value), default: selected });
     const rows = [
         menu('layout', ja ? '画像の並べ方' : 'Layout', Array.from({ length: 20 }, (_, i) => choice(i === 0 ? (ja ? '縦一列' : 'Single column') : i === 19 ? (ja ? '横一列' : 'Single row') : `${i + 1}${ja ? '列' : ' columns'}`, i + 1, state.columns === i + 1))),
-        menu('fit', ja ? '画像の収め方' : 'Image fit', [choice(ja ? '全体を表示' : 'Fit whole image', 'i', state.fit === 'i'), choice(ja ? '枠いっぱいに切り抜く' : 'Fill and crop', 'c', state.fit === 'c')]),
+        menu('fit', ja ? '画像の収め方' : 'Image fit', [choice(ja ? '全体を表示（自動調整）' : 'Show whole image (automatic)', 'i', state.fit === 'i'), choice(ja ? '枠いっぱいに切り抜く' : 'Fill and crop', 'c', state.fit === 'c')]),
         menu('format', ja ? '保存形式' : 'Output format', [choice('JPEG', 'j', state.format === 'j'), choice('PNG', 'p', state.format === 'p'), choice('WebP', 'w', state.format === 'w')]),
         menu('target', ja ? '表示先' : 'Visibility', [choice(ja ? '自分にだけ表示' : 'Only me', 'p', state.target === 'p'), ...(canReplace ? [choice(ja ? '公開画像を置換' : 'Replace public images', 'r', state.target === 'r')] : [])]),
         { type: 1, components: [
@@ -79,7 +80,8 @@ function view(id, owner, state, settings, locale, message, canReplace = false, i
             { type: 2, style: 2, label: ja ? '詳細設定' : 'Fine settings', custom_id: custom(id, owner, 'advanced', state) },
         ] },
     ];
-    const summary = ja ? `列数 ${state.columns} · ${state.width}×${state.height}px · 余白 ${state.gap}px · 背景 #${state.background} · 画質 ${state.quality}` : `Columns ${state.columns} · ${state.width}×${state.height}px · gap ${state.gap}px · background #${state.background} · quality ${state.quality}`;
+    const size = state.fit === 'c' ? `${state.width}×${state.height}px` : `${state.width}px`;
+    const summary = ja ? `列数 ${state.columns} · サイズの目安 ${size} · 画像の間隔 ${state.gap}px · 背景 #${state.background} · 画質 ${state.quality}` : `Columns ${state.columns} · target size ${size} · image spacing ${state.gap}px · background #${state.background} · quality ${state.quality}`;
     const restriction = canReplace ? '' : (ja ? '\n公開画像の置換は投稿者・管理者が利用できます。' : '\nPublic replacement is available to the requester or an administrator.');
     const partial = incomplete && incomplete !== message ? `\n${incomplete}` : '';
     return { content: (message || summary + restriction) + partial,
@@ -90,17 +92,19 @@ function modal(id, owner, state, locale) {
     const input = (key, label, value) => /** @type {ActionRowBuilder<TextInputBuilder>} */ (new ActionRowBuilder()).addComponents(new TextInputBuilder().setCustomId(key).setLabel(label).setStyle(TextInputStyle.Short).setValue(String(value)).setRequired(true));
     return new ModalBuilder().setCustomId(custom(id, owner, 'submit', state)).setTitle(ja ? '画像の詳細設定' : 'Image settings').addComponents(
         input('columns', ja ? '列数（1〜20）' : 'Columns (1–20)', state.columns),
-        input('size', ja ? '幅×高さ（128〜2048）' : 'Width x height (128–2048)', `${state.width}x${state.height}`),
-        input('gap', ja ? '余白（0〜64px）' : 'Gap (0–64px)', state.gap),
+        input('size', state.fit === 'c' ? (ja ? '枠の幅×高さ（128〜2048）' : 'Cell width x height (128–2048)') : (ja ? '画像サイズの目安（128〜2048）' : 'Target image size (128–2048)'), state.fit === 'c' ? `${state.width}x${state.height}` : state.width),
+        input('gap', ja ? '画像の間隔（0〜64px）' : 'Image spacing (0–64px)', state.gap),
         input('background', ja ? '背景色（#RRGGBB）' : 'Background (#RRGGBB)', `#${state.background}`),
         input('quality', ja ? '画質（30〜95）' : 'Quality (30–95)', state.quality));
 }
 function modalState(interaction, old) {
     const get = name => String(interaction.fields.getTextInputValue(name)).trim();
-    const dims = /^(\d{1,4})\s*[x×]\s*(\d{1,4})$/i.exec(get('size'));
+    const size = get('size');
+    const dims = /^(\d{1,4})\s*[x×]\s*(\d{1,4})$/i.exec(size);
+    const autoWidth = old.fit === 'i' && /^\d{1,4}$/.test(size) ? Number(size) : null;
     const bg = /^#?([0-9a-f]{6})$/i.exec(get('background'));
-    if (!dims || !bg || !/^\d{1,2}$/.test(get('columns')) || !/^\d{1,2}$/.test(get('gap')) || !/^\d{2}$/.test(get('quality'))) return null;
-    return decode(encode({ ...old, columns: Number(get('columns')), width: Number(dims[1]), height: Number(dims[2]), gap: Number(get('gap')), background: bg[1].toLowerCase(), quality: Number(get('quality')) }));
+    if ((!dims && autoWidth === null) || !bg || !/^\d{1,2}$/.test(get('columns')) || !/^\d{1,2}$/.test(get('gap')) || !/^\d{2}$/.test(get('quality'))) return null;
+    return decode(encode({ ...old, columns: Number(get('columns')), width: dims ? Number(dims[1]) : autoWidth, height: dims ? Number(dims[2]) : old.height, gap: Number(get('gap')), background: bg[1].toLowerCase(), quality: Number(get('quality')) }));
 }
 function sourceId(row) { return String(row?.message_id || ''); }
 function sourceIsOwn(message, client) { return message?.author?.id && message.author.id === client?.user?.id; }

@@ -14,6 +14,8 @@ test('X image layout defaults and choices are isolated per server and provider',
     try {
         const twitter = { id: 'twitter', enabledByDefault: true };
         const specs = getProviderSettingSpecs(twitter);
+        assert.equal(specs.find(spec => spec.key === 'twitter_grid_cell_size').label.ja, '画像サイズの目安');
+        assert.match(specs.find(spec => spec.key === 'twitter_grid_fit').choices.find(choice => choice.value === 'contain').label.ja, /自動調整/);
         const expected = {
             twitter_grid_default_layout: 'grid', twitter_grid_columns: 2, twitter_grid_gap: 4,
             twitter_grid_background: '#000000', twitter_grid_fit: 'contain', twitter_grid_cell_size: 512,

@@ -46,6 +46,31 @@ test('public button opens only a private editor with customizable defaults', asy
     const layout = view.components[0].components[0]; assert.equal(layout.options.length, 20);
     assert.ok(layout.custom_id.includes(`:${user}:layout:`));
 });
+test('automatic sizing uses one target size while cropped cells retain width and height', async () => {
+    for (const [fit, expectedValue, expectedLabel] of [['i', '640', /画像サイズの目安/], ['c', '640x384', /枠の幅×高さ/]]) {
+        const f = fixture(), state = { ...grid._internal.defaults(settings, 13), width: 640, height: 384, fit };
+        f.interaction.customId = grid._internal.custom(id, user, 'advanced', state);
+        f.interaction.message.flags.has = n => n === 64;
+        await grid.handle(f.interaction, f.deps);
+        const modal = f.calls.find(call => call[0] === 'showModal')[1].toJSON();
+        const size = modal.components.map(row => row.components[0]).find(component => component.custom_id === 'size');
+        assert.equal(size.value, expectedValue); assert.match(size.label, expectedLabel);
+        const view = grid._internal.view(id, user, state, settings, 'ja');
+        assert.match(view.content, fit === 'i' ? /サイズの目安 640px/ : /サイズの目安 640×384px/);
+        assert.match(view.components[1].components[0].options[0].label, /自動調整/);
+    }
+});
+test('new and existing sizing dialogs keep the encoded state compatible', () => {
+    const old = { ...grid._internal.defaults(settings, 13), width: 512, height: 768, fit: 'i' };
+    const submit = (size, state = old) => grid._internal.modalState({ fields: { getTextInputValue: key => ({ size, columns: '2', gap: '0', background: '#123456', quality: '85' })[key] } }, state);
+    assert.deepEqual([submit('640').width, submit('640').height], [640, 768]);
+    assert.deepEqual([submit('640x320').width, submit('640x320').height], [640, 320]);
+    const cover = { ...old, fit: 'c' };
+    assert.equal(submit('640', cover), null);
+    assert.deepEqual([submit('640×320', cover).width, submit('640×320', cover).height], [640, 320]);
+    assert.equal(submit('2049'), null); assert.equal(submit('0'), null);
+    assert.deepEqual(grid._internal.decode(grid._internal.encode(old)), old);
+});
 test('private preview combines only persisted media and rechecks access', async () => {
     const f = fixture(); const state = grid._internal.defaults(settings, 13);
     f.interaction.customId = grid._internal.custom(id, user, 'preview', state); f.interaction.message.flags.has = n => n === 64;
@@ -60,7 +85,7 @@ test('private image errors display fixed actionable reasons without exposing exc
     const cases = [
         ['IMAGE_GRID_INPUT_SIZE', /元の画像が大きすぎ/], ['IMAGE_GRID_OUTPUT_SIZE', /画像のサイズを小さく/],
         ['IMAGE_GRID_FORMAT', /対応する形式/], ['IMAGE_GRID_BUSY', /混み合っています/],
-        ['IMAGE_GRID_TIMEOUT', /時間がかかりました/], ['IMAGE_GRID_DOWNLOAD', /画像を取得できません/],
+        ['IMAGE_GRID_TIMEOUT', /時間がかかりました/], ['IMAGE_GRID_DOWNLOAD', /画像を取得できません/], ['IMAGE_GRID_LAYOUT', /縦横比/],
         ['IMAGE_GRID_URL', /画像のリンクを確認できません/], ['IMAGE_GRID_UNAVAILABLE', /現在利用できません/],
         ['UNTRUSTED_CODE', /画像をまとめられませんでした/],
     ];

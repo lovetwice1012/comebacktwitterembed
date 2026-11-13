@@ -21,7 +21,7 @@ test('20 images are kept in order in an actual PNG grid', async () => {
     const result = await composeTwitterImageGrid(urls(20), { columns: 5, cellWidth: 128, cellHeight: 128, format: 'png' }, {
         fetch: async url => { const index = Number(new URL(url).pathname.match(/item(\d+)/)[1]); seen.push(index); return response(200, samples[index % 3]); },
     });
-    assert.equal(seen.length, 20);
+    assert.equal(seen.length, 40);
     assert.equal(result.columns, 5); assert.equal(result.rows, 4); assert.equal(result.width, 640); assert.equal(result.height, 512);
     assert.equal(result.contentType, 'image/png'); assert.equal(result.filename, 'twitter-grid.png');
     const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
@@ -36,7 +36,7 @@ test('20 actual static AVIF photos are combined in their original order', async 
         fetch: async url => { downloaded++; const index = Number(new URL(url).pathname.match(/item(\d+)/)[1]); return response(200, samples[index % 3]); },
     });
     const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
-    assert.equal(downloaded, 20);
+    assert.equal(downloaded, 40);
     for (let i = 0; i < 20; i++) {
         const color = pixel(raw, result.width, (i % 5) * 128 + 64, Math.floor(i / 5) * 128 + 64);
         assert(color[i % 3] > 220, `image ${i} retained its dominant channel`);
@@ -62,15 +62,15 @@ test('only bounded AVIF file types are recognized; video, GIF and image sequence
     await assert.rejects(composeTwitterImageGrid(urls(1), {}, { fetch: async () => response(200, animation) }), { code: 'IMAGE_GRID_FORMAT' });
 });
 
-test('contain preserves the whole image and cover fills the tile; padding and spacing are configurable', async () => {
+test('contain preserves the whole image and cover fills the tile; spacing is configurable', async () => {
     const source = await solid(255, 0, 0, 32, 16);
     const fetch = async () => response(200, source);
     const contain = await composeTwitterImageGrid(urls(2), { columns: 2, cellWidth: 128, cellHeight: 128, gap: 8, background: '#0000ff', format: 'png' }, { fetch });
-    assert.equal(contain.width, 264); assert.equal(contain.height, 128);
+    assert.equal(contain.width, 264); assert.equal(contain.height, 64);
     const pixels = await sharp(contain.data).removeAlpha().raw().toBuffer();
-    assert.deepEqual(pixel(pixels, 264, 64, 8), [0, 0, 255]);
-    assert.deepEqual(pixel(pixels, 264, 64, 64), [255, 0, 0]);
-    assert.deepEqual(pixel(pixels, 264, 131, 64), [0, 0, 255]);
+    assert.deepEqual(pixel(pixels, 264, 64, 8), [255, 0, 0]);
+    assert.deepEqual(pixel(pixels, 264, 64, 32), [255, 0, 0]);
+    assert.deepEqual(pixel(pixels, 264, 131, 32), [0, 0, 255]);
     const cover = await composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128, fit: 'cover', format: 'png' }, { fetch });
     const covered = await sharp(cover.data).removeAlpha().raw().toBuffer();
     assert.deepEqual(pixel(covered, 128, 64, 8), [255, 0, 0]);
@@ -81,7 +81,108 @@ test('EXIF orientation is applied before fitting the image', async () => {
     const result = await composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128, format: 'png' }, { fetch: async () => response(200, source) });
     const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
     const edge = pixel(raw, 128, 8, 64), center = pixel(raw, 128, 64, 64);
-    assert(edge.every(channel => channel > 245)); assert(center[0] > 240 && center[1] < 15 && center[2] < 15);
+    assert.equal(result.width, 128); assert.equal(result.height, 256);
+    assert(edge[0] > 240 && edge[1] < 15 && edge[2] < 15); assert(center[0] > 240 && center[1] < 15 && center[2] < 15);
+});
+
+test('mixed aspect ratios fill every pixel and the last row without cropping', async () => {
+    const images = await Promise.all([solid(255, 0, 0, 64, 32), solid(0, 255, 0, 32, 64), solid(0, 0, 255, 32, 32)]);
+    const result = await composeTwitterImageGrid(urls(3), { columns: 2, cellWidth: 128, gap: 0, background: '#000000', format: 'png' }, {
+        fetch: async url => response(200, images[Number(new URL(url).pathname.match(/item(\d+)/)[1])]),
+    });
+    assert.equal(result.width, 256); assert.equal(result.height, 358);
+    const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
+    for (let i = 0; i < raw.length; i += 3) assert(raw[i] || raw[i + 1] || raw[i + 2], `background at pixel ${i / 3}`);
+    assert.deepEqual(pixel(raw, 256, 0, 0), [255, 0, 0]);
+    assert.deepEqual(pixel(raw, 256, 255, 0), [0, 255, 0]);
+    assert.deepEqual(pixel(raw, 256, 0, 357), [0, 0, 255]);
+    assert.deepEqual(pixel(raw, 256, 255, 357), [0, 0, 255]);
+});
+
+test('auto layout bounds and row coverage hold for counts and columns', () => {
+    for (let count = 1; count <= 20; count++) for (let columns = 1; columns <= 20; columns++) {
+        const options = _internal.gridOptions({ columns, cellWidth: 512, gap: 0 }, count);
+        const base = _internal.autoBase(count, options);
+        const tiles = Array.from({ length: count }, (_, i) => ({ width: [200, 100, 100][i % 3], height: [100, 200, 100][i % 3] }));
+        const layout = _internal.autoGeometry(tiles, base);
+        assert(layout.width <= 8192 && layout.height <= 8192 && layout.width * layout.height <= 16_000_000);
+        for (let i = 0; i < count; i += layout.columns) {
+            const row = layout.placements.slice(i, i + layout.columns);
+            assert.equal(row[0].left, 0); assert.equal(row.at(-1).left + row.at(-1).width, layout.width);
+            for (let j = 1; j < row.length; j++) assert.equal(row[j].left, row[j - 1].left + row[j - 1].width);
+        }
+    }
+});
+
+test('extreme ratios fail explicitly instead of dropping an image or stretching it excessively', () => {
+    const base = _internal.geometry(2, _internal.gridOptions({ columns: 2, cellWidth: 128 }, 2));
+    assert.throws(() => _internal.autoGeometry([{ width: 40000000, height: 1 }, { width: 1, height: 40000000 }], base), { code: 'IMAGE_GRID_LAYOUT' });
+});
+
+test('last single image retains detail when expanded to the row width', async () => {
+    const input = Buffer.alloc(1024 * 1024 * 3);
+    for (let y = 0; y < 1024; y++) for (let x = 0; x < 1024; x++) {
+        const value = ((x >> 2) + (y >> 2)) % 2 ? 255 : 0, p = (y * 1024 + x) * 3;
+        input[p] = value; input[p + 1] = 255 - value; input[p + 2] = value;
+    }
+    const detail = await sharp(input, { raw: { width: 1024, height: 1024, channels: 3 } }).png().toBuffer();
+    const plain = await solid(255, 0, 0);
+    const result = await composeTwitterImageGrid(urls(6), { columns: 5, cellWidth: 128, format: 'png' }, {
+        fetch: async url => response(200, url.includes('item5?') ? detail : plain),
+    });
+    assert.equal(result.width, 640); assert.equal(result.height, 768);
+    const actual = await sharp(result.data).extract({ left: 0, top: 128, width: 640, height: 640 }).removeAlpha().raw().toBuffer();
+    const expected = await sharp(detail).resize(640, 640).removeAlpha().raw().toBuffer();
+    let difference = 0; for (let i = 0; i < actual.length; i++) difference += Math.abs(actual[i] - expected[i]);
+    assert(difference / actual.length < 1, 'single-image row should not be upscaled from a small intermediate');
+});
+
+test('panoramas round row heights correctly and use actual proportions for canvas limits', () => {
+    const options = _internal.gridOptions({ columns: 1, cellWidth: 128 }, 1);
+    const one = _internal.autoGeometry([{ width: 3900, height: 1000 }], _internal.autoBase(1, options));
+    assert.equal(one.height, 33); assert.equal(one.width, 128);
+    const twentyOptions = _internal.gridOptions({ columns: 1, cellWidth: 2048 }, 20);
+    const twenty = _internal.autoGeometry(Array.from({ length: 20 }, () => ({ width: 4000, height: 1000 })), _internal.autoBase(20, twentyOptions));
+    assert(twenty.width > 1600); assert(twenty.height <= 8192);
+});
+
+test('changed input between passes aborts without producing an image', async () => {
+    const a = await solid(255, 0, 0), b = await solid(0, 0, 255); let calls = 0;
+    await assert.rejects(composeTwitterImageGrid(urls(1), { cellWidth: 128 }, {
+        fetch: async () => response(200, ++calls === 1 ? a : b),
+    }), { code: 'IMAGE_GRID_DOWNLOAD' });
+    assert.equal(calls, 2);
+});
+
+test('expired second fetch fails without a partial result, while cover downloads once', async () => {
+    const image = await solid(10, 20, 30); let calls = 0;
+    await assert.rejects(composeTwitterImageGrid(urls(1), { cellWidth: 128 }, {
+        fetch: async () => ++calls === 1 ? response(200, image) : response(403, null),
+    }), { code: 'IMAGE_GRID_DOWNLOAD' });
+    assert.equal(calls, 2);
+    calls = 0;
+    await composeTwitterImageGrid(urls(1), { cellWidth: 128, fit: 'cover' }, {
+        fetch: async () => { calls++; return response(200, image); },
+    });
+    assert.equal(calls, 1);
+});
+
+test('portrait row retains its final resolution without intermediate upscaling', async () => {
+    const raw = Buffer.alloc(1000 * 4000 * 3);
+    for (let y = 0; y < 4000; y++) for (let x = 0; x < 1000; x++) {
+        const value = ((x >> 2) + (y >> 2)) % 2 ? 255 : 0, p = (y * 1000 + x) * 3;
+        raw[p] = value; raw[p + 1] = 255 - value; raw[p + 2] = value;
+    }
+    const portrait = await sharp(raw, { raw: { width: 1000, height: 4000, channels: 3 } }).png().toBuffer();
+    const landscape = await solid(0, 0, 255, 4000, 1000);
+    const result = await composeTwitterImageGrid(urls(20), { columns: 4, cellWidth: 512, format: 'png' }, {
+        fetch: async url => response(200, Number(new URL(url).pathname.match(/item(\d+)/)[1]) < 4 ? portrait : landscape),
+    });
+    assert.equal(result.width, 2048); assert.equal(result.height, 2560);
+    const actual = await sharp(result.data).extract({ left: 0, top: 0, width: 512, height: 2048 }).removeAlpha().raw().toBuffer();
+    const expected = await sharp(portrait).resize(512, 2048).removeAlpha().raw().toBuffer();
+    let difference = 0; for (let i = 0; i < actual.length; i++) difference += Math.abs(actual[i] - expected[i]);
+    assert(difference / actual.length < 1);
 });
 
 test('horizontal and vertical 20-image arrangements stay within canvas bounds', () => {
@@ -122,7 +223,7 @@ test('redirects are validated again and may not escape approved image hosts', as
     const image = await solid(1, 2, 3); requests = 0;
     const output = await composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128 }, { fetch: async () => ++requests === 1
         ? response(302, null, { location: 'https://pbs.twimg.com/media/valid?format=jpg' }) : response(200, image) });
-    assert.equal(requests, 2); assert.equal(output.contentType, 'image/jpeg');
+    assert.equal(requests, 3); assert.equal(output.contentType, 'image/jpeg');
     requests = 0;
     await assert.rejects(composeTwitterImageGrid(urls(1), {}, { fetch: async () => { requests++; return response(302, null, { location: 'https://pbs.twimg.com/media/valid' }); } }), { code: 'IMAGE_GRID_DOWNLOAD' });
     assert.equal(requests, 4);
@@ -229,7 +330,7 @@ test('at most two image compositions can download concurrently', async () => {
     const fetch = async () => { if (++entered === 2) bothStarted(); await blocked; return response(200, image); };
     const jobs = Array.from({ length: 3 }, () => composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128 }, { fetch }));
     await started; await new Promise(resolve => setImmediate(resolve)); assert.equal(entered, 2);
-    unblock(); await Promise.all(jobs); assert.equal(entered, 3);
+    unblock(); await Promise.all(jobs); assert.equal(entered, 6);
 });
 
 test('WebP output is a real decodable image, and pbs requests pin validated DNS to their socket', async () => {
@@ -259,7 +360,7 @@ test('twenty real 9 MiB JPEGs are resized as a bounded pipeline rather than reta
             })()) };
         } });
         const last = rss(); if (peak !== null && last !== null) peak = Math.max(peak, last);
-        assert.equal(fetched, 20); assert(maximumReading <= 2);
+        assert.equal(fetched, 40); assert(maximumReading <= 2);
         assert.equal(result.columns, 5); assert.equal(result.rows, 4);
         assert.equal((await sharp(result.data).metadata()).width, 640);
         // Include JPEG decode, image-library cache and V8/Buffer allocation;
@@ -279,5 +380,5 @@ test('output byte budget is enforced without omitting any source images', async 
     const result = await composeTwitterImageGrid(urls(20), { columns: 5, cellWidth: 128, cellHeight: 128, quality: 95, maxOutputBytes: 256 * 1024 }, {
         fetch: async () => { downloaded++; return response(200, image); },
     });
-    assert.equal(downloaded, 20); assert(result.data.length <= 256 * 1024); assert.equal(result.adapted, true);
+    assert.equal(downloaded, 40); assert(result.data.length <= 256 * 1024); assert.equal(result.adapted, true);
 });
