@@ -3,7 +3,8 @@
 const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType, Routes } = require('discord.js');
 const gallery = require('../mediaGallery');
 const cards = require('../twitterGridCards');
-const { matchesUniqueReference } = require('../discordAttachmentIdentity');
+const gridMarkers = require('../discordGridMarkers');
+const { matchesUniqueReference, logicalAttachments, embeddedImage } = require('../discordAttachmentIdentity');
 const { getFreshProviderSettings } = require('../providers/_provider_settings');
 const { isAllowed } = require('./_permissionCheck');
 const { isNsfwChannel } = require('../providers/_sensitive_controls');
@@ -110,10 +111,28 @@ function modalState(interaction, old) {
 }
 function sourceId(row) { return String(row?.message_id || ''); }
 function sourceIsOwn(message, client) { return message?.author?.id && message.author.id === client?.user?.id; }
+// Verify the exact REST target before trusting its content or issuing an edit.
+function sourceIsExpected(message, interaction, expectedId) {
+    return !!expectedId && !!interaction?.channelId && sourceIsOwn(message, interaction.client)
+        && message?.id === expectedId && message?.channelId === interaction.channelId;
+}
 function marker(id, name) { return `tg-${id}.${name.split('.').pop()}`; }
-function hasMarker(message, id) { return cards.attachmentList(message).some(file => new RegExp(`^tg-${id}\\.(jpg|png|webp)$`).test(file.name || '')); }
-function safeContinuation(message, signature, expectedCount) {
-    const attachments = cards.attachmentList(message);
+function hasMarker(message, id) { return !!gridMarkers.get(message, id); }
+function safeContinuation(message, signature, expectedCount, evidence = null) {
+    // Embed-referenced files can be omitted from Discord's attachments array.
+    // The saved signature and Bot author are checked by the caller; the
+    // channel-bound CDN path supplies only the hidden attachment identity.
+    const attachments = logicalAttachments(message);
+    if (!attachments) return false;
+    if (attachments.length > cards.attachmentList(message).length) {
+        // A hidden Embed does not expose MIME metadata. Only an established
+        // image-only manifest with matching approved X photo references can
+        // establish that deleting the continuation will not erase a video.
+        if (evidence?.containsNonImage !== false || !Array.isArray(evidence.refs)
+            || !Array.isArray(evidence.imageUrls) || !Number.isInteger(evidence.offset) || evidence.offset < 0
+            || evidence.refs.length !== expectedCount || evidence.refs.some((ref, i) => ref?.type !== 'url'
+                || ref.url !== evidence.imageUrls[evidence.offset + i] || !require('../twitterGridRestore').photoIdentity(ref.url))) return false;
+    }
     const embeds = message.embeds || [];
     // An existing display-mode switch may present the verified attachments as
     // image-only embeds. Do not delete a continuation containing textual or
@@ -139,7 +158,7 @@ async function sourcesRemainValid(interaction, row, access) {
     let first;
     try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); }
     catch { return false; }
-    if (!sourceIsOwn(first, interaction.client)) return false;
+    if (!sourceIsExpected(first, interaction, payload.messageIds[0])) return false;
     const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
     if (!replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) return false;
     for (let i = 1; i < payload.messageIds.length; i++) {
@@ -152,7 +171,7 @@ async function sourcesRemainValid(interaction, row, access) {
             if (replaced && Number(error?.code) === 10008) continue;
             return false;
         }
-        if (!sourceIsOwn(message, interaction.client) || !cards.matchesFingerprint(message, payload.partSignatures[i])) return false;
+        if (!sourceIsExpected(message, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(message, payload.partSignatures[i])) return false;
     }
     return true;
 }
@@ -164,14 +183,14 @@ async function sourceImageUrls(interaction, row, access) {
     if (payload.partRefs.length !== payload.totalParts || payload.completedParts !== payload.totalParts) throw new Error('GRID_SOURCE_INCOMPLETE');
     const first = await channel.messages.fetch({ message: payload.messageIds[0], force: true });
     const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
-    if (!sourceIsOwn(first, interaction.client) || !replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) throw new Error('GRID_SOURCE_CHANGED');
+    if (!sourceIsExpected(first, interaction, payload.messageIds[0]) || !replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) throw new Error('GRID_SOURCE_CHANGED');
     const all = [];
     for (let i = 0; i < payload.partRefs.length; i++) {
         let message = first;
         if (i > 0) {
             try { message = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); }
             catch (error) { if (!replaced || Number(error?.code) !== 10008) throw error; message = null; }
-            if (message && (!sourceIsOwn(message, interaction.client) || !cards.matchesFingerprint(message, payload.partSignatures[i]))) throw new Error('GRID_SOURCE_CHANGED');
+            if (message && (!sourceIsExpected(message, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(message, payload.partSignatures[i]))) throw new Error('GRID_SOURCE_CHANGED');
         }
         all.push(...cards.resolveReferences(payload.partRefs[i], message, replaced));
     }
@@ -181,7 +200,8 @@ async function sourceImageUrls(interaction, row, access) {
 function embedWitnessPosition(message, witness) {
     if (!witness || !Array.isArray(witness.hashes) || !witness.hashes.length || witness.hashes.length > 10
         || witness.hashes.some(value => !/^[a-f0-9]{64}$/.test(value)) || !Array.isArray(witness.attachments) || witness.attachments.length > 10) return null;
-    const attachments = cards.attachmentList(message);
+    const attachments = logicalAttachments(message);
+    if (!attachments) return null;
     if (new Set(witness.attachments.map(file => file.id)).size !== witness.attachments.length
         || witness.attachments.some(expected => !/^\d{1,25}$/.test(expected.id || '') || !attachments.some(file => String(file.id) === expected.id && file.name === expected.name && String(file.contentType || '').startsWith('image/')))) return null;
     const embeds = message?.embeds || [], matches = [];
@@ -191,11 +211,10 @@ function embedWitnessPosition(message, witness) {
     return matches.length === 1 ? { start: matches[0], end: matches[0] + witness.hashes.length } : null;
 }
 async function markerRows(query, interaction, payload, message) {
-    const markerFiles = cards.attachmentList(message).filter(file => /^tg-[a-f0-9]{32}\.(?:jpg|png|webp)$/.test(file.name || ''));
-    if (markerFiles.some(file => !/^image\/(?:jpeg|png|webp)$/i.test(file.contentType || ''))) return null;
-    const markerIds = markerFiles.map(file => /^tg-([a-f0-9]{32})\.(?:jpg|png|webp)$/.exec(file.name)[1]);
+    const evidence = gridMarkers.collect(message);
+    if (!evidence) return null;
+    const markerIds = [...evidence.keys()];
     if (!markerIds.length) return new Map();
-    if (new Set(markerIds).size !== markerIds.length) return null;
     const markers = new Map();
     for (const id of [...markerIds].sort()) {
         const rows = await query('SELECT gallery_id,message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND message_id=? AND provider_id=? AND expires_at_ms>? FOR UPDATE',
@@ -209,6 +228,37 @@ async function markerRows(query, interaction, payload, message) {
         markers.set(item.id, item);
     }
     return markers.size === markerIds.length ? markers : null;
+}
+
+// A different group's uploaded image can be visible only inside an Embed.
+// Before retaining it in a replacement PATCH, prove its sibling gallery and
+// witness under the shared row lock rather than guessing from CDN proximity.
+async function verifiedHiddenSiblings(query, interaction, payload, message, markers) {
+    const logical = logicalAttachments(message);
+    if (!logical) return false;
+    const visible = new Set(cards.attachmentList(message).map(file => String(file.id)));
+    const markerIds = new Set([...markers.keys()].map(id => gridMarkers.get(message, id)?.id).filter(Boolean));
+    const hidden = logical.filter(file => !visible.has(String(file.id)) && !markerIds.has(String(file.id)));
+    if (!hidden.length) return true;
+    if (!payload.sharedInline) return false;
+    const rows = await require('../twitterGridLegacyActions')._internal.relatedRows(query, interaction, payload.messageIds[0]);
+    const witnesses = [];
+    for (const row of rows) {
+        let sibling; try { sibling = JSON.parse(row.payload_json); } catch { return false; }
+        if (sibling.id === payload.id || sibling.lockId !== payload.lockId) continue;
+        if (sibling.kind !== 'twitter-image-grid-v1' || !sibling.sharedInline
+            || sibling.partsState && sibling.partsState !== 'complete' || sibling.completedParts !== sibling.totalParts
+            || sibling.messageIds?.[0] !== payload.messageIds[0]
+            || !cards.matchesFingerprint(message, sibling.firstStaticSignature, true)) return false;
+        const position = embedWitnessPosition(message, sibling.embedWitness);
+        if (position) witnesses.push(position);
+    }
+    const embeds = message.embeds || [], channelId = message.channelId || message.channel?.id;
+    return hidden.every(file => {
+        const positions = embeds.flatMap((embed, index) =>
+            matchesUniqueReference(cards.cleanEmbed(embed).image?.url, file, logical, channelId) ? [index] : []);
+        return positions.length === 1 && witnesses.filter(position => positions[0] >= position.start && positions[0] < position.end).length === 1;
+    });
 }
 async function reconcileSibling(interaction, row, deps = {}) {
     const db = deps.db || require('../db'), lockId = row.payload.lockId;
@@ -227,18 +277,18 @@ async function reconcileSibling(interaction, row, deps = {}) {
             || !Array.isArray(payload.partSignatures) || payload.partSignatures.length !== payload.messageIds.length) return null;
         const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         const access = await (deps.freshAccess || freshAccess)(interaction);
-        if (!access || settings.enabled !== true || cards.safetyHash(settings) !== payload.settingsHash || payload.nsfw && !currentNsfw(access, interaction)
+        if (!access || settings.enabled !== true || !cards.matchesSafetyPolicy(settings, payload) || payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, settings, access.member)) return null;
         const channel = access.channel || interaction.channel;
         let first; try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); } catch { return null; }
-        if (!sourceIsOwn(first, interaction.client) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return null;
+        if (!sourceIsExpected(first, interaction, payload.messageIds[0]) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return null;
         const markers = await markerRows(query, interaction, payload, first);
         if (!markers || ![...markers.keys()].some(id => id !== payload.id)) return null;
         const position = embedWitnessPosition(first, payload.embedWitness);
         if (!position) return null;
         for (let i = 1; i < payload.messageIds.length; i++) {
             let other; try { other = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); } catch { return null; }
-            if (!sourceIsOwn(other, interaction.client) || !cards.matchesFingerprint(other, payload.partSignatures[i])) return null;
+            if (!sourceIsExpected(other, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(other, payload.partSignatures[i])) return null;
         }
         const next = { ...payload, embedStart: position.start, embedEnd: position.end,
             partSignatures: [cards.fingerprint(first), ...payload.partSignatures.slice(1)], firstStaticSignature: cards.fingerprint(first, true) };
@@ -316,10 +366,60 @@ function withoutImages(embed, images, attachments = [], channelId) {
     }
     return output;
 }
+
+// A display-mode change can make source photos appear only in Embed URLs.
+// This helper is reached only after the caller has locked the scoped gallery
+// and verified the Bot author and saved full/static message fingerprints.
+function hiddenRootEdit(first, payload, composed, markers, evidence) {
+    if (payload.isPrimary === false || hasMarker(first, payload.id)) return null;
+    const channelId = first.channelId || first.channel?.id, visible = cards.attachmentList(first);
+    const start = payload.sharedInline ? payload.embedStart : 0;
+    const end = payload.sharedInline ? payload.embedEnd : (first.embeds || []).length;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > (first.embeds || []).length) return null;
+    const rootEmbeds = (first.embeds || []).slice(start, end);
+    const hidden = rootEmbeds.some(embed => {
+        const url = cards.cleanEmbed(embed).image?.url;
+        const file = embeddedImage(url, channelId);
+        return file && !/^tg-[a-f0-9]{32}\.(?:jpg|png|webp)$/.test(file.name || '')
+            && !visible.some(item => String(item.id || '') === file.id && item.name === file.name);
+    });
+    if (!hidden) return null;
+    const logical = logicalAttachments(first), visibleIds = new Set(visible.map(file => String(file.id || '')));
+    if (!logical) throw new Error('GRID_SOURCE_CHANGED');
+    const legacy = require('../twitterGridLegacyActions')._internal;
+    if (payload.partContainsNonImage?.[0] !== false || !legacy.approvedPhotoPart(payload, 0)
+        || !legacy.hiddenImageEvidence(first, payload, 0, false)) throw new Error('GRID_SOURCE_CHANGED');
+    const photos = legacy.currentAttachments(first, payload), targetIds = new Set(photos.map(file => String(file.id)));
+    if (photos.length !== payload.partSizes?.[0] || targetIds.size !== photos.length) throw new Error('GRID_SOURCE_CHANGED');
+    const embeds = (first.embeds || []).map(cards.cleanEmbed), seen = new Set();
+    for (let i = start; i < end; i++) {
+        const url = embeds[i].image?.url;
+        if (!url) continue;
+        const found = photos.filter(file => matchesUniqueReference(url, file, logical, channelId));
+        if (found.length !== 1 || seen.has(String(found[0].id))) throw new Error('GRID_SOURCE_CHANGED');
+        seen.add(String(found[0].id)); delete embeds[i].image;
+    }
+    // Every hidden source photo must be represented by one unique target
+    // Embed; visible photos without an Embed remain covered by the manifest.
+    if (photos.some(file => !visibleIds.has(String(file.id)) && !seen.has(String(file.id)))) throw new Error('GRID_SOURCE_CHANGED');
+    const retained = logical.filter(file => !targetIds.has(String(file.id))).map(file => ({ id: String(file.id) }));
+    for (const [id, item] of evidence) {
+        if (!markers.has(id) || targetIds.has(item.id)) throw new Error('GRID_SOURCE_CHANGED');
+    }
+    const filename = marker(payload.id, composed.filename);
+    embeds[start].image = { url: `attachment://${filename}` };
+    const kept = embeds.filter((embed, index) => index === start || index < start || index >= end
+        || Object.keys(embed).some(key => !['url', 'type', 'color'].includes(key)));
+    return { embeds: kept, attachments: retained, files: [{ attachment: composed.data, name: filename }], allowedMentions: { parse: [], repliedUser: false } };
+}
+
 function editPayload(first, payload, composed, markers = new Map()) {
     let embeds;
     let destination = 0;
-    const attachments = cards.attachmentList(first), keptAttachments = [];
+    const attachments = cards.attachmentList(first), keptAttachments = [], markerEvidence = gridMarkers.collect(first);
+    if (!markerEvidence) throw new Error('GRID_SOURCE_CHANGED');
+    const hiddenEdit = hiddenRootEdit(first, payload, composed, markers, markerEvidence);
+    if (hiddenEdit) return hiddenEdit;
     if (new Set(attachments.map(file => String(file.id || ''))).size !== attachments.length) throw new Error('GRID_SOURCE_CHANGED');
     const originalAttachments = [];
     for (const file of attachments) {
@@ -330,17 +430,19 @@ function editPayload(first, payload, composed, markers = new Map()) {
             if (match[1] !== payload.id) keptAttachments.push({ id: String(file.id) });
         } else originalAttachments.push(file);
     }
+    // Discord may omit an embed-referenced upload from attachments. Its
+    // channel-bound CDN URL still supplies the retained sibling marker ID.
+    for (const [id, item] of markerEvidence) {
+        if (!markers.has(id)) throw new Error('GRID_SOURCE_CHANGED');
+        if (id !== payload.id && !item.attached) keptAttachments.push({ id: item.id });
+    }
     if (payload.sharedInline) {
         embeds = (first.embeds || []).map(cards.cleanEmbed);
         const existing = hasMarker(first, payload.id);
         if (existing) {
-            const own = attachments.filter(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
-            if (own.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
-            const matching = embeds.flatMap((embed, index) => {
-                return matchesUniqueReference(embed.image?.url, own[0], attachments, first.channelId || first.channel?.id) ? [index] : [];
-            });
-            if (matching.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
-            destination = matching[0];
+            const own = markerEvidence.get(payload.id);
+            if (!own || own.embedIndices.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
+            destination = own.embedIndices[0];
             keptAttachments.push(...originalAttachments.map(file => ({ id: String(file.id) })));
         } else {
             const start = payload.embedStart, end = payload.embedEnd;
@@ -379,9 +481,8 @@ function editPayload(first, payload, composed, markers = new Map()) {
         }
     } else {
         if (hasMarker(first, payload.id) && (first.embeds || []).some(embed => cards.cleanEmbed(embed).image?.url)) {
-            const own = attachments.filter(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
-            if (own.length !== 1 || (first.embeds || []).filter(embed => matchesUniqueReference(cards.cleanEmbed(embed).image?.url,
-                own[0], attachments, first.channelId || first.channel?.id)).length !== 1) throw new Error('GRID_SOURCE_CHANGED');
+            const own = markerEvidence.get(payload.id);
+            if (!own || own.embedIndices.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
         }
         embeds = (first.embeds || []).map(embed => withoutImages(embed, payload.imageUrls, originalAttachments, first.channelId || first.channel?.id))
             .filter(embed => Object.keys(embed).some(key => !['url', 'color'].includes(key)));
@@ -397,6 +498,23 @@ function editPayload(first, payload, composed, markers = new Map()) {
     embeds[destination].image = { url: `attachment://${filename}` };
     const kept = embeds.filter((embed, i) => i === destination || Object.keys(embed).some(key => !['url', 'type', 'color'].includes(key)));
     if (!payload.sharedInline && hasMarker(first, payload.id)) keptAttachments.push(...originalAttachments.map(file => ({ id: String(file.id) })));
+    // Discord omits attachments referenced by an Embed from its attachments
+    // array. Preserve those still referenced by the outgoing embeds before
+    // editing, including restored images belonging to a sibling quote.
+    const logical = logicalAttachments(first), channelId = first.channelId || first.channel?.id;
+    if (!logical) throw new Error('GRID_SOURCE_CHANGED');
+    const visibleIds = new Set(attachments.map(file => String(file.id)));
+    const retainedIds = new Set(keptAttachments.map(file => String(file.id)));
+    const replacedMarkerId = markerEvidence.get(payload.id)?.id;
+    for (const file of logical) {
+        const id = String(file.id);
+        // The outgoing attachment:// marker is the new upload, even if the
+        // old hidden marker happens to have the same deterministic filename.
+        if (id === replacedMarkerId || visibleIds.has(id) || retainedIds.has(id)) continue;
+        if (kept.some(embed => matchesUniqueReference(embed.image?.url, file, logical, channelId))) {
+            keptAttachments.push({ id }); retainedIds.add(id);
+        }
+    }
     return { embeds: kept, attachments: keptAttachments, files: [{ attachment: composed.data, name: filename }], allowedMentions: { parse: [], repliedUser: false } };
 }
 
@@ -427,31 +545,40 @@ async function replacePublic(interaction, row, composed, deps) {
             || !Array.isArray(payload.partSignatures) || payload.partSignatures.length !== payload.totalParts) return 'incomplete';
         // Never erase non-image files from any post, even if their filenames
         // resemble an image. Legacy records use the same MIME/count checks.
-        if (Array.isArray(payload.partContainsNonImage) && (payload.partContainsNonImage.length !== payload.totalParts
-            || payload.partContainsNonImage.some(Boolean))) return 'changed';
+        if (Array.isArray(payload.partContainsNonImage)) {
+            if (payload.partContainsNonImage.length !== payload.totalParts) return 'changed';
+            if (payload.partContainsNonImage.some(Boolean)) return 'nonimage';
+        }
         const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         const access = await (deps.freshAccess || freshAccess)(interaction);
-        if (!access || settings.enabled !== true || cards.safetyHash(settings) !== payload.settingsHash || payload.nsfw && !currentNsfw(access, interaction)
+        if (!access || settings.enabled !== true || !cards.matchesSafetyPolicy(settings, payload) || payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, settings, access.member) || !mayReplace(interaction, payload, settings, access.permissions || access, access.guild?.ownerId)) return 'denied';
         let first;
         const channel = access.channel || interaction.channel;
         try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); } catch { return 'unavailable'; }
-        if (!sourceIsOwn(first, interaction.client) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return 'changed';
+        if (!sourceIsExpected(first, interaction, payload.messageIds[0]) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return 'changed';
         const already = hasMarker(first, payload.id);
         const markers = await markerRows(query, interaction, payload, first);
         if (!markers || already && !markers.has(payload.id)) return 'changed';
+        if (already && !await verifiedHiddenSiblings(query, interaction, payload, first, markers)) return 'changed';
         if (!already && !cards.matchesFingerprint(first, payload.partSignatures?.[0])) return 'changed';
         const continuations = [];
         for (let index = 1; index < payload.totalParts; index++) {
             let current;
             try { current = await channel.messages.fetch({ message: payload.messageIds[index], force: true }); }
             catch (error) { if (!already || Number(error?.code) !== 10008) return 'changed'; }
-            if (current && (!sourceIsOwn(current, interaction.client) || !safeContinuation(current, payload.partSignatures[index], payload.partSizes[index]))) return 'changed';
+            if (current && (!sourceIsExpected(current, interaction, payload.messageIds[index]) || !safeContinuation(current, payload.partSignatures[index], payload.partSizes[index],
+                { containsNonImage: payload.partContainsNonImage?.[index], refs: payload.partRefs?.[index], imageUrls: payload.imageUrls,
+                    offset: payload.partSizes.slice(0, index).reduce((sum, count) => sum + count, 0) }))) return 'changed';
             continuations.push({ index, current });
         }
         if (!already) {
             const attachments = cards.attachmentList(first);
-            if (!payload.sharedInline && attachments.length && (attachments.length !== payload.partSizes?.[0] || attachments.some(file => !String(file.contentType || '').startsWith('image/')))) return 'changed';
+            if (!payload.sharedInline && attachments.length && (attachments.length !== payload.partSizes?.[0] || attachments.some(file => !String(file.contentType || '').startsWith('image/')))) {
+                // A verified subset may remain visible after a display switch.
+                const legacy = require('../twitterGridLegacyActions')._internal;
+                if (!legacy.approvedPhotoPart(payload, 0) || !legacy.hiddenImageEvidence(first, payload, 0, false)) return 'changed';
+            }
         }
         const update = async phase => {
             payload.replacePhase = phase;
@@ -459,7 +586,11 @@ async function replacePublic(interaction, row, composed, deps) {
         };
         // When the deterministic marker is already present and replacement
         // did not finish, resume deletion without repeating an ambiguous edit.
-        let retainedIds = cards.attachmentList(first).filter(file => !new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || '')).map(file => String(file.id || ''));
+        const initialMarkerEvidence = gridMarkers.collect(first);
+        const initialLogical = logicalAttachments(first);
+        if (!initialMarkerEvidence || !initialLogical) return 'changed';
+        const ownMarkerId = initialMarkerEvidence.get(payload.id)?.id;
+        let retainedIds = initialLogical.filter(file => String(file.id) !== ownMarkerId).map(file => String(file.id));
         const resumePrior = already && payload.replacePhase !== 'done';
         if (resumePrior) {
             let nextEdit;
@@ -482,19 +613,26 @@ async function replacePublic(interaction, row, composed, deps) {
         try { combined = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); }
         catch { await update('partial'); return 'partial'; }
         const combinedAttachments = cards.attachmentList(combined), combinedIds = combinedAttachments.map(file => String(file.id || ''));
-        if (!sourceIsOwn(combined, interaction.client) || !hasMarker(combined, payload.id)
-            || combinedAttachments.length !== retainedIds.length + 1 || retainedIds.some(id => !combinedIds.includes(id))
+        const combinedMarkers = gridMarkers.collect(combined), ownMarker = combinedMarkers?.get(payload.id);
+        const logicalCombined = logicalAttachments(combined);
+        const retainedEvidence = new Set(logicalCombined ? logicalCombined.map(file => String(file.id || '')) : []);
+        if (!sourceIsExpected(combined, interaction, payload.messageIds[0]) || !ownMarker
+            || !logicalCombined || retainedIds.some(id => !retainedEvidence.has(id))
+            || logicalCombined.some(file => String(file.id || '') !== ownMarker.id && !retainedIds.includes(String(file.id || '')))
+            || combinedIds.some(id => id !== ownMarker.id && !retainedIds.includes(id))
+            || [...(combinedMarkers || [])].some(([id, item]) => id !== payload.id && initialMarkerEvidence.get(id)?.id !== item.id)
             || !cards.matchesFingerprint(combined, payload.firstStaticSignature, true)) {
             await update('partial'); return 'partial';
         }
-        const combinedFingerprint = cards.fingerprint(combined);
+        const combinedFingerprint = gridMarkers.stableFingerprint(combined);
+        if (!combinedFingerprint) { await update('partial'); return 'partial'; }
         for (const item of continuations) {
             if (!item.current) continue;
             // Access or source data may change while an earlier API call is
             // in flight. Recheck before every irreversible deletion.
             const currentSettings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
             const currentAccess = await (deps.freshAccess || freshAccess)(interaction);
-            if (!currentAccess || currentSettings.enabled !== true || cards.safetyHash(currentSettings) !== payload.settingsHash
+            if (!currentAccess || currentSettings.enabled !== true || !cards.matchesSafetyPolicy(currentSettings, payload)
                 || payload.nsfw && !currentNsfw(currentAccess, interaction)
                 || !currentButtonAccess(interaction, currentSettings, currentAccess.member)
                 || !mayReplace(interaction, payload, currentSettings, currentAccess.permissions || currentAccess, currentAccess.guild?.ownerId)) {
@@ -504,14 +642,16 @@ async function replacePublic(interaction, row, composed, deps) {
             let currentCombined;
             try { currentCombined = await currentChannel.messages.fetch({ message: payload.messageIds[0], force: true }); }
             catch { await update('partial'); return 'partial'; }
-            if (!sourceIsOwn(currentCombined, interaction.client) || !hasMarker(currentCombined, payload.id)
-                || cards.attachmentList(currentCombined).length !== combinedAttachments.length || cards.fingerprint(currentCombined) !== combinedFingerprint) {
+            if (!sourceIsExpected(currentCombined, interaction, payload.messageIds[0]) || !hasMarker(currentCombined, payload.id)
+                || gridMarkers.stableFingerprint(currentCombined) !== combinedFingerprint) {
                 await update('partial'); return 'partial';
             }
             let current;
             try { current = await currentChannel.messages.fetch({ message: payload.messageIds[item.index], force: true }); }
             catch (error) { if (Number(error?.code) === 10008) continue; await update('partial'); return 'partial'; }
-            if (!sourceIsOwn(current, interaction.client) || !safeContinuation(current, payload.partSignatures[item.index], payload.partSizes[item.index])) {
+            if (!sourceIsExpected(current, interaction, payload.messageIds[item.index]) || !safeContinuation(current, payload.partSignatures[item.index], payload.partSizes[item.index],
+                { containsNonImage: payload.partContainsNonImage?.[item.index], refs: payload.partRefs?.[item.index], imageUrls: payload.imageUrls,
+                    offset: payload.partSizes.slice(0, item.index).reduce((sum, count) => sum + count, 0) })) {
                 await update('partial'); return 'partial';
             }
             try { await current.delete(); }
@@ -522,7 +662,7 @@ async function replacePublic(interaction, row, composed, deps) {
             // the layout selected for this new, explicitly confirmed action.
             const latestSettings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
             const latestAccess = await (deps.freshAccess || freshAccess)(interaction);
-            if (!latestAccess || latestSettings.enabled !== true || cards.safetyHash(latestSettings) !== payload.settingsHash
+            if (!latestAccess || latestSettings.enabled !== true || !cards.matchesSafetyPolicy(latestSettings, payload)
                 || payload.nsfw && !currentNsfw(latestAccess, interaction) || !currentButtonAccess(interaction, latestSettings, latestAccess.member)
                 || !mayReplace(interaction, payload, latestSettings, latestAccess.permissions || latestAccess, latestAccess.guild?.ownerId)) {
                 await update('partial'); return 'partial';
@@ -531,7 +671,7 @@ async function replacePublic(interaction, row, composed, deps) {
             let latest;
             try { latest = await latestChannel.messages.fetch({ message: payload.messageIds[0], force: true }); }
             catch { await update('partial'); return 'partial'; }
-            if (!sourceIsOwn(latest, interaction.client) || cards.fingerprint(latest) !== combinedFingerprint || !hasMarker(latest, payload.id)) {
+            if (!sourceIsExpected(latest, interaction, payload.messageIds[0]) || gridMarkers.stableFingerprint(latest) !== combinedFingerprint || !hasMarker(latest, payload.id)) {
                 await update('partial'); return 'partial';
             }
             const latestMarkers = await markerRows(query, interaction, payload, latest);
@@ -545,8 +685,13 @@ async function replacePublic(interaction, row, composed, deps) {
             try { confirmed = await latestChannel.messages.fetch({ message: payload.messageIds[0], force: true }); }
             catch { await update('unknown'); return 'unknown'; }
             const retained = (replacement.attachments || []).map(file => String(file.id)), actual = cards.attachmentList(confirmed);
-            if (!sourceIsOwn(confirmed, interaction.client) || !hasMarker(confirmed, payload.id)
-                || actual.length !== retained.length + 1 || retained.some(id => !actual.some(file => String(file.id) === id))
+            const evidence = gridMarkers.collect(confirmed), marker = evidence?.get(payload.id);
+            const logicalConfirmed = logicalAttachments(confirmed);
+            const evidenceIds = new Set(logicalConfirmed ? logicalConfirmed.map(item => String(item.id || '')) : []);
+            if (!sourceIsExpected(confirmed, interaction, payload.messageIds[0]) || !marker
+                || !logicalConfirmed || retained.some(id => !evidenceIds.has(id))
+                || logicalConfirmed.some(file => String(file.id || '') !== marker.id && !retained.includes(String(file.id || '')))
+                || actual.some(file => String(file.id) !== marker.id && !retained.includes(String(file.id)))
                 || !cards.matchesFingerprint(confirmed, payload.firstStaticSignature, true)) { await update('unknown'); return 'unknown'; }
         }
         await update('done'); return 'done';
@@ -577,7 +722,7 @@ async function handle(interaction, deps = {}) {
             && !(row.payload.imageUrls.length === 1 && row.payload.restoreContinuation && row.payload.restoreArchive)) return fail();
     if (interaction.channel?.isThread?.() && row.payload.nsfwContextVersion !== 1 && row.payload.nsfw !== true) return fail();
     const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
-    if (settings.enabled !== true || cards.safetyHash(settings) !== row.payload.settingsHash) return fail();
+    if (settings.enabled !== true || !cards.matchesSafetyPolicy(settings, row.payload)) return fail();
     if (!await (deps.isAllowed || isAllowed)(interaction, { providerId: 'twitter' })) return;
     const initialAccess = await (deps.freshAccess || freshAccess)(interaction);
     if (!initialAccess || row.payload.nsfw && !currentNsfw(initialAccess, interaction) || !currentButtonAccess(interaction, settings, initialAccess.member)) return fail();
@@ -600,8 +745,9 @@ async function handle(interaction, deps = {}) {
     if (canReplace && !incomplete && (row.payload.replacePhase === 'done' || row.payload.restoreContinuation)) {
         try { restoreFirst = await (initialAccess.channel || interaction.channel).messages.fetch({ message: sourceId(row), force: true }); } catch { /* No restore control without a verified source. */ }
     }
-    const canRestore = !!restoreFirst && !!require('../twitterGridRestore').statusFromCombined(row.payload, restoreFirst);
-    const canResume = !!restoreFirst && !!require('../twitterGridRestore').statusFromPartial(row.payload, restoreFirst);
+    const restoreSourceValid = sourceIsExpected(restoreFirst, interaction, sourceId(row));
+    const canRestore = restoreSourceValid && !!require('../twitterGridRestore').statusFromCombined(row.payload, restoreFirst);
+    const canResume = restoreSourceValid && !!require('../twitterGridRestore').statusFromPartial(row.payload, restoreFirst);
     // A one-image group is actionable only when the complete persisted
     // continuation and the current public message have been verified.
     if (row.payload.imageUrls.length < 2 && !incomplete && !canResume) return fail();
@@ -690,6 +836,7 @@ async function handle(interaction, deps = {}) {
         if (action === 'confirm') {
             const result = await replacePublic(interaction, row, composed, deps);
             const labels = { done: ja ? '公開画像を置き換えました。' : 'Public images replaced.', partial: ja ? 'まとめ画像を表示しました。後続の画像は残っています。もう一度操作できます。' : 'The combined image is visible; the later images remain. You can retry.',
+                nonimage: ja ? '動画などを含む投稿は「自分にだけ表示」を選んで画像をまとめてください。' : 'For posts with video or other media, choose “Only me” to combine the images.',
                 attachment_limit: ja ? '添付がいっぱいです。先に親投稿の画像をまとめてから、もう一度お試しください。' : 'The message has no attachment space. Combine the parent images first, then try again.',
                 unknown: ja ? '置換結果を確認できませんでした。公開画像を確認してから再操作してください。' : 'The result is unknown. Check the public message before retrying.' };
             const panel = view(id, owner, state, settings, interaction.locale, labels[result] || (ja ? '公開画像が変更されたか、置換できませんでした。' : 'The public images changed or could not be replaced.'), canReplace, incomplete);
@@ -700,7 +847,7 @@ async function handle(interaction, deps = {}) {
         }
         const access = await (deps.freshAccess || freshAccess)(interaction);
         const current = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
-        if (!access || current.enabled !== true || cards.safetyHash(current) !== row.payload.settingsHash || row.payload.nsfw && !currentNsfw(access, interaction)
+        if (!access || current.enabled !== true || !cards.matchesSafetyPolicy(current, row.payload) || row.payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, current, access.member)) return fail();
         if (!await sourcesRemainValid(interaction, row, access)) return fail();
         return interaction.editReply({ ...addRestore(view(id, owner, state, current, interaction.locale, composed.adapted ? (ja ? '表示できるよう画像サイズを調整しました。' : 'The image size was adjusted to fit.') : undefined, mayReplace(interaction, row.payload, current, access.permissions || access, access.guild?.ownerId), incomplete), owner), attachments: [], files: [{ attachment: composed.data, name: composed.filename }] });

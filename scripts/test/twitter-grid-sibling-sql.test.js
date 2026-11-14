@@ -16,14 +16,14 @@ async function setup(db, { parentAttached = false, parentCount = 2 } = {}) {
     const quote = { imageUrls: [img(1), img(3)], sequence: 0, totalParts: 1, embedStart: parentAttached ? 1 : 2, embedEnd: parentAttached ? 3 : 4 };
     const step = { components: [], twitterGrid: parent, twitterGridSharedInline: true, twitterGridInline: [quote], ...(parentAttached ? { files: parent.imageUrls } : {}) };
     const prepared = await cards.prepare(step, { guildId: gid, channelId: cid, author: { id: user } }, { providerId: 'twitter', presentationSettings: settings }, storage);
-    const first = { id: '555555555555555555', author: { id: bot }, content: '', components: prepared.step.components,
+    const first = { id: '555555555555555555', channelId: cid, author: { id: bot }, content: '', components: prepared.step.components,
         attachments: parentAttached ? new Map(Array.from({ length: parentCount }, (_, i) => [String(i + 1), { id: String(i + 1), name: `photo${i + 1}.jpg`, contentType: 'image/jpeg' }])) : new Map(),
         embeds: parentAttached ? [{ title: 'parent' }, { title: 'quote', image: { url: img(1) } }, { image: { url: img(3) } }]
             : [{ title: 'parent', image: { url: img(1) } }, { image: { url: img(2) } }, { title: 'quote', image: { url: img(1) } }, { image: { url: img(3) } }] };
     let nextId = 900;
     first.edit = async request => {
         const keep = [...first.attachments.values()].filter(file => request.attachments.some(item => item.id === String(file.id)));
-        const name = request.files[0].name, file = { id: String(++nextId), name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/3/4/${name}` };
+        const name = request.files[0].name, fileId = String(++nextId), file = { id: fileId, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${cid}/${fileId}/${name}` };
         first.attachments = new Map([...keep, file].map(item => [String(item.id), item]));
         first.embeds = request.embeds.map(embed => embed.image?.url === `attachment://${name}` ? { ...embed, image: { url: file.url } } : embed);
         return first;

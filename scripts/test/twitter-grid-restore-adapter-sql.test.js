@@ -11,7 +11,10 @@ const schema = require('../../src/db_schema');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 if (![33621, 33622].includes(port)) throw Error('An explicit isolated test database port is required');
 
-for (const mode of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', 'largefirst', 'largenew', 'new413first', 'new413later', 'limitexceeded', 'firstfail', 'firstfailbad', 'newfail', 'restacceptedfail', 'restreadtimeout', 'newacceptedfail', 'newfirstacceptedfail', 'restfirstacceptedfail', 'restpartial', 'newpartial', 'restdenied', 'restresumefail', 'newresumefail', 'editrace', 'sendrace', 'permissionrace', 'editjournalfail', 'sendjournalfail', 'recover', 'recoverbad', 'recovertimeout', 'cleanupfail']) test(`shared gallery lock and durable journal restore mode ${mode}`, { timeout: 60000 }, async () => {
+for (const scenario of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', 'largefirst', 'largenew', 'new413first', 'new413later', 'limitexceeded', 'firstfail', 'firstfailbad', 'newfail', 'restacceptedfail', 'restreadtimeout', 'newacceptedfail', 'newfirstacceptedfail', 'restfirstacceptedfail', 'restpartial', 'newpartial', 'restdenied', 'restresumefail', 'newresumefail', 'editrace', 'sendrace', 'permissionrace', 'editjournalfail', 'sendjournalfail', 'recover', 'recoverbad', 'recovertimeout', 'cleanupfail',
+    'hidden:here', 'hidden:first', 'hidden:firstlater', 'hidden:rest', 'hidden:new', 'hidden:firstfail', 'hidden:recover',
+    ...['initial', 'reauthorize'].flatMap(stage => ['id', 'channel', 'guild', 'author'].flatMap(field => ['wrong', 'missing'].map(value => `identity:${stage}:${field}:${value}`)))]) test(`shared gallery lock and durable journal restore mode ${scenario}`, { timeout: 60000 }, async () => {
+    const hidden = scenario.startsWith('hidden:'), mode = hidden ? scenario.slice('hidden:'.length) : scenario;
     const db = await createTestDatabase(port);
     try {
         const migration = readFileSync(require('node:path').join(schema.MIGRATIONS_DIR, '20260922_add_link_presentation.sql'), 'utf8');
@@ -21,11 +24,13 @@ for (const mode of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', '
         const userId = '444444444444444444', messageId = '555555555555555555', markerId = '666666666666666666', statusId = '1234567890123456789';
         const large = mode.startsWith('large') || mode === 'limitexceeded', urls = Array.from({ length: large ? 20 : 13 }, (_, i) => `https://pbs.twimg.com/media/P${i}?format=jpg`), marker = `tg-${id}.jpg`;
         const makeFile = (attachmentId, name) => ({ id: attachmentId, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/${name}` });
-        const first = { id: messageId, channelId, author: { id: botId }, content: '', components: [
+        const first = { id: messageId, channelId, guildId, author: { id: botId }, content: '', components: [
             { type: 1, components: [{ type: 2, style: 4, label: '削除', custom_id: `delete:sl1:${id}` }] },
             { type: 1, components: [cards.gridButton(id, 'ja')] }],
             embeds: [{ url: `https://x.com/example/status/${statusId}`, image: { url: `https://cdn.discordapp.com/attachments/${channelId}/${markerId}/${marker}` } }],
             attachments: new Map([[markerId, makeFile(markerId, marker)]]) };
+        // Real Discord GET omits a file referenced by an Embed from this list.
+        if (hidden) first.attachments.clear();
         const settings = { enabled: true, button_disabled: {} };
         const payload = { id, lockId: id, kind: 'twitter-image-grid-v1', sourceStatusId: statusId, replacePhase: 'done', imageUrls: urls,
             expectedImageUrls: urls, completedParts: 2, totalParts: 2, partsState: 'complete', messageIds: [messageId, '777777777777777777'],
@@ -35,11 +40,22 @@ for (const mode of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', '
         await db.queryDatabase('INSERT INTO bot_media_galleries (gallery_id,guild_id,channel_id,message_id,provider_id,payload_json,expires_at_ms) VALUES (?,?,?,?,?,?,?)',
             [id, guildId, channelId, messageId, 'twitter', JSON.stringify(payload), Date.now() + 600000]);
         let latestId = mode === 'here' || mode === 'largehere' ? messageId : '999999999999999999'; const history = new Map();
+        let identityFetches = 0;
         const channel = { id: channelId, messages: { fetch: async query => {
             if (query.around) return new Map([[messageId, first], ...history]);
-            if (query.limit === 1) return new Map([[latestId, { id: latestId, channelId }]]);
+            if (query.limit === 1) return new Map([[latestId, { id: latestId, channelId, guildId }]]);
             if (query.limit) return history;
-            if (query.message === messageId) return first;
+            if (query.message === messageId) {
+                identityFetches++;
+                if (mode.startsWith('identity:')) {
+                    const [, stage, field, value] = mode.split(':');
+                    if (stage === 'initial' || identityFetches >= 2) {
+                        const key = field === 'channel' ? 'channelId' : field === 'guild' ? 'guildId' : field;
+                        return { ...first, [key]: value === 'missing' ? undefined : field === 'author' ? { id: '999999999999999999' } : '999999999999999999' };
+                    }
+                }
+                return first;
+            }
             if (history.has(query.message)) return history.get(query.message);
             throw { code: 10008 };
         } } };
@@ -64,7 +80,7 @@ for (const mode of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', '
             const sentId = String(888888888888888887n + BigInt(sends));
             if (mode === 'newfail' && sends === 2) throw Error('response lost');
             latestId = sentId;
-            const sent = { id: sentId, channelId, createdTimestamp: Date.now(), author: { id: botId }, content: value.content || '', embeds: value.embeds || [], components: value.components || [], attachments: new Map(value.files.map((file, i) => {
+            const sent = { id: sentId, channelId, guildId, createdTimestamp: Date.now(), author: { id: botId }, content: value.content || '', embeds: value.embeds || [], components: value.components || [], attachments: new Map(value.files.map((file, i) => {
                 const fileId = String(BigInt(markerId) + BigInt(100 + sends * 20 + i)); return [fileId, makeFile(fileId, file.name)];
             })) };
             history.set(sentId, sent);
@@ -132,6 +148,13 @@ for (const mode of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', '
             : mode.startsWith('firstfail') || mode.startsWith('recover') || ['cleanupfail', 'editrace', 'permissionrace', 'editjournalfail'].includes(mode) ? 'first'
             : mode === 'new413first' || mode === 'new413later' || mode === 'newfail' || mode === 'newacceptedfail' || mode === 'newfirstacceptedfail' || mode === 'newpartial' || mode === 'newresumefail' ? 'new'
                 : mode === 'restacceptedfail' || mode === 'restreadtimeout' || mode === 'restfirstacceptedfail' || mode === 'restpartial' || mode === 'restdenied' || mode === 'restresumefail' || mode === 'sendrace' || mode === 'sendjournalfail' ? 'rest' : mode;
+        if (mode.startsWith('identity:')) {
+            const before = (await db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [id]))[0].payload_json;
+            const result = await restore.executeRestore({ mode: 'first', id, owner: userId, interaction }, adapters);
+            assert.notEqual(result.status, 'done'); assert.equal(edits, 0); assert.equal(sends, 0);
+            assert.equal((await db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [id]))[0].payload_json, before);
+            return;
+        }
         if (mode.startsWith('recover') || mode === 'cleanupfail') {
             await assert.rejects(restore.executeRestore({ mode: selectedMode, id, owner: userId, interaction }, adapters), mode === 'cleanupfail' ? /cleanup failed/ : /fixture rollback/);
             if (mode === 'recoverbad') assert.equal((await adapters.recoverOnly()).status, 'blocked');

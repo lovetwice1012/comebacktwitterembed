@@ -3,12 +3,38 @@
 // Adapters for verified public restoration, including shared inline quotes.
 // Discord writes are fenced by the shared gallery lock and durable journal.
 const cards = require('./twitterGridCards');
-const { matchesUniqueReference } = require('./discordAttachmentIdentity');
+const { isExpected } = require('./discordMessageIdentity');
 const restore = require('./twitterGridRestore');
 const { createRestoreJournal } = require('./twitterGridRestoreJournal');
 const gallery = require('./mediaGallery');
 const { getFreshProviderSettings } = require('./providers/_provider_settings');
 const twitterProvider = require('./providers/twitter');
+const gridMarkers = require('./discordGridMarkers');
+const { matchesReference, logicalAttachments } = require('./discordAttachmentIdentity');
+const { createHash } = require('node:crypto');
+
+async function verifyHiddenUploadBytes(message, files, operation, options = {}) {
+    const logical = logicalAttachments(message);
+    if (!logical || !Array.isArray(files)) return false;
+    const visible = new Set(cards.attachmentList(message).map(file => String(file.id || '')));
+    const hidden = files.flatMap(file => {
+        const hits = logical.filter(item => item.name === file.name);
+        return hits.length === 1 && !visible.has(String(hits[0].id)) ? [{ file, attachment: hits[0] }] : [];
+    });
+    if (!hidden.length) return true;
+    const step = operation?.record?.steps?.at(-1), deadlineAtMs = Number(operation?.record?.startedAtMs) + 90000;
+    if (step?.state !== 'planned' || !Array.isArray(step.proofs) || !Number.isSafeInteger(deadlineAtMs)) return false;
+    const hashAttachment = options.hashAttachment || require('./twitterGridRestoreRecovery').hashAttachment;
+    const budget = { bytes: 0, maxBytes: 80 * 1024 * 1024 };
+    for (const { file, attachment } of hidden) {
+        if (!Buffer.isBuffer(file.data) || !file.data.length) return false;
+        const expected = createHash('sha256').update(file.data).digest('hex');
+        if (step.proofs.filter(proof => proof.name === file.name && proof.sha256 === expected).length !== 1) return false;
+        try { if (await hashAttachment(attachment, { deadlineAtMs, budget }) !== expected) return false; }
+        catch { return false; }
+    }
+    return true;
+}
 
 function createAdapters(interaction, galleryId, deps = {}) {
     const database = deps.db || require('./db'), grid = deps.grid || require('./components/twitterGrid')._internal;
@@ -18,7 +44,7 @@ function createAdapters(interaction, galleryId, deps = {}) {
     const state = { lock: null, snapshot: null, operation: null, journal: null, messages: [], firstSignature: null, afterSignature: null, retainedIds: [] };
     async function policy(snapshot) {
         const settings = await getSettings(twitterProvider, interaction.guildId), access = await getAccess(interaction);
-        if (!access || settings.enabled !== true || cards.safetyHash(settings) !== snapshot.payload.settingsHash
+        if (!access || settings.enabled !== true || !cards.matchesSafetyPolicy(settings, snapshot.payload)
             || snapshot.payload.nsfw && !(access.channel?.nsfw === true || access.parent?.nsfw === true)
             || !grid.currentButtonAccess(interaction, settings, access.member)
             || !grid.mayReplace(interaction, snapshot.payload, settings, access.permissions || access, access.guild?.ownerId)) return false;
@@ -30,7 +56,7 @@ function createAdapters(interaction, galleryId, deps = {}) {
         let first;
         try { first = await (access.channel || interaction.channel).messages.fetch({ message: snapshot.first.id, force: true }); }
         catch { return false; }
-        if (first?.author?.id !== interaction.client?.user?.id || cards.fingerprint(first) !== (state.afterSignature || state.firstSignature)) return false;
+        if (!isExpected(first, interaction, snapshot.first.id) || cards.fingerprint(first) !== (state.afterSignature || state.firstSignature)) return false;
         state.current = first; state.access = access;
         return true;
     }
@@ -62,7 +88,7 @@ function createAdapters(interaction, galleryId, deps = {}) {
                 if (request.mode !== 'resume' && lock.payload.replacePhase !== 'done') return { status: 'unavailable' };
                 const channel = interaction.channel;
                 let first; try { first = await channel.messages.fetch({ message: lock.scope.messageId, force: true }); } catch { return { status: 'unavailable' }; }
-                if (first?.author?.id !== interaction.client?.user?.id) return { status: 'denied' };
+                if (!isExpected(first, interaction, lock.scope.messageId)) return { status: 'denied' };
                 const row = { ...lock.row, payload: lock.payload };
                 if (!await grid.sourcesRemainValid(interaction, row, { channel })) return { status: 'unavailable' };
                 if (request.mode === 'resume' && !restore.statusFromPartial(lock.payload, first)) return { status: 'unavailable' };
@@ -81,8 +107,8 @@ function createAdapters(interaction, galleryId, deps = {}) {
             return result;
         },
         authorize: async (_request, snapshot) => authorization(snapshot),
-        latestMessageId: async () => restore.latestMessageId(state.access?.channel || interaction.channel),
-        adjacency: async (_snapshot, firstId, secondId) => restore.adjacency(state.access?.channel || interaction.channel, firstId, secondId),
+        latestMessageId: async () => restore.latestMessageId(state.access?.channel || interaction.channel, interaction),
+        adjacency: async (_snapshot, firstId, secondId) => restore.adjacency(state.access?.channel || interaction.channel, firstId, secondId, interaction),
         fileLimit: async () => Number.isSafeInteger(interaction.attachmentSizeLimit) && interaction.attachmentSizeLimit > 0
             ? Math.min(interaction.attachmentSizeLimit, require('./providers/twitter/safeMedia').MAX_MEDIA_BYTES) : null,
         verifyLiveSource: (source, payload, deadlineAtMs) => restore.fetchVerifiedSource(source, payload, { ...deps.sourceDependencies, deadlineAtMs }),
@@ -94,17 +120,31 @@ function createAdapters(interaction, galleryId, deps = {}) {
             return Math.max(capacity.inlineUploadMax, capacity.inlineReferenceMax);
         },
         async preflight(request, snapshot, plan) {
-            const all = cards.attachmentList(state.current), marker = new RegExp(`^tg-${snapshot.payload.id}\\.(jpg|png|webp)$`);
-            const own = all.filter(file => marker.test(file.name || ''));
+            const all = cards.attachmentList(state.current), markers = gridMarkers.collect(state.current);
+            const own = markers?.get(snapshot.payload.id);
             // Unrelated retained attachments need separate ownership and
             // sibling-witness reconciliation before we can change this post.
             if (request.mode === 'resume') {
                 if (!restore.statusFromPartial(snapshot.payload, state.current) || plan.edit.length) return false;
             } else if (snapshot.payload.sharedInline) {
-                if (own.length !== 1 || !state.inline) return false;
+                if (!own || own.embedIndices.length !== 1 || !state.inline) return false;
                 if (plan.edit.length) {
                     const inline = require('./twitterGridRestoreInline'), capacity = inline.capacity(state.inline, plan.edit.length);
-                    if (capacity.inlineUploadMax >= plan.edit.length) state.inlineMode = 'uploads';
+                    // Quote uploads referenced from embeds are omitted from
+                    // Discord's attachment list. Restore verified X image
+                    // references when they fit, retaining independently
+                    // verifiable receipt and sibling evidence.
+                    if (!snapshot.payload.isPrimary && capacity.inlineReferenceMax >= plan.edit.length) {
+                        const status = restore.statusFromCombined(snapshot.payload, state.current);
+                        if (!status) return false;
+                        try {
+                            state.inlinePlan = await inline.prepareReferenceEdit(state.inline, plan.edit, async () => {
+                                const verified = await restore.fetchVerifiedSource(status, snapshot.payload, deps.sourceDependencies);
+                                return verified.slice(0, plan.edit.length);
+                            });
+                            state.inlineMode = 'references';
+                        } catch { return false; }
+                    } else if (capacity.inlineUploadMax >= plan.edit.length) state.inlineMode = 'uploads';
                     else if (capacity.inlineReferenceMax >= plan.edit.length) {
                         const status = restore.statusFromCombined(snapshot.payload, state.current);
                         if (!status) return false;
@@ -117,7 +157,8 @@ function createAdapters(interaction, galleryId, deps = {}) {
                         } catch { return false; }
                     } else return false;
                 }
-            } else if (own.length !== 1 || all.length !== 1 || plan.edit.length > 10) return false;
+            } else if (!own || own.embedIndices.length !== 1 || markers.size !== 1
+                || all.length !== Number(own.attached) || plan.edit.length > 10) return false;
             if (plan.edit.length && !(deps.editor || require('./providers/twitter/singleAttemptEditor')).forMessage(state.current)) return false;
             if (plan.sends.length && !(deps.sender || require('./providers/twitter/singleAttemptSender')).forMessage(state.current, 'channel', null)) return false;
             return true;
@@ -126,13 +167,10 @@ function createAdapters(interaction, galleryId, deps = {}) {
             state.operation = await state.journal.begin(request, snapshot, plan, source);
             if (request.mode !== 'new') return state.operation;
             try {
-                const first = state.current, marker = cards.attachmentList(first).find(file => new RegExp(`^tg-${snapshot.payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
-                if (!marker) throw new Error('GRID_SOURCE_CHANGED');
+                const first = state.current, marker = gridMarkers.get(first, snapshot.payload.id);
+                if (!marker || marker.embedIndices.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
                 let embeds = (first.embeds || []).map(cards.cleanEmbed);
-                for (const embed of embeds) {
-                    const image = embed.image?.url;
-                    if (matchesUniqueReference(image, marker, cards.attachmentList(first), interaction.channelId)) delete embed.image;
-                }
+                delete embeds[marker.embedIndices[0]].image;
                 if (snapshot.payload.sharedInline) embeds = [embeds[state.inline.markerIndex]];
                 const components = (first.components || []).map(row => row?.toJSON ? row.toJSON() : JSON.parse(JSON.stringify(row)));
                 for (const row of components) row.components = (row.components || []).filter(item => !String(item.custom_id || item.customId || '').startsWith('tg:')).map(item => {
@@ -187,7 +225,12 @@ function createAdapters(interaction, galleryId, deps = {}) {
             const inline = require('./twitterGridRestoreInline');
             const plan = state.inlineMode === 'references' ? state.inlinePlan : inline.prepareEdit(state.inline, files);
             state.inlinePlan = plan; state.inlineFiles = files;
-            const expected = { channelId: interaction.channelId, content: plan.edit.content, embeds: plan.edit.embeds, components: plan.edit.components, attachments: plan.retained };
+            // Discord omits retained files referenced by an embed from the
+            // returned attachments list, even though the edit must preserve
+            // their IDs. Journal the expected *response* shape separately.
+            const visibleRetained = plan.retained.filter(file => !(plan.edit.embeds || []).some(embed =>
+                matchesReference(embed?.image?.url, file, interaction.channelId, { allowAttachmentScheme: true })));
+            const expected = { channelId: interaction.channelId, content: plan.edit.content, embeds: plan.edit.embeds, components: plan.edit.components, attachments: visibleRetained };
             return { kind: plan.kind === 'references' ? 'inline-reference' : 'inline-upload', expectedFingerprint: cards.fingerprint(expected),
                 expectedStatic: cards.fingerprint(expected, true), targetStart: plan.targetStart, targetEnd: plan.targetEnd,
                 retainedIds: plan.retained.map(file => String(file.id)) };
@@ -218,8 +261,8 @@ function createAdapters(interaction, galleryId, deps = {}) {
         },
         confirm: (operation, receipt) => state.journal.confirm(operation, receipt), markUnknown: operation => state.journal.markUnknown(operation),
         async editOnce(_request, snapshot, files) {
-            const first = state.current, all = cards.attachmentList(first), name = new RegExp(`^tg-${snapshot.payload.id}\\.(jpg|png|webp)$`);
-            if (first?.author?.id !== interaction.client?.user?.id || cards.fingerprint(first) !== (state.afterSignature || state.firstSignature)) throw restore.notSubmitted();
+            const first = state.current, all = cards.attachmentList(first), marker = gridMarkers.get(first, snapshot.payload.id);
+            if (!isExpected(first, interaction, snapshot.first.id) || cards.fingerprint(first) !== (state.afterSignature || state.firstSignature)) throw restore.notSubmitted();
             if (snapshot.payload.sharedInline) {
                 const plan = state.inlinePlan;
                 if (!plan) throw restore.notSubmitted();
@@ -227,23 +270,19 @@ function createAdapters(interaction, galleryId, deps = {}) {
                 if (!editor) throw restore.notSubmitted();
                 return editor.edit(plan.edit);
             }
-            const markers = all.filter(file => name.test(file.name || ''));
-            if (markers.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
-            state.retainedIds = all.filter(file => file !== markers[0]).map(file => String(file.id));
+            if (!marker || marker.embedIndices.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
+            state.retainedIds = all.filter(file => String(file.id) !== marker.id).map(file => String(file.id));
             if (state.retainedIds.length + files.length > 10) throw new Error('GRID_RESTORE_SIZE');
             const embeds = (first.embeds || []).map(cards.cleanEmbed);
-            for (const embed of embeds) {
-                const image = embed.image?.url;
-                if (matchesUniqueReference(image, markers[0], all, interaction.channelId)) delete embed.image;
-            }
+            delete embeds[marker.embedIndices[0]].image;
             const edit = { content: first.content || '', embeds, components: first.components || [], attachments: state.retainedIds.map(id => ({ id })),
                 files: files.map(file => ({ attachment: file.data, name: file.name })), allowedMentions: { parse: [], repliedUser: false } };
             const editor = (deps.editor || require('./providers/twitter/singleAttemptEditor')).forMessage(first);
             if (!editor) throw new Error('GRID_RESTORE_UNAVAILABLE');
             return editor.edit(edit);
         },
-        async sendOnce(request, _snapshot, files, _operation, index) {
-            if (state.current?.author?.id !== interaction.client?.user?.id || cards.fingerprint(state.current) !== (state.afterSignature || state.firstSignature)) throw restore.notSubmitted();
+        async sendOnce(request, snapshot, files, _operation, index) {
+            if (!isExpected(state.current, interaction, snapshot.first.id) || cards.fingerprint(state.current) !== (state.afterSignature || state.firstSignature)) throw restore.notSubmitted();
             const sender = (deps.sender || require('./providers/twitter/singleAttemptSender')).forMessage(state.current, 'channel', null);
             if (!sender) throw new Error('GRID_RESTORE_UNAVAILABLE');
             const body = { files: files.map(file => ({ attachment: file.data, name: file.name })), allowedMentions: { parse: [], repliedUser: false } };
@@ -251,6 +290,9 @@ function createAdapters(interaction, galleryId, deps = {}) {
             return sender.send(body);
         },
         async verifyResult(request, snapshot, group, files, result, operation) {
+            if (!isExpected(result, interaction, group.type === 'edit' ? snapshot.first.id : null)) return false;
+            if (!(snapshot.payload.sharedInline && group.type === 'edit' && state.inlinePlan?.kind === 'references')
+                && !await verifyHiddenUploadBytes(result, files, operation, deps.recoveryDependencies)) return false;
             if (snapshot.payload.sharedInline && group.type === 'edit') {
                 const inline = require('./twitterGridRestoreInline');
                 let provisional;
@@ -294,7 +336,7 @@ function createAdapters(interaction, galleryId, deps = {}) {
                 const existing = [];
                 for (const [index, messageId] of snapshot.payload.messageIds.entries()) {
                     const message = await (state.access.channel || interaction.channel).messages.fetch({ message: messageId, force: true, cache: false });
-                    if (message?.author?.id !== interaction.client?.user?.id || String(message.id) !== String(messageId)
+                    if (!isExpected(message, interaction, messageId)
                         || !cards.matchesFingerprint(message, snapshot.payload.partSignatures[index])) throw new Error('GRID_SOURCE_CHANGED');
                     existing.push(message);
                 }
@@ -358,4 +400,4 @@ function createAdapters(interaction, galleryId, deps = {}) {
     return adapters;
 }
 
-module.exports = { createAdapters };
+module.exports = { createAdapters, _internal: { verifyHiddenUploadBytes } };

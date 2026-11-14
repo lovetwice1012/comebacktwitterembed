@@ -15,7 +15,7 @@ const urls = Array.from({ length: 13 }, (_, i) => `https://pbs.twimg.com/media/P
 const file = (id, name) => ({ id, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${cid}/${id}/${name}` });
 function post(messageId, op, start, count, first = false, newGridId = null) {
     const files = Array.from({ length: count }, (_, i) => file(String(710000000000000000n + BigInt(start + i)), `restore-${op}-${start + i}.jpg`));
-    return { id: messageId, channelId: cid, author: { id: bot }, content: '',
+    return { id: messageId, channelId: cid, guildId: gid, author: { id: bot }, content: '',
         embeds: first ? [{ title: '本文', url: `https://x.com/u/status/${status}` }] : [],
         components: newGridId ? [{ type: 1, components: [{ custom_id: `tg:${newGridId}:0:open` }] }] : [],
         attachments: new Map(files.map(item => [item.id, item])) };

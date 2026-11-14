@@ -68,6 +68,7 @@ test('real SQL unset, NULL and explicit enabled values govern private confirmati
             const rows = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [f.item.id]);
             const payload = JSON.parse(rows[0].payload_json);
             payload.settingsHash = cards.safetyHash(actual);
+            payload.settingsPolicyHash = cards.safetyPolicyHash(actual);
             await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
             let gridView;
             const gridClick = f.click(`tg:${f.item.id}:0:open`);
@@ -83,6 +84,31 @@ test('real SQL unset, NULL and explicit enabled values govern private confirmati
                 assert.equal(f.executed, before + 1, `enabled=${value}`);
             }
         }
+    } finally { await f.db.close(); }
+});
+test('a persisted legacy split survives benign setting changes but not changed image safety', { timeout: 60000 }, async () => {
+    const f = await fixture(), grid = require('../../src/components/twitterGrid');
+    try {
+        const original = { enabled: true, defaultLanguage: 'ja', silent_expansion: false, show_previous_shares: true,
+            editOriginalIfTranslate: false, media_display_mode: 'embed', hidden_output_items: [], button_invisible: {},
+            button_disabled: { user: [], role: [], channel: [] } };
+        let settings = { ...original, defaultLanguage: 'en-US', silent_expansion: true };
+        f.deps.getSettings = async () => settings;
+        const rows = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [f.item.id]);
+        const payload = JSON.parse(rows[0].payload_json);
+        payload.settingsHash = cards.safetyHash(original);
+        delete payload.settingsPolicyHash; // A gallery created by the deployed legacy version.
+        await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+        const click = f.click(`tg:${f.item.id}:0:open`);
+        click.message = f.first; click.memberPermissions = { has: () => true };
+        let view; click.editReply = async result => { view = result; };
+        await grid.handle(click, { ...f.deps, isAllowed: async () => true });
+        assert.ok(view.components?.length);
+        settings = { ...settings, media_display_mode: 'link_only' };
+        await grid.handle(click, { ...f.deps, isAllowed: async () => true });
+        assert.equal(view.components?.length || 0, 0);
+        const [after] = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [f.item.id]);
+        assert.equal(JSON.parse(after.payload_json).settingsHash, payload.settingsHash, 'legacy hash is not rewritten');
     } finally { await f.db.close(); }
 });
 test('a source changed while confirmation waits for the SQL lock is not acted on', { timeout: 60000 }, async () => {

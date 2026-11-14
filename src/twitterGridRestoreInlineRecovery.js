@@ -4,9 +4,10 @@
 // The caller must hold the shared gallery lock and must not submit a new
 // Discord operation while evaluating this proof.
 const cards = require('./twitterGridCards');
+const { isExpected } = require('./discordMessageIdentity');
 const grid = require('./components/twitterGrid')._internal;
 const restore = require('./twitterGridRestore');
-const { matchesUniqueReference } = require('./discordAttachmentIdentity');
+const { matchesUniqueReference, logicalAttachments } = require('./discordAttachmentIdentity');
 const { statusIdentity } = require('./providers/twitter/twitterSourceParser/fxTwitter')._internal;
 
 function invalid() { return new Error('GRID_RESTORE_INLINE_RECOVERY'); }
@@ -17,7 +18,8 @@ function isMarker(id, file) {
 }
 function refersTo(url, file, channelId, attachments) { return matchesUniqueReference(url, file, attachments, channelId); }
 function markerPosition(message, file, channelId = message.channelId || message.channel?.id) {
-    const attachments = cards.attachmentList(message);
+    const attachments = logicalAttachments(message);
+    if (!attachments) return null;
     const indexes = (message.embeds || []).flatMap((embed, index) => refersTo(cards.cleanEmbed(embed).image?.url, file, channelId, attachments) ? [index] : []);
     return indexes.length === 1 ? indexes[0] : null;
 }
@@ -25,13 +27,18 @@ function normalizedFingerprint(message, uploaded, retained, channelId, legacy = 
     const embeds = (message.embeds || []).map(embed => {
         const value = cards.cleanEmbed(embed), url = value.image?.url;
         if (url) {
-            const matches = uploaded.filter(file => refersTo(url, file, channelId, cards.attachmentList(message)));
+            const matches = uploaded.filter(file => refersTo(url, file, channelId, logicalAttachments(message)));
             if (matches.length > 1) throw invalid();
             if (matches.length === 1) value.image.url = `attachment://${matches[0].name}`;
         }
         return value;
     });
-    const expected = { channelId: channelId || message.channelId || message.channel?.id, content: message.content || '', embeds, components: (message.components || []).map(plain), attachments: retained };
+    // Retained uploads referenced by embeds are hidden from Discord's GET
+    // attachment array. Reproduce that response shape for journal proof.
+    const files = logicalAttachments(message) || [];
+    const visibleRetained = retained.filter(file => !(message.embeds || []).some(embed =>
+        refersTo(cards.cleanEmbed(embed).image?.url, file, channelId, files)));
+    const expected = { channelId: channelId || message.channelId || message.channel?.id, content: message.content || '', embeds, components: (message.components || []).map(plain), attachments: visibleRetained };
     return legacy ? cards.legacyFingerprint(expected) : cards.fingerprint(expected);
 }
 async function lockRows(lock, interaction, query, readRows) {
@@ -113,12 +120,12 @@ async function recoverInline({ lock, interaction, recorded, messages, authorize,
         priorCount += part.count;
     }
     const source = messages[0], botId = String(interaction?.client?.user?.id || ''), channelId = String(interaction?.channelId || '');
-    if (!/^\d{1,25}$/.test(botId) || !/^\d{1,25}$/.test(channelId) || source?.author?.id !== botId
-        || String(source.id || '') !== String(lock.scope.messageId) || String(source.channelId || source.channel?.id || '') !== channelId
+    if (!/^\d{1,25}$/.test(botId) || !/^\d{1,25}$/.test(channelId) || !isExpected(source, interaction, lock.scope.messageId)
         || !cards.matchesFingerprint(source, evidence.expectedStatic, true)
         || !cards.matchesFingerprint(source, payload.firstStaticSignature, true)) throw invalid();
     const observed = messages.map(message => cards.fingerprint(message));
-    const embeds = (source.embeds || []).map(cards.cleanEmbed), files = cards.attachmentList(source);
+    const embeds = (source.embeds || []).map(cards.cleanEmbed), files = logicalAttachments(source);
+    if (!files) throw invalid();
     if (evidence.targetEnd > embeds.length || statusIdentity(embeds[evidence.targetStart]?.url) !== recorded.sourceStatusId) throw invalid();
     const ids = files.map(file => String(file.id || ''));
     if (ids.some(id => !/^\d{1,25}$/.test(id)) || new Set(ids).size !== ids.length) throw invalid();
@@ -146,12 +153,12 @@ async function recoverInline({ lock, interaction, recorded, messages, authorize,
     // backed by the planned file-name and SHA-256 evidence, never by proximity.
     for (let index = 1, start = groups[0].length; index < messages.length; index++) {
         const item = messages[index], proofStep = recorded.steps[index];
-        if (proofStep?.type !== 'send' || proofStep.index !== index || proofStep.start !== start || proofStep.count !== groups[index].length
+        if (!isExpected(item, interaction, item?.id) || proofStep?.type !== 'send' || proofStep.index !== index || proofStep.start !== start || proofStep.count !== groups[index].length
             || !Array.isArray(proofStep.proofs) || proofStep.proofs.length !== groups[index].length || item.content || (item.embeds || []).length
             || (item.components || []).length || !restore.verifyRestoredAttachments(item, { channelId, botId }, proofStep.proofs)) throw invalid();
         for (const [offset, proof] of proofStep.proofs.entries()) {
             if (!new RegExp(`^restore-${recorded.operationId}-${start + offset}\\.(jpg|png|webp|avif)$`).test(proof?.name || '') || !/^[a-f0-9]{64}$/.test(proof?.sha256 || '')) throw invalid();
-            const found = cards.attachmentList(item).filter(file => file.name === proof.name); if (found.length !== 1 || await read(() => hashAttachment(found[0], { deadlineAtMs: deadline, now, budget })) !== proof.sha256) throw invalid();
+            const found = logicalAttachments(item)?.filter(file => file.name === proof.name) || []; if (found.length !== 1 || await read(() => hashAttachment(found[0], { deadlineAtMs: deadline, now, budget })) !== proof.sha256) throw invalid();
         }
         start += groups[index].length;
     }
@@ -201,8 +208,7 @@ async function recoverInline({ lock, interaction, recorded, messages, authorize,
     const fetch = fetchCurrent || (id => interaction.channel.messages.fetch({ message: id, force: true, cache: false }));
     for (const [index, originalMessage] of messages.entries()) {
         let latest; try { latest = await read(() => fetch(String(originalMessage.id))); } catch { throw invalid(); }
-        if (!latest || String(latest.id || '') !== String(originalMessage.id) || latest.author?.id !== botId
-            || String(latest.channelId || latest.channel?.id || '') !== channelId || cards.fingerprint(latest) !== observed[index]
+        if (!isExpected(latest, interaction, originalMessage.id) || cards.fingerprint(latest) !== observed[index]
             || cards.fingerprint(originalMessage) !== observed[index]) throw invalid();
     }
     if (!await read(authorize)) throw invalid();

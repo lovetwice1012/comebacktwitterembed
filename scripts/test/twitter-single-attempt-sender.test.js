@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { REST, DefaultRestOptions } = require('discord.js');
+const { REST, DefaultRestOptions, Client, Message } = require('discord.js');
 const { createSingleAttemptSender } = require('../../src/providers/twitter/singleAttemptSender')._internal;
 const { readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
@@ -58,6 +58,49 @@ test('reply source and previous preserve references, allowed mentions and channe
         assert.equal(body.message_reference.message_id, ref); assert.equal(body.message_reference.fail_if_not_exists, true);
         assert.equal(body.allowed_mentions.replied_user, false); assert.deepEqual(body.allowed_mentions.parse, []);
     }
+});
+
+test('Gateway-first partial cache uses the complete POST receipt without changing the cache', async () => {
+    const client = new Client({ intents: [] });
+    client.token = 'fixture-only';
+    const cachedData = { id: SENT, channel_id: CHANNEL, author: { id: SOURCE, username: 'bot', discriminator: '0' },
+        content: '', embeds: [], attachments: [], components: [] };
+    const cached = new Message(client, cachedData);
+    const raw = { ...cachedData, embeds: [{ title: 'Post', description: 'body' }],
+        attachments: [{ id: '777777777777777777', filename: 'photo.jpg', content_type: 'image/jpeg',
+            url: `https://cdn.discordapp.com/attachments/${CHANNEL}/777777777777777777/photo.jpg` }],
+        components: [{ type: 1, components: [{ type: 2, style: 2, label: 'Combine', custom_id: 'tg:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0:open' }] }] };
+    let posts = 0, updates = 0;
+    const channel = { id: CHANNEL, client, messages: { cache: new Map([[SENT, cached]]), resolveId: value => value?.id || value,
+        _add: value => { updates++; cached._patch(value); return cached; } } };
+    client.channels.cache.set(CHANNEL, channel);
+    const sender = createSingleAttemptSender({ restFactory: () => ({ setToken() {}, async post() { posts++; return raw; } }) });
+    const receipt = await sender.forMessage({ id: SOURCE, channel, client }, 'channel').send({ content: 'fixture' });
+    const cards = require('../../src/twitterGridCards');
+    assert.equal(posts, 1); assert.equal(updates, 0); assert.notEqual(receipt, cached);
+    assert.equal(receipt.channel, channel); assert.equal(receipt.embeds[0].title, 'Post');
+    assert.equal(receipt.attachments.first().id, raw.attachments[0].id);
+    assert.equal(receipt.components[0].components[0].customId, raw.components[0].components[0].custom_id);
+    assert.equal(cached.embeds.length, 0); assert.equal(cached.attachments.size, 0);
+    const saved = cards.fingerprint(receipt);
+    cached._patch(raw);
+    assert.equal(cards.fingerprint(cached), saved, 'a subsequent complete GET matches the saved receipt');
+});
+
+test('a later Gateway edit is not overwritten by an older POST acknowledgement', async () => {
+    const client = new Client({ intents: [] }); client.token = 'fixture-only';
+    const raw = { id: SENT, channel_id: CHANNEL, author: { id: SOURCE, username: 'bot', discriminator: '0' },
+        content: 'original', embeds: [], attachments: [], components: [] };
+    const newer = new Message(client, { ...raw, content: 'changed later', edited_timestamp: '2026-11-14T00:00:01.000Z' });
+    const channel = { id: CHANNEL, client, messages: { cache: new Map([[SENT, newer]]), resolveId: value => value?.id || value,
+        _add: value => { newer._patch(value); return newer; } } };
+    client.channels.cache.set(CHANNEL, channel);
+    let calls = 0;
+    const sender = createSingleAttemptSender({ restFactory: () => ({ setToken() {}, async post() { calls++; return raw; } }) });
+    const receipt = await sender.forMessage({ id: SOURCE, channel, client }, 'channel').send({ content: 'fixture' });
+    assert.equal(calls, 1); assert.equal(receipt.content, 'original'); assert.equal(newer.content, 'changed later');
+    const cards = require('../../src/twitterGridCards');
+    assert.notEqual(cards.fingerprint(receipt), cards.fingerprint(newer), 'a real later edit is not authorized by the old receipt');
 });
 
 test('429 is not automatically resubmitted by the dedicated manager', async () => {

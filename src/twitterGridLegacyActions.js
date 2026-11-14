@@ -3,7 +3,7 @@
 // Existing message controls operate on all physical messages of a split X
 // post. The caller holds the same SQL lock as the public grid replacement.
 const cards = require('./twitterGridCards');
-const { matchesReference, matchesUniqueReference } = require('./discordAttachmentIdentity');
+const { matchesReference, matchesUniqueReference, logicalAttachments } = require('./discordAttachmentIdentity');
 const { randomBytes, createHash } = require('node:crypto');
 const twitterProvider = require('./providers/twitter');
 let activeSourceUploads = 0;
@@ -13,10 +13,17 @@ function definitelyRejected(error) {
     return [400, 401, 403, 405, 413, 415, 422, 429].includes(status);
 }
 
-function own(message, interaction) {
-    return message?.author?.id === interaction.client?.user?.id;
+function own(message, interaction, expectedId) {
+    return message?.author?.id === interaction.client?.user?.id
+        && (!expectedId || String(message.id || '') === String(expectedId))
+        && String(message.channelId || message.channel?.id || '') === String(interaction.channelId || '')
+        && (!message.guildId || String(message.guildId) === String(interaction.guildId || ''));
 }
-function items(message) { return cards.attachmentList(message); }
+function items(message) {
+    const files = logicalAttachments(message);
+    if (!files) throw new Error('GRID_SOURCE_CHANGED');
+    return files;
+}
 function isSpoiler(file) {
     try {
         if (file?.spoiler === true || /^SPOILER_/i.test(String(file?.name || ''))) return true;
@@ -39,22 +46,78 @@ function switchRows(message, options, action) {
         }) };
     });
 }
-function currentAttachments(message, payload) {
+function groupFiles(message, payload) {
     const all = items(message);
     if (new Set(all.map(file => String(file.id))).size !== all.length || new Set(all.map(file => String(file.name))).size !== all.length)
         throw new Error('GRID_SOURCE_CHANGED');
+    const isRoot = String(message?.id || '') === String(payload?.messageIds?.[0] || '');
+    const after = isRoot && payload?.sharedInline && Number.isInteger(payload.embedEnd)
+        ? (message.embeds || []).slice(payload.embedEnd) : [];
     const selected = all.filter(file => {
         const marker = /^tg-([a-f0-9]{32})\.(?:jpg|png|webp)$/.exec(file.name || '');
-        return !marker || marker[1] === payload?.id;
+        if (marker && marker[1] !== payload?.id) return false;
+        // Quoted groups can contain CDN-backed images in the same message.
+        // A verified sibling is retained, never moved into the parent group.
+        return !after.some(embed => matchesUniqueReference(cards.cleanEmbed(embed).image?.url, file, all,
+            message.channelId || message.channel?.id));
     });
+    return { all, selected, isRoot };
+}
+function currentAttachments(message, payload) {
+    const { all, selected, isRoot } = groupFiles(message, payload);
     if (selected.some(file => !/^(image\/(jpeg|png|webp|avif)|video\/[^\s]+|audio\/[^\s]+)$/i.test(String(file.contentType || ''))))
         throw new Error('GRID_SOURCE_CHANGED');
     const attachments = selected.filter(file => /^image\/(jpeg|png|webp|avif)$/i.test(String(file.contentType || '')));
     if (!attachments.length || new Set(attachments.map(file => String(file.id))).size !== attachments.length
         || new Set(attachments.map(file => String(file.name))).size !== attachments.length
         || attachments.some(file => !/^\d{1,25}$/.test(String(file.id || '')) || !file.name
-            || !/^image\/(jpeg|png|webp|avif)$/i.test(String(file.contentType || '')))) throw new Error('GRID_SOURCE_CHANGED');
-    return attachments;
+            || !/^image\/(jpeg|png|webp|avif)$/i.test(String(file.contentType || ''))
+            || !matchesReference(file.url, file, message.channelId || message.channel?.id))) throw new Error('GRID_SOURCE_CHANGED');
+    // Discord omits embedded files from attachments. Their Embed order is the
+    // original first segment; any visible non-embedded image attachments are
+    // the remaining segment (for example, when a quote leaves only 8 embeds).
+    const end = isRoot && payload?.sharedInline && Number.isInteger(payload.embedEnd) ? payload.embedEnd : (message.embeds || []).length;
+    const ordered = [], seen = new Set();
+    for (const embed of (message.embeds || []).slice(0, end)) {
+        const url = cards.cleanEmbed(embed).image?.url;
+        const matches = attachments.filter(file => matchesUniqueReference(url, file, all, message.channelId || message.channel?.id));
+        if (matches.length > 1) throw new Error('GRID_SOURCE_CHANGED');
+        if (matches.length === 1 && !seen.has(String(matches[0].id))) { ordered.push(matches[0]); seen.add(String(matches[0].id)); }
+    }
+    for (const file of attachments) if (!seen.has(String(file.id))) ordered.push(file);
+    return ordered;
+}
+
+function approvedPhotoPart(payload, index) {
+    const sizes = payload.partSizes, refs = payload.partRefs, flags = payload.partContainsNonImage, urls = payload.imageUrls;
+    if (!Array.isArray(payload.messageIds) || !Array.isArray(sizes) || !Array.isArray(refs) || !Array.isArray(flags) || !Array.isArray(urls)
+        || sizes.length !== payload.messageIds.length || refs.length !== sizes.length || flags.length !== sizes.length
+        || sizes.some(size => !Number.isInteger(size) || size < 0 || size > 10)
+        || !Number.isInteger(index) || index < 0 || index >= sizes.length
+        || flags.some(flag => typeof flag !== 'boolean') || refs.some((part, i) => !Array.isArray(part) || part.length !== sizes[i])
+        || sizes.reduce((sum, size) => sum + size, 0) !== urls.length) return false;
+    if (refs.flat().some((ref, offset) => {
+        if (ref?.type !== 'url' || ref.url !== urls[offset]) return true;
+        try {
+            const value = require('./providers/twitter/twitterSourceParser/mediaUrlPolicy').validateTwitterMediaUrl(ref.url, 'photo').url;
+            return (value.searchParams.get('format') || '').toLowerCase() === 'gif' || /\.gif(?::|$)/i.test(value.pathname);
+        } catch { return true; }
+    })) return false;
+    return true;
+}
+
+function hiddenImageEvidence(message, payload, index, combined = false) {
+    const { selected } = groupFiles(message, payload);
+    const visible = cards.attachmentList(message), visibleIds = new Set(visible.map(file => String(file.id || '')));
+    const hidden = selected.filter(file => /^image\//i.test(String(file.contentType || '')) && !visibleIds.has(String(file.id || '')));
+    if (!hidden.length) return true;
+    if (!approvedPhotoPart(payload, index)) return false;
+    // Non-image media must remain explicitly visible and retained; a hidden
+    // video or an old record without a trustworthy media flag is not guessed.
+    const otherFiles = selected.filter(file => !/^image\//i.test(String(file.contentType || '')));
+    if (payload.partContainsNonImage[index] !== (otherFiles.length > 0)) return false;
+    if (combined && index === 0) return hidden.length === 1 && new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(hidden[0].name || '');
+    return currentAttachments(message, payload).length === payload.partSizes[index];
 }
 function groupEmbedUrl(base, index) {
     if (!base) return undefined;
@@ -75,7 +138,9 @@ function makeEdit(message, base, action, first, options, suffix = [], payload) {
         }
     } else if (first) embeds.push(base);
     if (first) embeds.push(...suffix);
-    return { content: message.content || '', embeds, attachments: items(message).map(file => ({ id: String(file.id) })),
+    const selected = new Set(files.map(file => String(file.id)));
+    const retained = [...files, ...items(message).filter(file => !selected.has(String(file.id)))];
+    return { content: message.content || '', embeds, attachments: retained.map(file => ({ id: String(file.id) })),
         components: first ? switchRows(message, options, action) : [], allowedMentions: { parse: [] } };
 }
 function sameAttachments(a, b) {
@@ -118,13 +183,15 @@ function semanticButtons(rows) {
     }));
 }
 function matchesEdit(message, edit, expectedAttachments, channelId = message.channelId || message.channel?.id) {
-    const actual = items(message);
-    if (new Set(actual.map(file => String(file.id || ''))).size !== actual.length
-        || new Set(actual.map(file => file.name)).size !== actual.length
-        || !sameAttachments({ attachments: expectedAttachments }, message) || (message.content || '') !== (edit.content || '')) return false;
-    const left = { embeds: semanticEmbeds(edit.embeds, actual, channelId, true), components: semanticButtons(edit.components) };
-    const right = { embeds: semanticEmbeds(message.embeds, actual, channelId, true, true), components: semanticButtons(message.components) };
-    return JSON.stringify(ordered(left)) === JSON.stringify(ordered(right));
+    try {
+        const actual = items(message);
+        if (new Set(actual.map(file => String(file.id || ''))).size !== actual.length
+            || new Set(actual.map(file => file.name)).size !== actual.length
+            || !sameAttachments({ attachments: expectedAttachments }, message) || (message.content || '') !== (edit.content || '')) return false;
+        const left = { embeds: semanticEmbeds(edit.embeds, actual, channelId, true), components: semanticButtons(edit.components) };
+        const right = { embeds: semanticEmbeds(message.embeds, actual, channelId, true, true), components: semanticButtons(message.components) };
+        return JSON.stringify(ordered(left)) === JSON.stringify(ordered(right));
+    } catch { return false; }
 }
 function stateDigest(content, embeds, components, attachments, namesOnly = false, channelId, allowAttachmentScheme = false, actual = false) {
     const state = { content: content || '', embeds: semanticEmbeds(embeds, attachments, channelId, allowAttachmentScheme, actual), components: semanticButtons(components),
@@ -199,12 +266,20 @@ async function recover({ interaction, payload, query, db }) {
             }
             throw new Error('GRID_LOCK_UNAVAILABLE');
         }
-        if (!own(latest, interaction)) throw new Error('GRID_SOURCE_CHANGED');
+        if (!own(latest, interaction, step.id)) throw new Error('GRID_SOURCE_CHANGED');
         if (step.type !== 'edit' || !/^[a-f0-9]{64}$/.test(step.expected || '') || messageDigest(latest, step.namesOnly === true, interaction.channelId) !== step.expected
             || step.retainedIds?.some(id => !items(latest).some(file => String(file.id) === id)))
             throw new Error('GRID_LOCK_UNAVAILABLE');
         const oldSignature = payload.partSignatures[step.index], newSignature = cards.fingerprint(latest);
         if (oldSignature !== step.before && oldSignature !== newSignature) throw new Error('GRID_SOURCE_CHANGED');
+        const combined = step.index === 0 && payload.replacePhase === 'done'
+            && items(latest).some(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
+        // A confirmed edit can change the number of parent Embeds before its
+        // DB transaction commits. The journal's verified suffix count gives
+        // the new target range without treating a quoted image as the parent.
+        const evidencePayload = step.index === 0 && payload.sharedInline && Number.isInteger(step.suffixCount)
+            ? { ...payload, embedEnd: latest.embeds.length - step.suffixCount } : payload;
+        if (!hiddenImageEvidence(latest, evidencePayload, step.index, combined)) throw new Error('GRID_SOURCE_CHANGED');
         payload.partSignatures[step.index] = newSignature;
         if (step.index === 0) {
             payload.firstStaticSignature = cards.fingerprint(latest, true);
@@ -244,6 +319,7 @@ async function run({ interaction, current, payload, query, work, options, db, re
     if (!Array.isArray(ids) || !Array.isArray(signatures) || ids.length !== payload.completedParts || signatures.length !== ids.length
         || ids[0] !== rootId || new Set(ids).size !== ids.length || payload.partsState && payload.partsState !== 'complete'
         || payload.completedParts !== payload.totalParts) return { error: new Error('GRID_SOURCE_INCOMPLETE') };
+    if (!own(current, interaction, ids[0])) return { error: new Error('GRID_SOURCE_CHANGED') };
     const persist = async () => {
         const result = await query('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=? AND message_id=?',
             [JSON.stringify(payload), payload.id, rootId]);
@@ -262,13 +338,14 @@ async function run({ interaction, current, payload, query, work, options, db, re
         const requester = /^\d{16,22}$/.test(String(payload.requesterId || '')) ? String(payload.requesterId) : null;
         const safeChannel = access?.channel?.nsfw === true || access?.parent?.nsfw === true;
         if (!access || !settings || !grid.currentButtonAccess(interaction, settings, access.member)
-            || action !== 'delete' && (settings.enabled !== true || cards.safetyHash(settings) !== payload.settingsHash || payload.nsfw && !safeChannel)
+            || action !== 'delete' && (settings.enabled !== true || !cards.matchesSafetyPolicy(settings, payload) || payload.nsfw && !safeChannel)
             || action === 'delete' && requester !== interaction.user.id && !access.permissions?.has?.('ManageMessages'))
             throw new Error('GRID_PERMISSION_CHANGED');
     };
     const deleted = new Set(Array.isArray(payload.legacyDeletedParts) ? payload.legacyDeletedParts : []);
     const combined = items(current).some(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''))
         && cards.matchesFingerprint(current, payload.firstStaticSignature, true);
+    if (!combined && !cards.matchesFingerprint(current, signatures[0])) return { error: new Error('GRID_SOURCE_CHANGED') };
     if (combined && payload.replacePhase !== 'done') return { error: new Error('GRID_SOURCE_INCOMPLETE') };
     if (combined && !payload.sharedInline) {
         const files = items(current);
@@ -287,9 +364,18 @@ async function run({ interaction, current, payload, query, work, options, db, re
             if (Number(error?.code) === 10008 && (combined || action === 'delete' && deleted.has(ids[i]))) { messages.push(null); continue; }
             return { error: new Error('GRID_SOURCE_CHANGED') };
         }
-        if (!own(item, interaction) || !cards.matchesFingerprint(item, signatures[i])) return { error: new Error('GRID_SOURCE_CHANGED') };
+        if (!own(item, interaction, ids[i]) || !cards.matchesFingerprint(item, signatures[i])) return { error: new Error('GRID_SOURCE_CHANGED') };
         messages.push(item);
     }
+    // Inferring hidden files is permitted only after every observed message
+    // has passed its saved signature, author, scope and ordered source proof.
+    // Existing video/audio attachments remain visible and are retained.
+    try {
+        for (let index = 0; index < messages.length; index++) {
+            if (messages[index] && !hiddenImageEvidence(messages[index], payload, index, combined))
+                return { error: new Error('GRID_SOURCE_CHANGED') };
+        }
+    } catch { return { error: new Error('GRID_SOURCE_CHANGED') }; }
     if (['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage'].includes(action)) {
         // Spoiler-bearing physical groups deliberately have no photo
         // references in their manifest. Never reveal their attachments or
@@ -303,6 +389,11 @@ async function run({ interaction, current, payload, query, work, options, db, re
             catch (error) { return { error, intent: recovered ? intent : null, safeClear: !!recovered }; }
             return { error: new Error(unavailable), intent: recovered ? intent : null, safeClear: !!recovered };
         }
+        // This operation will make attachments hidden by Embeds. Do not
+        // create a state that the saved manifest cannot later authenticate.
+        if (action === 'showAttachmentsAsEmbedsImage' && messages.some((message, index) =>
+            message && payload.partSizes?.[index] > 0 && !approvedPhotoPart(payload, index)))
+            return { error: new Error('GRID_SOURCE_CHANGED') };
     }
     if (action === 'delete') {
         const deleteMessage = async () => {
@@ -311,22 +402,22 @@ async function run({ interaction, current, payload, query, work, options, db, re
                 const item = messages[i];
                 if (!item) continue;
                 let root = await channel.messages.fetch({ message: rootId, force: true });
-                if (!own(root, interaction) || cards.fingerprint(root) !== originalRootSignature) throw new Error('GRID_SOURCE_CHANGED');
+                if (!own(root, interaction, rootId) || cards.fingerprint(root) !== originalRootSignature) throw new Error('GRID_SOURCE_CHANGED');
                 await authorize(root);
                 const latest = await channel.messages.fetch({ message: ids[i], force: true });
-                if (!own(latest, interaction) || !cards.matchesFingerprint(latest, signatures[i])) throw new Error('GRID_SOURCE_CHANGED');
+                if (!own(latest, interaction, ids[i]) || !cards.matchesFingerprint(latest, signatures[i])) throw new Error('GRID_SOURCE_CHANGED');
                 await plan({ type: 'delete', index: i, id: ids[i], before: signatures[i] });
                 root = await channel.messages.fetch({ message: rootId, force: true });
                 const guarded = await channel.messages.fetch({ message: ids[i], force: true });
-                if (!own(root, interaction) || cards.fingerprint(root) !== originalRootSignature
-                    || !own(guarded, interaction) || !cards.matchesFingerprint(guarded, signatures[i]))
+                if (!own(root, interaction, rootId) || cards.fingerprint(root) !== originalRootSignature
+                    || !own(guarded, interaction, ids[i]) || !cards.matchesFingerprint(guarded, signatures[i]))
                     throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
                 try { await authorize(root); } catch (error) { error.safeClear = true; throw error; }
                 checkDeadline();
                 const finalRoot = await channel.messages.fetch({ message: rootId, force: true });
                 const finalPart = await channel.messages.fetch({ message: ids[i], force: true });
-                if (!own(finalRoot, interaction) || cards.fingerprint(finalRoot) !== originalRootSignature
-                    || !own(finalPart, interaction) || !cards.matchesFingerprint(finalPart, signatures[i]))
+                if (!own(finalRoot, interaction, rootId) || cards.fingerprint(finalRoot) !== originalRootSignature
+                    || !own(finalPart, interaction, ids[i]) || !cards.matchesFingerprint(finalPart, signatures[i]))
                     throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
                 try { await finalPart.delete(); }
                 catch (error) {
@@ -342,12 +433,12 @@ async function run({ interaction, current, payload, query, work, options, db, re
             // post-crash cleanup can still match the journal to that row.
             await plan({ type: 'delete', index: 0, id: ids[0], before: combined ? cards.fingerprint(current) : signatures[0] });
             const root = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(root, interaction) || cards.fingerprint(root) !== originalRootSignature)
+            if (!own(root, interaction, rootId) || cards.fingerprint(root) !== originalRootSignature)
                 throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
             try { await authorize(root); } catch (error) { error.safeClear = true; throw error; }
             checkDeadline();
             const finalRoot = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(finalRoot, interaction) || cards.fingerprint(finalRoot) !== originalRootSignature)
+            if (!own(finalRoot, interaction, rootId) || cards.fingerprint(finalRoot) !== originalRootSignature)
                 throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
             await finalRoot.delete();
             // A confirmed deletion no longer needs a lifetime locator. Keep
@@ -391,13 +482,13 @@ async function run({ interaction, current, payload, query, work, options, db, re
                 try { await authorize(current); } catch (error) { error.safeClear = true; throw error; }
                 checkDeadline();
                 const guarded = await channel.messages.fetch({ message: rootId, force: true });
-                if (!own(guarded, interaction) || cards.fingerprint(guarded) !== originalRootSignature)
+                if (!own(guarded, interaction, rootId) || cards.fingerprint(guarded) !== originalRootSignature)
                     throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
                 interaction.message = guarded;
             };
             const value = await work({ beforeTranslateEdit });
             const latest = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(latest, interaction) || translationWitness(latest) !== before) throw new Error('GRID_SOURCE_CHANGED');
+            if (!own(latest, interaction, rootId) || translationWitness(latest) !== before) throw new Error('GRID_SOURCE_CHANGED');
             if (cards.fingerprint(latest) !== signatures[0]) {
                 const previousSignature = signatures[0], oldEnd = payload.embedEnd, previousStatic = payload.firstStaticSignature;
                 payload.partSignatures[0] = cards.fingerprint(latest);
@@ -461,11 +552,11 @@ async function run({ interaction, current, payload, query, work, options, db, re
             try { await authorize(current); } catch (error) { error.safeClear = true; throw error; }
             checkDeadline();
             const guarded = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(guarded, interaction) || cards.fingerprint(guarded) !== originalRootSignature)
+            if (!own(guarded, interaction, rootId) || cards.fingerprint(guarded) !== originalRootSignature)
                 throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
             let failure; try { await guarded.edit(edit); } catch (error) { failure = error; }
             const latest = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(latest, interaction) || messageDigest(latest, true, interaction.channelId) !== editDigest(edit, expected, true, interaction.channelId)
+            if (!own(latest, interaction, rootId) || messageDigest(latest, true, interaction.channelId) !== editDigest(edit, expected, true, interaction.channelId)
                 || retained.some(file => !items(latest).some(item => String(item.id) === file.id))) throw failure || new Error('GRID_SOURCE_CHANGED');
             const previousSignature = payload.partSignatures[0], previousStatic = payload.firstStaticSignature;
             payload.partSignatures[0] = cards.fingerprint(latest);
@@ -506,6 +597,16 @@ async function run({ interaction, current, payload, query, work, options, db, re
         for (let i = 0; i < messages.length; i++) {
             if (!messages[i] && combined) continue;
             if (payload.partSizes?.[i] === 0 && payload.partContainsNonImage?.[i] === true) continue;
+            const embeds = messages[i].embeds || [];
+            const targetEnd = i === 0 && payload.sharedInline ? payload.embedEnd : embeds.length;
+            for (let j = 0; j < embeds.length; j++) {
+                const raw = buttonData(embeds[j]), clean = cards.cleanEmbed(embeds[j]);
+                // Rich video/audio embeds cannot be reconstructed by editing
+                // only their image URLs. Keep the whole post untouched.
+                if (raw.video || raw.audio) throw new Error('GRID_SOURCE_CHANGED');
+                if (j < targetEnd && (i > 0 || j > 0)
+                    && Object.keys(clean).some(key => !['url', 'color', 'image'].includes(key))) throw new Error('GRID_SOURCE_CHANGED');
+            }
             if (currentAttachments(messages[i], payload).length !== (combined && i === 0 ? 1 : payload.partSizes?.[i])) throw new Error('GRID_SOURCE_CHANGED');
             if (i && (messages[i].content || (messages[i].components || []).length)) throw new Error('GRID_SOURCE_CHANGED');
         }
@@ -519,9 +620,9 @@ async function run({ interaction, current, payload, query, work, options, db, re
             const nonImageOnly = payload.partSizes?.[i] === 0 && payload.partContainsNonImage?.[i] === true;
             if (nonImageOnly && i > 0) continue;
             const root = await channel.messages.fetch({ message: rootId, force: true });
-            if (!own(root, interaction) || cards.fingerprint(root) !== initialRootSignature) throw new Error('GRID_SOURCE_CHANGED');
+            if (!own(root, interaction, rootId) || cards.fingerprint(root) !== initialRootSignature) throw new Error('GRID_SOURCE_CHANGED');
             const old = i === 0 ? root : await channel.messages.fetch({ message: ids[i], force: true });
-            if (!own(old, interaction) || i > 0 && !cards.matchesFingerprint(old, signatures[i])) throw new Error('GRID_SOURCE_CHANGED');
+            if (!own(old, interaction, ids[i]) || i > 0 && !cards.matchesFingerprint(old, signatures[i])) throw new Error('GRID_SOURCE_CHANGED');
             const edit = nonImageOnly
                 ? { content: old.content || '', embeds: (old.embeds || []).map(cards.cleanEmbed),
                     attachments: items(old).map(file => ({ id: String(file.id) })), components: switchRows(old, options, action),
@@ -540,16 +641,16 @@ async function run({ interaction, current, payload, query, work, options, db, re
             checkDeadline();
             const guardedRoot = await channel.messages.fetch({ message: rootId, force: true });
             const guarded = i === 0 ? guardedRoot : await channel.messages.fetch({ message: ids[i], force: true });
-            if (!own(guardedRoot, interaction) || cards.fingerprint(guardedRoot) !== initialRootSignature
-                || !own(guarded, interaction) || i > 0 && !cards.matchesFingerprint(guarded, signatures[i]))
+            if (!own(guardedRoot, interaction, rootId) || cards.fingerprint(guardedRoot) !== initialRootSignature
+                || !own(guarded, interaction, ids[i]) || i > 0 && !cards.matchesFingerprint(guarded, signatures[i]))
                 throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { safeClear: true });
             let failure;
             try { await guarded.edit(edit); } catch (error) { failure = error; }
             const latest = await channel.messages.fetch({ message: ids[i], force: true });
-            if (!own(latest, interaction) || !sameAttachments(before, latest) || before.content !== (latest.content || '')
+            if (!own(latest, interaction, ids[i]) || !sameAttachments(before, latest) || before.content !== (latest.content || '')
                 || !matchesEdit(latest, edit, before.attachments, interaction.channelId))
                 throw failure || new Error('GRID_SOURCE_CHANGED');
-            if (!own(latest, interaction))
+            if (!own(latest, interaction, ids[i]))
                 throw new Error('GRID_SOURCE_CHANGED');
             const previousSignature = payload.partSignatures[i];
             const previousStatic = payload.firstStaticSignature;
@@ -574,4 +675,4 @@ async function run({ interaction, current, payload, query, work, options, db, re
         return { value: undefined, intent };
     } catch (error) { return { error, intent, safeClear: error?.safeClear === true || definitelyRejected(error) }; }
 }
-module.exports = { run, recover, matchesEdit };
+module.exports = { run, recover, matchesEdit, _internal: { approvedPhotoPart, currentAttachments, hiddenImageEvidence, makeEdit, relatedRows } };

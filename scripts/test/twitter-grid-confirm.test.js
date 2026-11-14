@@ -64,7 +64,7 @@ test('private confirmation also works when a split record has no visible grid bu
     f.source.components[0].components.shift();
     f.source.embeds[0].data.url = 'https://x.com/example/status/123';
     f.payload.partSignatures = [cards.fingerprint(f.source), '0'.repeat(64)];
-    const second = { id: f.payload.messageIds[1], author: { id: bot }, content: '', embeds: [], components: [], attachments: [] };
+    const second = { id: f.payload.messageIds[1], channelId: cid, guildId: gid, author: { id: bot }, content: '', embeds: [], components: [], attachments: [] };
     f.payload.partSignatures[1] = cards.fingerprint(second);
     f.channel.messages.fetch = async ({ message }) => message === mid ? f.source : second;
     f.db.queryDatabase = async () => [{ gallery_id: galleryId, payload_json: JSON.stringify(f.payload) }];

@@ -9,7 +9,8 @@ const { DiscordAPIError, RateLimitError } = require('discord.js');
 const NOT_SUBMITTED = Symbol('restore-not-submitted');
 function notSubmitted() { return Object.assign(new Error('GRID_RESTORE_NOT_SUBMITTED'), { [NOT_SUBMITTED]: true }); }
 const cards = require('./twitterGridCards');
-const { matchesUniqueReference } = require('./discordAttachmentIdentity');
+const gridMarkers = require('./discordGridMarkers');
+const { logicalAttachments } = require('./discordAttachmentIdentity');
 
 function photoIdentity(value) {
     try {
@@ -19,26 +20,17 @@ function photoIdentity(value) {
     } catch { return null; }
 }
 
-function markerFilename(id) {
-    return new RegExp(`^tg-${id}\\.(?:jpg|png|webp)$`);
-}
-
 // The public post, not untrusted caller input, supplies the candidate status.
 // Existing records are accepted only when exactly one image embed points at
 // this group's verified composite marker and has an ordinary X status URL.
 function statusFromCombined(payload, message) {
     if (!payload || !/^[a-f0-9]{32}$/.test(payload.id || '') || payload.replacePhase !== 'done') return null;
-    const marker = markerFilename(payload.id);
-    const matches = cards.attachmentList(message).filter(file => marker.test(file.name || '')
-        && /^image\/(?:jpeg|png|webp)$/i.test(file.contentType || '') && /^\d{1,25}$/.test(String(file.id || '')));
-    if (matches.length !== 1) return null;
-    const attachment = matches[0];
-    const embedMatches = (message?.embeds || []).map(cards.cleanEmbed).filter(embed => {
-        const image = embed.image?.url;
-        return matchesUniqueReference(image, attachment, cards.attachmentList(message), message.channelId || message.channel?.id);
-    });
-    if (embedMatches.length !== 1) return null;
-    const source = embedMatches[0].url;
+    // Discord omits uploads referenced by an embed from message.attachments.
+    // The scoped marker collector validates the CDN channel/id/name and
+    // requires one unambiguous embedded image for this gallery.
+    const marker = gridMarkers.get(message, payload.id);
+    if (!marker || marker.embedIndices.length !== 1) return null;
+    const source = cards.cleanEmbed(message.embeds[marker.embedIndices[0]]).url;
     const id = statusIdentity(source);
     if (!id || payload.sourceStatusId && payload.sourceStatusId !== id) return null;
     return { id, url: `https://x.com/i/web/status/${id}` };
@@ -263,17 +255,18 @@ function restoreView(id, owner, packedState, count, isLast, locale, separateOnly
             custom_id: `tg:${id}:${owner}:${action[choice.value]}:${packedState}` })) }], allowedMentions: { parse: [] } };
 }
 
-async function latestMessageId(channel) {
+async function latestMessageId(channel, scope = null) {
     if (!/^\d{1,25}$/.test(String(channel?.id || '')) || typeof channel?.messages?.fetch !== 'function') throw new Error('GRID_RESTORE_UNAVAILABLE');
     const messages = await channel.messages.fetch({ limit: 1, cache: false });
     const current = typeof messages?.first === 'function' ? messages.first()
         : typeof messages?.values === 'function' ? messages.values().next().value : null;
     if (!current || !/^\d{1,25}$/.test(String(current.id || ''))
-        || String(current.channelId || current.channel?.id || '') !== String(channel.id)) throw new Error('GRID_RESTORE_UNAVAILABLE');
+        || String(current.channelId || current.channel?.id || '') !== String(channel.id)
+        || scope && (channel.id !== scope.channelId || !require('./discordMessageIdentity').isLocated(current, scope))) throw new Error('GRID_RESTORE_UNAVAILABLE');
     return String(current.id);
 }
 
-async function adjacency(channel, firstId, secondId) {
+async function adjacency(channel, firstId, secondId, scope = null) {
     if (!/^\d{1,25}$/.test(String(channel?.id || '')) || !/^\d{1,25}$/.test(String(firstId || ''))
         || !/^\d{1,25}$/.test(String(secondId || '')) || BigInt(firstId) >= BigInt(secondId)) return 'unavailable';
     let collection;
@@ -281,7 +274,8 @@ async function adjacency(channel, firstId, secondId) {
     const messages = typeof collection?.values === 'function' ? [...collection.values()] : [];
     const ids = messages.map(item => String(item?.id || ''));
     if (ids.some(id => !/^\d{1,25}$/.test(id)) || new Set(ids).size !== ids.length
-        || messages.some(item => String(item.channelId || item.channel?.id || '') !== String(channel.id))
+        || messages.some(item => String(item.channelId || item.channel?.id || '') !== String(channel.id)
+            || scope && (channel.id !== scope.channelId || !require('./discordMessageIdentity').isLocated(item, scope)))
         || !ids.includes(String(firstId)) || !ids.includes(String(secondId))) return 'unavailable';
     return ids.some(id => BigInt(id) > BigInt(firstId) && BigInt(id) < BigInt(secondId)) ? 'separated' : 'adjacent';
 }
@@ -324,7 +318,9 @@ function verifyRestoredAttachments(message, scope, files, retainedIds = []) {
         || files.some(file => typeof file?.name !== 'string' || !/^restore-[a-f0-9]{32}-\d{1,2}\.(jpg|png|webp|avif)$/.test(file.name))
         || new Set(files.map(file => file.name)).size !== files.length
         || retainedIds.some(id => !/^\d{1,25}$/.test(String(id || '')))) return false;
-    const actual = cards.attachmentList(message), ids = actual.map(file => String(file.id || ''));
+    const actual = logicalAttachments(message);
+    if (!actual) return false;
+    const ids = actual.map(file => String(file.id || ''));
     if (ids.some(id => !/^\d{1,25}$/.test(id)) || new Set(ids).size !== ids.length || actual.length !== files.length + retainedIds.length
         || retainedIds.some(id => !ids.includes(String(id))) || new Set(retainedIds.map(String)).size !== retainedIds.length) return false;
     for (const file of files) {
@@ -362,7 +358,8 @@ function restoredManifest(payload, operationId, mode, messages, urls, statusId, 
         || new Set(messages.map(message => String(message?.id || ''))).size !== messages.length) throw new Error('GRID_RESTORE_RECORD');
     let offset = 0;
     for (let part = 0; part < groups.length; part++) {
-        const files = cards.attachmentList(messages[part]);
+        const files = logicalAttachments(messages[part]);
+        if (!files) throw new Error('GRID_RESTORE_RECORD');
         for (let i = 0; i < groups[part].length; i++) {
             const expected = new RegExp(`^restore-${operationId}-${offset + i}\\.(jpg|png|webp|avif)$`);
             const matching = files.filter(file => expected.test(file.name || '') && /^\d{1,25}$/.test(String(file.id || ''))

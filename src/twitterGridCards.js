@@ -4,11 +4,66 @@ const { randomBytes, createHash } = require('node:crypto');
 const gallery = require('./mediaGallery');
 const { isNsfwChannel } = require('./providers/_sensitive_controls');
 
-// Grid preferences may change independently of content safety. Every other
-// provider setting remains part of the original policy snapshot.
+// Keep the original hash for existing records and older Bot releases.
 function safetyHash(settings) {
     const filtered = Object.fromEntries(Object.entries(settings || {}).filter(([key]) => !key.startsWith('twitter_grid_')));
     return gallery.settingsHash(filtered);
+}
+
+// These four settings affect labels, notification delivery, or translation
+// presentation; none can add images to the policy-filtered gallery. All
+// other settings, including unknown future settings, remain protected.
+const PRESENTATION_ONLY = Object.freeze(['defaultLanguage', 'silent_expansion', 'show_previous_shares', 'editOriginalIfTranslate']);
+const LEGACY_LANGUAGES = Object.freeze([...new Set([
+    ...require('./discordLocales').DISCORD_LOCALE_OPTIONS.map(option => option.value), 'en', 'jp', 'ko-KR', undefined, null,
+])]);
+const LEGACY_BOOLEAN_VALUES = Object.freeze([true, false, undefined, null]);
+const LEGACY_CACHE_LIMIT = 256, MAX_POLICY_INPUT_BYTES = 1024 * 1024, MAX_LEGACY_SEARCH_BYTES = 32 * 1024;
+const legacyPolicyCache = new Map();
+
+function safetyPolicyHash(settings) {
+    const filtered = Object.fromEntries(Object.entries(settings || {}).filter(([key]) =>
+        !key.startsWith('twitter_grid_') && !PRESENTATION_ONLY.includes(key)));
+    return gallery.settingsHash(filtered);
+}
+
+function matchesSafetyPolicy(settings, payload) {
+    try {
+        if (!settings || typeof settings !== 'object' || !payload || typeof payload !== 'object') return false;
+        const inputBytes = Buffer.byteLength(JSON.stringify(settings), 'utf8');
+        if (inputBytes > MAX_POLICY_INPUT_BYTES) return false;
+        if (Object.hasOwn(payload, 'settingsPolicyHash')) {
+            return typeof payload.settingsPolicyHash === 'string' && /^[a-f0-9]{64}$/.test(payload.settingsPolicyHash)
+                && safetyPolicyHash(settings) === payload.settingsPolicyHash;
+        }
+        const expected = payload.settingsHash;
+        if (typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected)) return false;
+        if (safetyHash(settings) === expected) return true;
+        // Bound the work for legacy inputs with very large settings. They can
+        // still be used unchanged, but cannot be guessed after other edits.
+        if (inputBytes > MAX_LEGACY_SEARCH_BYTES) return false;
+
+        // A legacy record stored only the hash of *all* settings. Prove
+        // compatibility by reconstructing bounded legal values of the four
+        // presentation-only fields; never infer or rewrite a security field.
+        const cacheKey = `${expected}:${safetyPolicyHash(settings)}`;
+        if (legacyPolicyCache.has(cacheKey)) return legacyPolicyCache.get(cacheKey);
+        const values = (key, legal) => legal.includes(settings[key]) ? [settings[key], ...legal.filter(value => value !== settings[key])] : [...legal];
+        const langs = values('defaultLanguage', LEGACY_LANGUAGES);
+        const silent = values('silent_expansion', LEGACY_BOOLEAN_VALUES);
+        const shares = values('show_previous_shares', LEGACY_BOOLEAN_VALUES);
+        const translate = values('editOriginalIfTranslate', LEGACY_BOOLEAN_VALUES);
+        const candidate = { ...settings };
+        let matched = false;
+        search: for (const language of langs) for (const s of silent) for (const p of shares) for (const t of translate) {
+            candidate.defaultLanguage = language; candidate.silent_expansion = s;
+            candidate.show_previous_shares = p; candidate.editOriginalIfTranslate = t;
+            if (safetyHash(candidate) === expected) { matched = true; break search; }
+        }
+        if (legacyPolicyCache.size >= LEGACY_CACHE_LIMIT) legacyPolicyCache.delete(legacyPolicyCache.keys().next().value);
+        legacyPolicyCache.set(cacheKey, matched);
+        return matched;
+    } catch { return false; }
 }
 function validPart(part) {
     return part && Number.isInteger(part.sequence) && Number.isInteger(part.totalParts)
@@ -126,15 +181,16 @@ function cleanEmbed(item) {
     }
     return out;
 }
-function embedFingerprint(item, message) {
+function embedFingerprint(item, message, options = {}) {
     const embed = cleanEmbed(item);
     if (message && typeof message === 'object') for (const key of ['image', 'thumbnail']) {
-        if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message);
+        if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message, { allowHidden: options.allowHidden !== false });
     }
     return createHash('sha256').update(JSON.stringify(embed)).digest('hex');
 }
 function matchesEmbedFingerprint(item, message, expected) {
-    return typeof expected === 'string' && (embedFingerprint(item, message) === expected || embedFingerprint(item) === expected);
+    return typeof expected === 'string' && (embedFingerprint(item, message) === expected
+        || embedFingerprint(item, message, { allowHidden: false }) === expected || embedFingerprint(item) === expected);
 }
 function embedWitness(grid, message, part) {
     const embeds = message?.embeds || [], start = grid.embedStart, end = grid.embedEnd;
@@ -148,11 +204,11 @@ function embedWitness(grid, message, part) {
     if (!embedded && !attached) return null;
     return { hashes: entries.map(entry => embedFingerprint(entry, message)), attachments: attached ? attachments.map(file => ({ id: String(file.id), name: String(file.name || '') })) : [] };
 }
-function fingerprintValue(message, omitImages = false, legacy = false) {
+function fingerprintValue(message, omitImages = false, legacy = false, allowHidden = true) {
     const embeds = (message?.embeds || []).map(cleanEmbed).map(embed => {
         if (omitImages) delete embed.image;
         if (!legacy) for (const key of ['image', 'thumbnail']) {
-            if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message);
+            if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message, { allowHidden });
         }
         return embed;
     }).filter(embed => !omitImages || Object.keys(embed).some(key => !['url', 'type', 'color'].includes(key)));
@@ -163,7 +219,8 @@ function fingerprintValue(message, omitImages = false, legacy = false) {
 function fingerprint(message, omitImages = false) { return fingerprintValue(message, omitImages); }
 function legacyFingerprint(message, omitImages = false) { return fingerprintValue(message, omitImages, true); }
 function matchesFingerprint(message, expected, omitImages = false) {
-    return typeof expected === 'string' && (fingerprint(message, omitImages) === expected || legacyFingerprint(message, omitImages) === expected);
+    return typeof expected === 'string' && (fingerprint(message, omitImages) === expected
+        || fingerprintValue(message, omitImages, false, false) === expected || legacyFingerprint(message, omitImages) === expected);
 }
 async function prepare(step, message, context, storage, nextStep) {
     const meta = step?.twitterGrid, guildId = message.guildId || message.guild?.id;
@@ -220,7 +277,7 @@ async function prepare(step, message, context, storage, nextStep) {
             lockId: lockId || id,
             partRefs: [],
             requesterId: /^\d{16,22}$/.test(String(context.gridRequesterId || '')) ? String(context.gridRequesterId) : String(message.author?.id || message.user?.id || ''),
-            nsfw: isNsfwChannel(message), nsfwContextVersion: 1, settingsHash: safetyHash(settings) };
+            nsfw: isNsfwChannel(message), nsfwContextVersion: 1, settingsHash: safetyHash(settings), settingsPolicyHash: safetyPolicyHash(settings) };
         try {
             await storage.save(payload, message, 'twitter');
             lockId ||= id;
@@ -477,7 +534,10 @@ async function withMessageLock(interaction, work, db = require('./db'), options 
         if (options.action && !require('./components/twitterGridConfirm')._internal.buttonExists(current, actionId)) throw new Error('GRID_SOURCE_CHANGED');
         const currentSignature = fingerprint(current);
         let isOriginal = matchesFingerprint(current, payload.partSignatures?.[0]);
-        const marker = attachmentList(current).some(file => new RegExp(`^tg-${id}\\.(jpg|png|webp)$`).test(file.name || ''));
+        // The marker may be visible only through the verified embed URL.
+        // The author, scoped gallery row and static fingerprint are checked
+        // around this evidence before an existing action is allowed.
+        const marker = !!require('./discordGridMarkers').get(current, id);
         let isReplaced = marker && matchesFingerprint(current, payload.firstStaticSignature, true);
         if (!isOriginal && !isReplaced && payload.sharedInline) {
             const reconciled = await require('./components/twitterGrid')._internal.reconcileSibling(interaction,
@@ -513,4 +573,4 @@ async function withMessageLock(interaction, work, db = require('./db'), options 
     if (result?.error) throw result.error;
     return result?.value;
 }
-module.exports = { safetyHash, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, legacyFingerprint, matchesFingerprint, embedFingerprint, matchesEmbedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, locatorIdFromAction, withMessageLock, withGalleryLock };
+module.exports = { safetyHash, safetyPolicyHash, matchesSafetyPolicy, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, legacyFingerprint, matchesFingerprint, embedFingerprint, matchesEmbedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, locatorIdFromAction, withMessageLock, withGalleryLock };

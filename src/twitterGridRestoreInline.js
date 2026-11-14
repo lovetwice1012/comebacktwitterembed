@@ -3,9 +3,11 @@
 // Shared-message helpers only. Call under the common gallery lock; the caller
 // owns the durable journal, source verification and single-attempt Discord I/O.
 const cards = require('./twitterGridCards');
+const { isExpected } = require('./discordMessageIdentity');
 const grid = require('./components/twitterGrid')._internal;
 const restore = require('./twitterGridRestore');
-const { matchesReference, matchesUniqueReference } = require('./discordAttachmentIdentity');
+const { matchesReference, matchesUniqueReference, logicalAttachments } = require('./discordAttachmentIdentity');
+const gridMarkers = require('./discordGridMarkers');
 
 function invalid() { return new Error('GRID_RESTORE_INLINE_UNAVAILABLE'); }
 function plain(value) { return value?.toJSON ? value.toJSON() : JSON.parse(JSON.stringify(value || {})); }
@@ -17,9 +19,18 @@ function referencesAttachment(url, file, channelId, allowAttachmentScheme = fals
     return matchesReference(url, file, channelId, { allowAttachmentScheme });
 }
 function markerPosition(message, file, channelId = message.channelId || message.channel?.id) {
-    const files = cards.attachmentList(message);
-    const positions = (message.embeds || []).flatMap((embed, index) => matchesUniqueReference(cards.cleanEmbed(embed).image?.url, file, files, channelId) ? [index] : []);
-    return positions.length === 1 ? positions[0] : null;
+    const match = /^tg-([a-f0-9]{32})\.(?:jpg|png|webp)$/.exec(String(file?.name || ''));
+    if (!match || String(message?.channelId || message?.channel?.id || '') !== String(channelId || '')) return null;
+    const marker = gridMarkers.get(message, match[1]);
+    return marker && marker.id === String(file.id || '') && marker.name === file.name && marker.embedIndices.length === 1
+        ? marker.embedIndices[0] : null;
+}
+// Discord excludes embed-referenced uploads from message.attachments. Include
+// only same-channel, strictly identified grid markers; the surrounding DB
+// witness checks must validate every such marker before any edit is built.
+function messageFiles(message) {
+    if (!gridMarkers.collect(message)) return null;
+    return logicalAttachments(message);
 }
 function validGroup(payload, row, scope) {
     return payload?.kind === 'twitter-image-grid-v1' && payload.id === row.gallery_id && /^[a-f0-9]{32}$/.test(payload.id || '')
@@ -48,13 +59,9 @@ async function lockRowsById(query, readRows, interaction, scope) {
 }
 async function inspect({ query, readRows = query, interaction, payload, message, authorize }) {
     if (typeof query !== 'function' || typeof authorize !== 'function' || !await authorize() || !payload || !message
-        || !/^\d{1,25}$/.test(String(interaction?.client?.user?.id || '')) || message.author?.id !== interaction.client.user.id
-        || !interaction?.guildId || !interaction?.channelId
-        || message.channelId && String(message.channelId) !== String(interaction.channelId)
-        || message.guildId && String(message.guildId) !== String(interaction.guildId)
-        || String(message.id || '') !== String(payload.messageIds?.[0] || '') || !payload.sharedInline || payload.replacePhase !== 'done') throw invalid();
-    const scope = { lockId: payload.lockId, messageId: String(message.id), channelId: String(interaction.channelId) }, files = cards.attachmentList(message);
-    if (new Set(files.map(file => String(file.id || ''))).size !== files.length || files.some(file => !/^\d{1,25}$/.test(String(file.id || '')))) throw invalid();
+        || !isExpected(message, interaction, payload.messageIds?.[0]) || !payload.sharedInline || payload.replacePhase !== 'done') throw invalid();
+    const scope = { lockId: payload.lockId, messageId: String(message.id), channelId: String(interaction.channelId) }, files = messageFiles(message);
+    if (!files || new Set(files.map(file => String(file.id || ''))).size !== files.length || files.some(file => !/^\d{1,25}$/.test(String(file.id || '')))) throw invalid();
     // Discord cannot safely reconstruct a video-bearing rich embed through an
     // edit. Preserve the post rather than silently discard that content.
     if ((message.embeds || []).some(embed => { const data = plain(embed); return !!data.video; })) throw invalid();
@@ -165,9 +172,7 @@ function referenceManifest(snapshot, plan, message) {
 }
 async function inspectPartial({ query, readRows = query, interaction, payload, message, authorize }) {
     if (typeof query !== 'function' || typeof authorize !== 'function' || !await authorize()
-        || !/^\d{1,25}$/.test(String(interaction?.client?.user?.id || '')) || message?.author?.id !== interaction.client.user.id
-        || !interaction?.guildId || !interaction?.channelId || message.channelId && String(message.channelId) !== String(interaction.channelId)
-        || message.guildId && String(message.guildId) !== String(interaction.guildId) || !payload?.sharedInline
+        || !isExpected(message, interaction, payload?.messageIds?.[0]) || !payload?.sharedInline
         || !restore.statusFromPartial(payload, message)) throw invalid();
     const scope = { lockId: payload.lockId, messageId: String(message.id), channelId: String(interaction.channelId) };
     const rows = await lockRowsById(query, readRows, interaction, scope);
@@ -180,8 +185,8 @@ async function inspectPartial({ query, readRows = query, interaction, payload, m
     }
     const targets = entries.filter(entry => entry.payload.id === payload.id);
     if (targets.length !== 1 || JSON.stringify(targets[0].payload) !== JSON.stringify(payload)) throw invalid();
-    const markers = await grid.markerRows(query, interaction, payload, message), files = cards.attachmentList(message);
-    if (!markers || markers.has(payload.id) || !grid.embedWitnessPosition(message, payload.embedWitness)) throw invalid();
+    const markers = await grid.markerRows(query, interaction, payload, message), files = messageFiles(message);
+    if (!files || !markers || markers.has(payload.id) || !grid.embedWitnessPosition(message, payload.embedWitness)) throw invalid();
     for (const entry of entries) {
         if (entry.payload.id === payload.id) continue;
         if (markers.has(entry.payload.id)) {
@@ -195,12 +200,11 @@ async function commitResume({ query, interaction, snapshot, first, continuation,
     const existing = Array.isArray(first) ? first : [first], added = Array.isArray(continuation) ? continuation : [continuation];
     const batches = Array.isArray(uploads?.[0]) ? uploads : [uploads];
     if (typeof query !== 'function' || typeof authorize !== 'function' || !await authorize() || !snapshot || !existing[0]
-        || !/^\d{1,25}$/.test(String(interaction?.client?.user?.id || '')) || existing[0].author?.id !== interaction.client.user.id
-        || String(existing[0].id || '') !== snapshot.scope.messageId || cards.fingerprint(existing[0]) !== snapshot.expectedFingerprint
+        || !isExpected(existing[0], interaction, snapshot.scope.messageId) || cards.fingerprint(existing[0]) !== snapshot.expectedFingerprint
         || !restore.statusFromPartial(snapshot.payload, existing[0]) || added.length !== batches.length
-        || existing.some((message, i) => message?.author?.id !== interaction.client.user.id || String(message.id || '') !== snapshot.payload.messageIds[i]
+        || existing.some((message, i) => !isExpected(message, interaction, snapshot.payload.messageIds[i])
             || !cards.matchesFingerprint(message, snapshot.payload.partSignatures[i]))
-        || added.some((message, i) => !restore.verifyRestoredAttachments(message, { channelId: interaction.channelId, botId: interaction.client.user.id }, batches[i]))) throw invalid();
+        || added.some((message, i) => !isExpected(message, interaction, null) || !restore.verifyRestoredAttachments(message, { channelId: interaction.channelId, botId: interaction.client.user.id }, batches[i]))) throw invalid();
     let next; try { next = restore.resumedManifest(snapshot.payload, operationId, existing, added); } catch { throw invalid(); }
     const target = snapshot.entries.find(entry => entry.payload.id === snapshot.payload.id);
     if (!target) throw invalid();
@@ -223,12 +227,10 @@ function normalizedEmbeds(embeds, attachments, channelId, allowAttachmentScheme 
 }
 async function commit({ query, interaction, snapshot, plan, message, targetPayload, authorize }) {
     if (typeof query !== 'function' || typeof authorize !== 'function' || !await authorize() || !snapshot || !plan || !message
-        || !/^\d{1,25}$/.test(String(interaction?.client?.user?.id || '')) || message.author?.id !== interaction.client.user.id
-        || String(message.id || '') !== snapshot.scope.messageId
-        || message.channelId && String(message.channelId) !== String(interaction.channelId)
-        || message.guildId && String(message.guildId) !== String(interaction.guildId)
+        || !isExpected(message, interaction, snapshot.scope.messageId)
         || (message.content || '') !== snapshot.content || JSON.stringify((message.components || []).map(plain)) !== JSON.stringify(snapshot.components)) throw invalid();
-    const actualFiles = cards.attachmentList(message);
+    const actualFiles = messageFiles(message);
+    if (!actualFiles) throw invalid();
     if (plan.kind === 'uploads') {
         if (!restore.verifyRestoredAttachments(message, { channelId: interaction.channelId, botId: interaction.client.user.id }, plan.uploads, plan.retained.map(file => file.id))) throw invalid();
     } else if (plan.kind !== 'references' || actualFiles.length !== plan.retained.length) throw invalid();
@@ -286,4 +288,4 @@ async function commit({ query, interaction, snapshot, plan, message, targetPaylo
     }
     return updates.find(item => item.next.id === snapshot.payload.id).next;
 }
-module.exports = { inspect, inspectPartial, capacity, prepareEdit, prepareReferenceEdit, referenceManifest, commit, commitResume };
+module.exports = { inspect, inspectPartial, capacity, prepareEdit, prepareReferenceEdit, referenceManifest, commit, commitResume, messageFiles };

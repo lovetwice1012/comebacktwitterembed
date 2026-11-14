@@ -23,6 +23,26 @@ test('a combined marker and its own verified embed identify an existing X post',
     assert.deepEqual(restore.verifySource(restore.statusFromCombined(f.payload, f.message), f.payload, f.tweet), f.payload.imageUrls);
 });
 
+test('a Discord-hidden embedded marker identifies the source only for its exact channel and gallery', () => {
+    const f = fixture();
+    f.message.attachments.clear();
+    assert.deepEqual(restore.statusFromCombined(f.payload, f.message), { id: postId, url: `https://x.com/i/web/status/${postId}` });
+    const original = f.message.embeds[0].image.url;
+    for (const url of [
+        original.replace('cdn.discordapp.com', 'evil.example'),
+        original.replace('/attachments/22/', '/attachments/23/'),
+        original.replace(`tg-${id}.jpg`, `tg-${'b'.repeat(32)}.jpg`),
+        `${original}&unexpected=1`,
+        `attachment://tg-${id}.jpg`,
+    ]) {
+        f.message.embeds[0].image.url = url;
+        assert.equal(restore.statusFromCombined(f.payload, f.message), null);
+    }
+    f.message.embeds[0].image.url = original;
+    f.message.embeds.push({ ...f.message.embeds[0] });
+    assert.equal(restore.statusFromCombined(f.payload, f.message), null, 'ambiguous duplicated markers are rejected');
+});
+
 test('a forged, ambiguous, missing, or unrelated marker never identifies a source', () => {
     const f = fixture();
     f.message.embeds[0].image.url = `https://cdn.discordapp.com/attachments/22/999/tg-${id}.jpg`;
@@ -224,6 +244,27 @@ test('a Discord receipt must contain precisely the restored and retained attachm
         { ...message, attachments: new Map([[a.id, a], [b.id, { ...b, url: b.url.replace(b.id, '999999999999999999') }], [retained.id, retained]]) },
         { ...message, attachments: new Map([[a.id, a], [b.id, b], [retained.id, retained], ['extra', make('999999999999999999', 'extra.jpg', 'image/jpeg')]]) },
     ]) assert.equal(restore.verifyRestoredAttachments(changed, { channelId, botId }, files, [retained.id]), false);
+});
+
+test('hidden restore uploads require the persisted proof and matching CDN bytes', async () => {
+    const channelId = '333333333333333333', botId = '222222222222222222', op = 'b'.repeat(32);
+    const data = Buffer.from('ffd8ff00', 'hex'), name = `restore-${op}-0.jpg`, fileId = '444444444444444444';
+    const hash = require('node:crypto').createHash('sha256').update(data).digest('hex');
+    const files = [{ name, data }], url = `https://cdn.discordapp.com/attachments/${channelId}/${fileId}/${name}?ex=abc&is=123&hm=fff`;
+    const message = { id: '777777777777777777', channelId, author: { id: botId }, attachments: [], embeds: [{ image: { url } }] };
+    const operation = { record: { startedAtMs: Date.now(), steps: [{ state: 'planned', proofs: [{ name, sha256: hash }] }] } };
+    const { verifyHiddenUploadBytes } = require('../../src/twitterGridRestoreAdapters')._internal;
+    let checked = 0;
+    const options = { hashAttachment: async (attachment, limits) => { checked++; assert.equal(attachment.id, fileId); assert.ok(limits.deadlineAtMs); return hash; } };
+    assert.equal(restore.verifyRestoredAttachments(message, { channelId, botId }, files), true);
+    assert.equal(await verifyHiddenUploadBytes(message, files, operation, options), true); assert.equal(checked, 1);
+    assert.equal(await verifyHiddenUploadBytes(message, files, operation, { hashAttachment: async () => '0'.repeat(64) }), false);
+    operation.record.steps[0].proofs[0].sha256 = '0'.repeat(64);
+    assert.equal(await verifyHiddenUploadBytes(message, files, operation, options), false);
+    for (const bad of [url.replace(channelId, '999999999999999999'), url.replace('cdn.discordapp.com', 'evil.example'), `${url}&width=50`]) {
+        const forged = { ...message, embeds: [{ image: { url: bad } }] };
+        assert.equal(restore.verifyRestoredAttachments(forged, { channelId, botId }, files), false);
+    }
 });
 
 test('confirmed partial restoration records only visible images while retaining the complete verified source', () => {
@@ -520,4 +561,21 @@ test('concurrent restorations are bounded even while a network call is in flight
     release();
     assert.equal((await first).status, 'done');
     assert.equal((await second).status, 'done');
+});
+
+test('restore history requires the expected guild and channel even for other users posts', async () => {
+    const channelId = '333333333333333333', guildId = '222222222222222222';
+    const a = '555555555555555555', b = '777777777777777777', scope = { channelId, guildId };
+    let entries = [{ id: a, channelId, guildId }, { id: b, channelId, guildId }];
+    const channel = { id: channelId, messages: { fetch: async options => new Map((options.limit === 1 ? entries.slice(-1) : entries).map(item => [item.id, item])) } };
+    assert.equal(await restore.latestMessageId(channel, scope), b);
+    assert.equal(await restore.adjacency(channel, a, b, scope), 'adjacent');
+    for (const field of ['id', 'channelId', 'guildId']) for (const value of [undefined, '999999999999999999']) {
+        const old = entries[1]; entries[1] = { ...old, [field]: value };
+        // A different valid ID is a valid channel tail; no prior ID is known.
+        if (field === 'id' && value) assert.equal(await restore.latestMessageId(channel, scope), value);
+        else await assert.rejects(restore.latestMessageId(channel, scope), /GRID_RESTORE_UNAVAILABLE/);
+        assert.equal(await restore.adjacency(channel, a, b, scope), 'unavailable');
+        entries[1] = old;
+    }
 });

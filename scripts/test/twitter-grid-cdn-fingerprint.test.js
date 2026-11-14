@@ -118,7 +118,7 @@ test('embed witnesses accept exact legacy hashes and new signatures across refre
 test('saved v2 signatures survive refresh; legacy records require their exact old content', async () => {
     const old = message(url()), current = message(url({ query: 'ex=9999&is=5555&hm=eeff' }));
     const payload = { messageIds: [messageId], completedParts: 1, partSignatures: [cards.fingerprint(old)] };
-    const interaction = { client: { user: { id: bot } }, channel: { messages: { fetch: async () => current } } };
+    const interaction = { channelId, client: { user: { id: bot } }, channel: { messages: { fetch: async () => current } } };
     assert.equal(await grid.sourcesRemainValid(interaction, { message_id: messageId, payload }), true);
     payload.partSignatures[0] = cards.legacyFingerprint(old);
     const before = payload.partSignatures[0];

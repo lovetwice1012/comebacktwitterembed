@@ -4,8 +4,10 @@ const https = require('node:https');
 const { createHash } = require('node:crypto');
 const { lookup } = require('./providers/autoWatch/publicDns');
 const cards = require('./twitterGridCards');
+const { isExpected, isLocated } = require('./discordMessageIdentity');
 const restore = require('./twitterGridRestore');
 const { createRestoreJournal } = require('./twitterGridRestoreJournal');
+const { logicalAttachments } = require('./discordAttachmentIdentity');
 
 async function readBeforeDeadline(work, deadlineAtMs, now = Date.now) {
     const remaining = deadlineAtMs - now();
@@ -24,7 +26,7 @@ async function hashAttachment(file, options = {}) {
     if (remaining < 1) throw new Error('GRID_RESTORE_TIMEOUT');
     const url = new URL(file.url), controller = new AbortController(), timeout = setTimeout(() => controller.abort(), Math.min(15000, remaining));
     timeout.unref?.();
-    if (url.protocol !== 'https:' || url.hostname !== 'cdn.discordapp.com' || url.username || url.password || url.port || url.hash) {
+    if (url.protocol !== 'https:' || !['cdn.discordapp.com', 'media.discordapp.net'].includes(url.hostname) || url.username || url.password || url.port || url.hash) {
         clearTimeout(timeout); throw new Error('GRID_RESTORE_UNAVAILABLE');
     }
     const fetch = options.fetch || require('node-fetch'), agent = new https.Agent({ keepAlive: false, lookup: options.lookup || lookup });
@@ -63,7 +65,7 @@ async function findUnknownSend(channel, recorded, step, interaction, options = {
         let oldest = null, pastWindow = false;
         for (const message of messages) {
             const id = String(message?.id || '');
-            if (!/^\d{1,25}$/.test(id) || seen.has(id)) return null;
+            if (!isLocated(message, interaction) || seen.has(id)) return null;
             seen.add(id);
             let created = Number(message.createdTimestamp);
             if (!Number.isSafeInteger(created) || created <= 0) {
@@ -71,7 +73,7 @@ async function findUnknownSend(channel, recorded, step, interaction, options = {
             }
             if (created < recorded.startedAtMs - 30000) { pastWindow = true; continue; }
             if (!oldest || BigInt(id) < BigInt(oldest)) oldest = id;
-            if (restore.verifyRestoredAttachments(message, { channelId: interaction.channelId, botId: interaction.client?.user?.id }, step.proofs)) found.push(message);
+            if (isExpected(message, interaction, null) && restore.verifyRestoredAttachments(message, { channelId: interaction.channelId, botId: interaction.client?.user?.id }, step.proofs)) found.push(message);
         }
         if (pastWindow || messages.length < 100) { complete = true; break; }
         if (!oldest || oldest === before) return null;
@@ -137,8 +139,7 @@ async function recoverConfirmed(lock, interaction, dependencies = {}) {
     const channel = dependencies.channel || interaction.channel, messages = [];
     if (marker && !recorded.steps.length) {
         let original; try { original = await readBeforeDeadline(() => channel.messages.fetch({ message: lock.scope.messageId, force: true, cache: false }), deadlineAtMs, now); } catch { return null; }
-        if (String(original?.id || '') !== String(lock.scope.messageId) || original?.author?.id !== interaction.client?.user?.id
-            || String(original.channelId || original.channel?.id || '') !== String(interaction.channelId)
+        if (!isExpected(original, interaction, lock.scope.messageId)
             || !cards.matchesFingerprint(original, recorded.firstFingerprint) || !await dependencies.authorize?.()) return null;
         let newRow;
         if (recorded.mode === 'new') {
@@ -180,6 +181,7 @@ async function recoverConfirmed(lock, interaction, dependencies = {}) {
         seen.add(messageId);
         let message; try { message = await readBeforeDeadline(() => channel.messages.fetch({ message: messageId, force: true, cache: false }), deadlineAtMs, now); } catch { return null; }
         if (step.type === 'edit' && messageId !== String(lock.scope.messageId)) return null;
+        if (!isExpected(message, interaction, messageId)) return null;
         if (payload.sharedInline && step.type === 'edit' && ['inline-reference', 'inline-upload'].includes(step.evidence?.kind)) {
             messages.push(message); continue;
         }
@@ -188,7 +190,7 @@ async function recoverConfirmed(lock, interaction, dependencies = {}) {
         for (const proof of step.proofs) {
             if (!/^restore-[a-f0-9]{32}-\d{1,2}\.(jpg|png|webp|avif)$/.test(proof.name || '')
                 || !proof.name.startsWith(`restore-${operationId}-`) || !/^[a-f0-9]{64}$/.test(proof.sha256 || '')) return null;
-            const file = cards.attachmentList(message).find(item => item.name === proof.name);
+            const file = logicalAttachments(message)?.find(item => item.name === proof.name);
             try { if (await readBeforeDeadline(() => (dependencies.hashAttachment || hashAttachment)(file, { deadlineAtMs, now, budget }), deadlineAtMs, now) !== proof.sha256) return null; } catch { return null; }
         }
         messages.push(message);
@@ -203,7 +205,7 @@ async function recoverConfirmed(lock, interaction, dependencies = {}) {
         if (!!inline.partial !== partial) throw new Error('GRID_RESTORE_INLINE_RECOVERY');
     } else if (recorded.mode === 'new') {
         let original; try { original = await readBeforeDeadline(() => channel.messages.fetch({ message: lock.scope.messageId, force: true, cache: false }), deadlineAtMs, now); } catch { return null; }
-        if (original?.author?.id !== interaction.client?.user?.id || !cards.matchesFingerprint(original, recorded.firstFingerprint)) return null;
+        if (!isExpected(original, interaction, lock.scope.messageId) || !cards.matchesFingerprint(original, recorded.firstFingerprint)) return null;
         if (!/^[a-f0-9]{32}$/.test(recorded.newGalleryId || '')) return null;
         const rows = await lock.db.queryDatabaseIndependent('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND provider_id=? AND expires_at_ms>?',
             [recorded.newGalleryId, interaction.guildId, interaction.channelId, 'twitter', Date.now()]);
@@ -266,8 +268,7 @@ async function recoverConfirmed(lock, interaction, dependencies = {}) {
             let saved;
             try { saved = await readBeforeDeadline(() => channel.messages.fetch({ message: payload.messageIds[index], force: true, cache: false }), deadlineAtMs, now); }
             catch { return null; }
-            if (String(saved?.id || '') !== String(payload.messageIds[index]) || saved?.author?.id !== interaction.client?.user?.id
-                || String(saved.channelId || saved.channel?.id || '') !== String(interaction.channelId)
+            if (!isExpected(saved, interaction, payload.messageIds[index])
                 || !cards.matchesFingerprint(saved, payload.partSignatures[index])) return null;
             existing.push(saved);
         }

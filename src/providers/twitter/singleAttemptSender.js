@@ -1,6 +1,6 @@
 'use strict';
 
-const { REST, Routes, MessagePayload, DefaultRestOptions } = require('discord.js');
+const { REST, Routes, Message, MessagePayload, DefaultRestOptions } = require('discord.js');
 
 // An HTTP 413 proves non-delivery only if the SDK did not silently retry a
 // previous POST whose acknowledgement was lost. Keep a dedicated manager for
@@ -33,7 +33,18 @@ function createSingleAttemptSender({ restFactory = options => new REST(options) 
             const raw = await rest.post(Routes.channelMessages(channel.id), { body, files });
             if (!/^\d{16,22}$/.test(String(raw?.id || '')) || String(raw.channel_id) !== String(channel.id))
                 throw Object.assign(new Error('Discord did not return a verifiable message.'), { code: 'DISCORD_SEND_RESULT_UNKNOWN' });
-            return messages.cache?.get?.(raw.id) ?? messages._add(raw);
+            // Gateway delivery can populate the cache before this POST's
+            // complete response arrives. Do not bind a gallery to that
+            // potentially partial object. Conversely, patching the shared
+            // cache with this older receipt could overwrite a later Gateway
+            // edit. Keep the authoritative POST receipt as a separate Message
+            // snapshot when a cached object already exists.
+            const cached = messages.cache?.get?.(raw.id);
+            // Discord.js exposes the runtime Message constructor but marks it
+            // private in its declarations; the SDK itself constructs it from
+            // the same API response shape in its message manager.
+            const ReceiptMessage = /** @type {any} */ (Message);
+            return cached ? new ReceiptMessage(client, raw) : messages._add(raw);
         } };
     }
     return { forMessage };

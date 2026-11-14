@@ -19,7 +19,7 @@ test('real gallery row binds deletion to its verified webhook owner, not X foote
         const prepared = await cards.prepare({ components: [{ type: 1, components: [{ custom_id: 'delete' }] }],
             twitterGrid: { imageUrls: urls, sequence: 0, totalParts: 1 } }, { guildId, channelId, author: { id: webhook } }, context, storage);
         let deletions = 0;
-        const message = { id: messageId, author: { id: bot }, content: '', attachments: new Map(), components: prepared.step.components,
+        const message = { id: messageId, channelId, guildId, author: { id: bot }, content: '', attachments: new Map(), components: prepared.step.components,
             embeds: [{ url: 'https://x.com/u/status/1', author: { name: `展開者: hook(id:${webhook})` }, footer: { text: `投稿者: evil(id:${attacker})` } }],
             delete: async () => { deletions++; } };
         const item = prepared.grids[0]; assert.equal(await cards.bind(item, message, storage, db), true);

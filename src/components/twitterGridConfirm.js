@@ -49,8 +49,8 @@ async function getSource(interaction, record, access, deps) {
 }
 async function groupSnapshot(source, row, channel, client) {
     const payload = row.payload, parts = [];
-    const combined = payload.replacePhase === 'done' && cards.attachmentList(source).some(file =>
-        new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || '') && /^image\/(jpeg|png|webp)$/i.test(file.contentType || ''));
+    const combined = payload.replacePhase === 'done' && !!require('../discordGridMarkers').get(source, payload.id)
+        && cards.matchesFingerprint(source, payload.firstStaticSignature, true);
     for (let index = 0; index < payload.messageIds.length; index++) {
         const id = String(payload.messageIds[index]); let message = source;
         if (index) {

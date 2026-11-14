@@ -44,13 +44,65 @@ function matchesUniqueReference(value, file, attachments, channelId) {
     return !value.startsWith('attachment://') || matchesReference(matches[0].url, matches[0], channelId);
 }
 
-function canonicalUrl(value, message) {
+// Discord may omit an uploaded attachment from `attachments` when an Embed
+// references it. Its CDN path still identifies the immutable attachment in
+// this channel. Do not infer a file from foreign hosts or transformed URLs.
+function embeddedImage(value, channelId) {
+    if (typeof value !== 'string' || !/^\d{1,25}$/.test(String(channelId || ''))) return null;
+    try {
+        const url = new URL(value), pieces = url.pathname.split('/');
+        if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash
+            || !HOSTS.has(url.hostname) || pieces.length !== 5 || pieces[1] !== 'attachments'
+            || pieces[2] !== String(channelId) || !/^\d{1,25}$/.test(pieces[3])
+            || (value.includes('?') && !url.search) || !signedQueryOnly(url)) return null;
+        const name = decodeURIComponent(pieces[4]);
+        const match = /\.(jpe?g|png|webp|avif)$/i.exec(name);
+        if (!safeName(name) || !match || /^SPOILER_/i.test(name)) return null;
+        const format = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase();
+        return { id: pieces[3], name, url: value, contentType: `image/${format}` };
+    } catch { return null; }
+}
+
+// Callers must also verify the Bot author and the saved message fingerprint;
+// these descriptors alone never authorize a mutation or deletion.
+function logicalAttachments(message) {
+    const channelId = message?.channelId || message?.channel?.id;
+    const input = message?.attachments;
+    const visible = !input ? [] : typeof input.values === 'function' ? [...input.values()] : Array.isArray(input) ? input : [];
+    const result = [...visible], byId = new Map(), names = new Set();
+    for (const file of visible) {
+        const id = String(file?.id || ''), name = file?.name;
+        if (!/^\d{1,25}$/.test(id) || !safeName(name) || byId.has(id) || names.has(name)) return null;
+        byId.set(id, file); names.add(name);
+    }
+    const embeddedIds = new Set();
+    for (const embed of message?.embeds || []) {
+        const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+        const file = embeddedImage(data?.image?.url, channelId);
+        if (!file) continue;
+        if (embeddedIds.has(file.id)) return null;
+        embeddedIds.add(file.id);
+        const existing = byId.get(file.id);
+        if (existing) { if (existing.name !== file.name) return null; continue; }
+        if (names.has(file.name)) return null;
+        byId.set(file.id, file); names.add(file.name); result.push(file);
+    }
+    return result;
+}
+
+function canonicalUrl(value, message, options = {}) {
     if (typeof value !== 'string') return value;
     const channelId = message?.channelId || message?.channel?.id;
     const input = message?.attachments;
     const files = !input ? [] : typeof input.values === 'function' ? [...input.values()] : Array.isArray(input) ? input : [];
     const matching = files.filter(file => matchesReference(value, file, channelId, { allowAttachmentScheme: true }));
-    if (matching.length !== 1) return value;
+    if (matching.length !== 1) {
+        // The fingerprint still contains the exact message, attachment ID,
+        // filename and every non-signature query. Removing only Discord's
+        // rotating signature does not change the underlying attachment.
+        if (options.allowHidden === true && matching.length === 0 && embeddedImage(value, channelId)) return value.split('?')[0];
+        return value;
+    }
     // Compare attachment:// to the same verified attachment's CDN form, not
     // merely to another file with the same name or a URL from another channel.
     const candidate = value.startsWith('attachment://') ? matching[0].url : value;
@@ -59,4 +111,4 @@ function canonicalUrl(value, message) {
     return query < 0 ? candidate : candidate.slice(0, query);
 }
 
-module.exports = { matchesReference, matchesUniqueReference, canonicalUrl };
+module.exports = { matchesReference, matchesUniqueReference, canonicalUrl, embeddedImage, logicalAttachments };

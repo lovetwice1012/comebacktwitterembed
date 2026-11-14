@@ -19,7 +19,7 @@ const buttons = {
     translateButton: { type: 2, style: 2, label: 'Translate', custom_id: 'translate' }, deleteButton: { type: 2, style: 2, label: 'Delete', custom_id: 'delete' },
 };
 
-async function fixture({ quote = false, nonImage = null } = {}) {
+async function fixture({ quote = false, nonImage = null, hideEmbeddedAttachments = false, discordMessages = false, firstPhotoCount = 10 } = {}) {
     const db = await createTestDatabase(port);
     const sql = fs.readFileSync(path.join(schema.MIGRATIONS_DIR, '20260922_add_link_presentation.sql'), 'utf8');
     await db.queryDatabase(schema._internal.splitSqlStatements(sql).find(s => /CREATE TABLE IF NOT EXISTS bot_media_galleries/.test(s)));
@@ -29,7 +29,7 @@ async function fixture({ quote = false, nonImage = null } = {}) {
     for (const statement of schema._internal.splitSqlStatements(journalSql)) await db.queryDatabase(statement);
     const storage = gallery.createStore(db), settings = { enabled: true, defaultLanguage: 'ja', twitter_grid_replace_permission: 'restricted' };
     const urls = Array.from({ length: 13 }, (_, i) => image(i + 1));
-    const parts = [urls.slice(0, 10), urls.slice(10)];
+    const parts = [urls.slice(0, firstPhotoCount), urls.slice(firstPhotoCount)];
     const metadata = parts.map((imageUrls, sequence) => ({ imageUrls, sequence, totalParts: 2 }));
     if (nonImage) metadata[1].containsNonImage = true;
     if (quote) Object.assign(metadata[0], { embedStart: 0, embedEnd: 1 });
@@ -42,21 +42,44 @@ async function fixture({ quote = false, nonImage = null } = {}) {
     assert.equal(prepared.grids.length, quote ? 2 : 1);
     let nextId = 100000000000000000n;
     const makeFiles = urls => new Map(urls.map(url => { const id = String(++nextId), name = new URL(url).pathname.split('/').pop(); return [id, { id, name, url: `https://cdn.discordapp.com/attachments/${cid}/${id}/${name}?ex=1&is=2&hm=abc`, contentType: 'image/jpeg' }]; }));
-    const first = { id: '555555555555555555', channelId: cid, author: { id: bot }, content: '', embeds: [{ title: 'post', description: '本文', url: 'https://x.com/example/status/123', author: { name: `requester(id:${user})` } }], components: prepared.step.components, attachments: makeFiles(parts[0]) };
+    let first = { id: '555555555555555555', channelId: cid, author: { id: bot }, content: '', embeds: [{ title: 'post', description: '本文', url: 'https://x.com/example/status/123', author: { name: `requester(id:${user})` } }], components: prepared.step.components, attachments: makeFiles(parts[0]) };
     if (quote) first.embeds.push({ title: 'quote', image: { url: quoteUrls[0] } }, { image: { url: quoteUrls[1] } });
-    const second = { id: '666666666666666666', channelId: cid, author: { id: bot }, content: '', embeds: [], components: [], attachments: makeFiles(parts[1]) };
+    let second = { id: '666666666666666666', channelId: cid, author: { id: bot }, content: '', embeds: [], components: [], attachments: makeFiles(parts[1]) };
     if (nonImage) second.attachments.set('888888888888888888', { id: '888888888888888888', name: nonImage === 'video' ? 'movie.mp4' : 'unknown.bin', url: `https://cdn.discordapp.com/attachments/${gid}/${cid}/${nonImage}`, contentType: nonImage === 'video' ? 'video/mp4' : null });
-    const messages = new Map([[first.id, first], [second.id, second]]);
+    let discordClient;
+    const apiFile = file => ({ id: file.id, filename: file.name, content_type: file.contentType, size: 4, url: file.url, proxy_url: file.url });
+    if (discordMessages) {
+        const { Client, Message } = require('discord.js');
+        discordClient = new Client({ intents: [] }); discordClient.user = { id: bot };
+        const convert = value => new Message(discordClient, { id: value.id, channel_id: cid, guild_id: gid,
+            author: { id: bot, username: 'bot', discriminator: '0' }, content: value.content, embeds: value.embeds,
+            components: value.components, attachments: [...value.attachments.values()].map(apiFile) });
+        first = convert(first); second = convert(second);
+    }
+    const messages = new Map([[first.id, first], [second.id, second]]), serverByMessage = new Map(), editRequests = [];
     for (const message of messages.values()) {
+        // Model Discord GET hiding files that are referenced from Embeds,
+        // while retaining those files server-side for later PATCH requests.
+        serverByMessage.set(message.id, [...message.attachments.values()]);
         message.edit = async request => {
-            const old = [...message.attachments.values()];
+            editRequests.push({ messageId: message.id, attachments: (request.attachments || []).map(item => String(item.id)) });
+            const old = hideEmbeddedAttachments ? serverByMessage.get(message.id) : [...message.attachments.values()];
             // discord.js sends an attachment list for a supplied files array;
             // without an explicit retain list the old files are replaced.
-            const retained = request.attachments ? old.filter(file => request.attachments.some(item => String(item.id) === file.id)) : request.files ? [] : old;
+            const retained = request.attachments ? request.attachments.map(item => old.find(file => String(item.id) === file.id)).filter(Boolean) : request.files ? [] : old;
             const added = (request.files || []).map(file => { const url = typeof file === 'string' ? file : file.attachment; const name = typeof file === 'string' ? new URL(url).pathname.split('/').pop() : file.name; const id = String(++nextId); return { id, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${cid}/${id}/${name}` }; });
-            message.attachments = new Map([...retained, ...added].map(file => [file.id, file]));
-            if (request.embeds) message.embeds = request.embeds.map(embed => ({ ...embed, image: embed.image?.url?.startsWith('attachment://') ? { url: [...retained, ...added].find(file => file.name === embed.image.url.slice(13))?.url } : embed.image }));
-            if (request.components) message.components = request.components;
+            const serverFiles = [...retained, ...added]; serverByMessage.set(message.id, serverFiles);
+            const embeds = request.embeds ? request.embeds.map(embed => ({ ...embed, image: embed.image?.url?.startsWith('attachment://') ? { url: [...retained, ...added].find(file => file.name === embed.image.url.slice(13))?.url } : embed.image }))
+                : message.embeds.map(embed => embed?.toJSON ? embed.toJSON() : embed);
+            const usedUrls = new Set(embeds.map(embed => embed.image?.url).filter(Boolean));
+            const visible = hideEmbeddedAttachments ? serverFiles.filter(file => !usedUrls.has(file.url)) : serverFiles;
+            if (discordMessages) message._patch({ id: message.id, channel_id: cid, guild_id: gid, embeds,
+                attachments: visible.map(apiFile), ...(request.components ? { components: request.components } : {}) });
+            else {
+                message.attachments = new Map(visible.map(file => [file.id, file]));
+                message.embeds = embeds;
+                if (request.components) message.components = request.components;
+            }
             return message;
         };
         message.delete = async () => messages.delete(message.id);
@@ -73,7 +96,7 @@ async function fixture({ quote = false, nonImage = null } = {}) {
     const interaction = { guildId: gid, channelId: cid, locale: 'ja', user: { id: user }, client: { user: { id: bot } }, memberPermissions: { has: () => true }, channel, message: first, editReply: async () => {}, deleteReply: async () => {} };
     const deps = { db, storage, getSettings: async () => settings, freshAccess: async () => ({ permissions: { has: () => true }, member: { _roles: [] }, channel }),
         fetchTwitterMedia: async () => ({ data: Buffer.from('validated image fixture'), format: 'jpeg' }) };
-    return { db, storage, item, quote: prepared.grids[1], quoteUrls, interaction, first, second, messages, urls, deps };
+    return { db, storage, item, quote: prepared.grids[1], quoteUrls, interaction, first, second, messages, urls, deps, serverByMessage, editRequests };
 }
 
 async function perform(f, moduleName, translateOriginal = false, db = f.db) {
@@ -145,6 +168,391 @@ test('existing display toggle updates both parts, keeps the grid control, and su
         assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, row), f.urls);
         assert.equal(await grid._internal.replacePublic(f.interaction, row, { data: Buffer.from('combined'), filename: 'twitter-grid.jpg' }, f.deps), 'done');
         assert.equal(f.messages.has(f.second.id), false);
+    } finally { await f.db.close(); }
+});
+
+for (const quote of [false, true]) test(`real Discord Message: switch to hidden embeds, combine all images, then replace again (quote=${quote})`, { timeout: 60000 }, async () => {
+    const f = await fixture({ quote, hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(f.second.attachments.size, 0, 'Discord omits the continuation attachments used by embeds');
+        assert.equal(f.second.embeds.length, 3);
+        const saved = await f.storage.get(f.item.id, gid, cid);
+        assert.deepEqual(saved.payload.partContainsNonImage, [false, false]);
+        assert.deepEqual(saved.payload.partRefs.flat().map(ref => ref.url), f.urls);
+        assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, saved), f.urls);
+        const { Message } = require('discord.js');
+        const ephemeral = () => new Message(f.first.client, { id: '999999999999999999', channel_id: cid, guild_id: gid,
+            author: { id: bot, username: 'bot', discriminator: '0' }, content: '', embeds: [], components: [], attachments: [], flags: 64 });
+        const calls = [];
+        Object.assign(f.interaction, { deferReply: async () => {}, deferUpdate: async () => {}, reply: async value => calls.push(value), editReply: async value => calls.push(value) });
+        Object.assign(f.deps, { isAllowed: async () => true, compose: async urls => {
+            assert.deepEqual(urls, f.urls); return { data: Buffer.from('composite'), filename: 'grid.jpg' };
+        } });
+        const replace = async () => {
+            f.interaction.customId = `tg:${f.item.id}:0:open`; f.interaction.message = f.first;
+            await grid.handle(f.interaction, f.deps);
+            let panel = calls.at(-1); assert.ok(panel.components?.length, panel.content);
+            f.interaction.customId = panel.components[3].components[0].custom_id;
+            f.interaction.values = ['r']; f.interaction.message = ephemeral();
+            await grid.handle(f.interaction, f.deps);
+            panel = calls.at(-1); assert.ok(panel.components?.length, panel.content);
+            f.interaction.customId = panel.components[4].components[0].custom_id; f.interaction.values = undefined;
+            await grid.handle(f.interaction, f.deps);
+            panel = calls.at(-1); assert.equal(panel.components?.[0]?.components?.[0]?.label, '置き換える', panel.content);
+            f.interaction.customId = panel.components[0].components[0].custom_id;
+            await grid.handle(f.interaction, f.deps);
+            assert.match(calls.at(-1).content, /公開画像を置き換えました/);
+        };
+        await replace(); assert.equal(f.messages.has(f.second.id), false);
+        const firstMarker = f.first.embeds.map(embed => embed.image?.url).find(url => url?.includes(`tg-${f.item.id}.`));
+        assert.ok(firstMarker); await replace();
+        const secondMarker = f.first.embeds.map(embed => embed.image?.url).find(url => url?.includes(`tg-${f.item.id}.`));
+        assert.ok(secondMarker); assert.notEqual(new URL(firstMarker).pathname, new URL(secondMarker).pathname);
+        if (quote) assert.ok(f.first.embeds.some(embed => embed.title === 'quote'), 'the unrelated quote remains intact');
+    } finally { await f.db.close(); }
+});
+
+for (const damage of ['missing refs', 'video']) test(`hidden continuation cannot be deleted when saved evidence is ${damage}`, { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(f.second.attachments.size, 0);
+        const row = await f.storage.get(f.item.id, gid, cid), payload = row.payload;
+        if (damage === 'missing refs') delete payload.partRefs[1];
+        else payload.partContainsNonImage[1] = true;
+        await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+        const damaged = await f.storage.get(f.item.id, gid, cid), before = cards.fingerprint(f.first);
+        const result = await grid._internal.replacePublic(f.interaction, damaged, { data: Buffer.from('combined'), filename: 'grid.jpg' }, f.deps);
+        assert.notEqual(result, 'done'); assert.equal(f.messages.has(f.second.id), true);
+        assert.equal(cards.fingerprint(f.first), before, 'neither the root nor unrelated content was changed');
+    } finally { await f.db.close(); }
+});
+
+test('a video-bearing continuation receives actionable private guidance without changing either post', { timeout: 60000 }, async () => {
+    const f = await fixture({ nonImage: 'video', discordMessages: true }), calls = [];
+    try {
+        const { Message } = require('discord.js');
+        const beforeFirst = cards.fingerprint(f.first), beforeSecond = cards.fingerprint(f.second);
+        const state = { ...grid._internal.defaults({ twitter_grid_replace_permission: 'restricted' }, 13, true), target: 'r' };
+        f.interaction.customId = grid._internal.custom(f.item.id, user, 'confirm', state);
+        f.interaction.message = new Message(f.first.client, { id: '999999999999999999', channel_id: cid, guild_id: gid,
+            author: { id: bot, username: 'bot', discriminator: '0' }, content: '', embeds: [], components: [], attachments: [], flags: 64 });
+        f.interaction.deferUpdate = async () => {}; f.interaction.editReply = async value => calls.push(value);
+        Object.assign(f.deps, { isAllowed: async () => true, compose: async urls => {
+            assert.deepEqual(urls, f.urls); return { data: Buffer.from('composite'), filename: 'grid.jpg' };
+        } });
+        await grid.handle(f.interaction, f.deps);
+        assert.match(calls.at(-1).content, /動画など.*自分にだけ表示/);
+        assert.equal(cards.fingerprint(f.first), beforeFirst); assert.equal(cards.fingerprint(f.second), beforeSecond);
+        assert.equal(f.messages.has(f.second.id), true);
+    } finally { await f.db.close(); }
+});
+
+for (const damage of ['missing root refs', 'reordered root refs', 'unknown root media', 'foreign root URL', 'duplicate root image'])
+    test(`a ${damage} never authorizes replacement or continuation deletion`, { timeout: 60000 }, async () => {
+        const f = await fixture({ hideEmbeddedAttachments: true, discordMessages: true });
+        try {
+            await perform(f, 'showAttachmentsAsEmbedsImage');
+            const row = await f.storage.get(f.item.id, gid, cid), payload = row.payload;
+            if (damage === 'missing root refs') delete payload.partRefs[0];
+            if (damage === 'reordered root refs') payload.partRefs[0].reverse();
+            if (damage === 'unknown root media') payload.partContainsNonImage[0] = null;
+            if (damage === 'foreign root URL') f.first.embeds[0].data.image.url = f.first.embeds[0].image.url.replace('cdn.discordapp.com', 'attacker.example');
+            if (damage === 'duplicate root image') f.first.embeds[1].data.image.url = f.first.embeds[0].image.url;
+            // Exercise the ownership/identity checks even if the saved row is
+            // otherwise trusted. Discord's real Message instance is used.
+            if (damage === 'foreign root URL' || damage === 'duplicate root image') payload.partSignatures[0] = cards.fingerprint(f.first);
+            await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+            const damaged = await f.storage.get(f.item.id, gid, cid), before = cards.fingerprint(f.first);
+            const result = await grid._internal.replacePublic(f.interaction, damaged, { data: Buffer.from('combined'), filename: 'grid.jpg' }, f.deps);
+            assert.notEqual(result, 'done', damage); assert.equal(f.messages.has(f.second.id), true, damage);
+            assert.equal(cards.fingerprint(f.first), before, 'the root message is not altered');
+        } finally { await f.db.close(); }
+    });
+
+test('unexpected hidden CDN content after the combined edit prevents continuation deletion', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        const oldEdit = f.first.edit;
+        f.first.edit = async request => {
+            const result = await oldEdit(request);
+            // Discord may expose an upload only in an Embed, not in attachments.
+            f.first.embeds.push({ image: { url: `https://cdn.discordapp.com/attachments/${cid}/999999999999999999/unexpected.jpg?ex=1&is=2&hm=abc` } });
+            return result;
+        };
+        const row = await f.storage.get(f.item.id, gid, cid);
+        assert.equal(await grid._internal.replacePublic(f.interaction, row, { data: Buffer.from('combined'), filename: 'grid.jpg' }, f.deps), 'partial');
+        assert.equal(f.messages.has(f.second.id), true, 'the continuation must not be deleted');
+    } finally { await f.db.close(); }
+});
+
+test('unexpected hidden content after a resumed final edit cannot be recorded as success', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        const originalDelete = f.second.delete; let attempts = 0;
+        f.second.delete = async () => { if (++attempts === 1) throw new Error('temporary failure'); return originalDelete(); };
+        let row = await f.storage.get(f.item.id, gid, cid);
+        assert.equal(await grid._internal.replacePublic(f.interaction, row, { data: Buffer.from('first'), filename: 'grid.jpg' }, f.deps), 'partial');
+        const originalEdit = f.first.edit;
+        f.first.edit = async request => {
+            const result = await originalEdit(request);
+            f.first.embeds.push({ image: { url: `https://cdn.discordapp.com/attachments/${cid}/999999999999999999/unexpected.jpg?ex=1&is=2&hm=abc` } });
+            return result;
+        };
+        row = await f.storage.get(f.item.id, gid, cid);
+        assert.equal(await grid._internal.replacePublic(f.interaction, row, { data: Buffer.from('second'), filename: 'grid.jpg' }, f.deps), 'unknown');
+        assert.equal((await f.storage.get(f.item.id, gid, cid)).payload.replacePhase, 'unknown');
+    } finally { await f.db.close(); }
+});
+
+for (const scenario of ['normal', 'ack lost', 'database rollback']) test(`combining a quote preserves every hidden parent photo after a display switch: ${scenario}`, { timeout: 60000 }, async () => {
+    const f = await fixture({ quote: true, hideEmbeddedAttachments: true, discordMessages: true, firstPhotoCount: 9 });
+    try {
+        const parentIds = f.serverByMessage.get(f.first.id).map(file => String(file.id));
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(f.first.attachments.size, 1, 'eight parent images are hidden by embeds');
+        let quote = await f.storage.get(f.quote.id, gid, cid);
+        const composed = { data: Buffer.from('quote'), filename: 'grid.jpg' };
+        if (scenario === 'ack lost') {
+            const original = f.first.edit; let calls = 0;
+            f.first.edit = async request => { const message = await original(request); if (++calls === 1) throw new Error('response lost'); return message; };
+            assert.equal(await grid._internal.replacePublic(f.interaction, quote, composed, f.deps), 'unknown');
+        } else if (scenario === 'database rollback') {
+            const failing = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(async query => { await work(query); throw new Error('fixture rollback'); }) };
+            await assert.rejects(grid._internal.replacePublic(f.interaction, quote, composed, { ...f.deps, db: failing }), /fixture rollback/);
+        } else assert.equal(await grid._internal.replacePublic(f.interaction, quote, composed, f.deps), 'done');
+        if (scenario !== 'normal') {
+            quote = await f.storage.get(f.quote.id, gid, cid);
+            assert.equal(await grid._internal.replacePublic(f.interaction, quote, composed, f.deps), 'done');
+        }
+        const retained = new Set(f.serverByMessage.get(f.first.id).map(file => String(file.id)));
+        assert.ok(parentIds.every(id => retained.has(id)), 'all parent attachments must survive the quote edit');
+        assert.ok(parentIds.every(id => f.editRequests.at(-1).attachments.includes(id)), 'PATCH must explicitly retain hidden parent IDs');
+    } finally { await f.db.close(); }
+});
+
+test('combining a quote with ten hidden/visible parent attachments stops before exceeding Discord capacity', { timeout: 60000 }, async () => {
+    const f = await fixture({ quote: true, hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        const parentIds = f.serverByMessage.get(f.first.id).map(file => String(file.id));
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        const quote = await f.storage.get(f.quote.id, gid, cid), before = cards.fingerprint(f.first), edits = f.editRequests.length;
+        assert.equal(await grid._internal.replacePublic(f.interaction, quote, { data: Buffer.from('quote'), filename: 'grid.jpg' }, f.deps), 'attachment_limit');
+        assert.equal(f.editRequests.length, edits, 'no PATCH was made'); assert.equal(cards.fingerprint(f.first), before);
+        assert.ok(parentIds.every(id => f.serverByMessage.get(f.first.id).some(file => String(file.id) === id)));
+    } finally { await f.db.close(); }
+});
+
+for (const change of ['foreign host', 'different id', 'reordered embeds', 'changed text']) test(`a changed sibling before the first quote combination is rejected: ${change}`, { timeout: 60000 }, async () => {
+    const f = await fixture({ quote: true, hideEmbeddedAttachments: true, discordMessages: true, firstPhotoCount: 9 });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        const quote = await f.storage.get(f.quote.id, gid, cid), edits = f.editRequests.length;
+        const firstImage = f.first.embeds[0].data.image;
+        if (change === 'foreign host') firstImage.url = firstImage.url.replace('cdn.discordapp.com', 'attacker.example');
+        if (change === 'different id') firstImage.url = firstImage.url.replace(/\/attachments\/\d+\/\d+\//, `/attachments/${cid}/999999999999999999/`);
+        if (change === 'reordered embeds') [f.first.embeds[1], f.first.embeds[2]] = [f.first.embeds[2], f.first.embeds[1]];
+        if (change === 'changed text') f.first.embeds[0].data.description = 'changed';
+        assert.equal(await grid._internal.replacePublic(f.interaction, quote, { data: Buffer.from('quote'), filename: 'grid.jpg' }, f.deps), 'changed');
+        assert.equal(f.editRequests.length, edits, 'the Discord PATCH is never sent');
+    } finally { await f.db.close(); }
+});
+
+for (const scenario of ['normal', 'ack lost', 'database rollback', 'missing sibling', 'bad witness', 'bad static']) test(`replacing a hidden parent marker retains hidden restored quote attachments: ${scenario}`, { timeout: 60000 }, async () => {
+    const f = await fixture({ quote: true, hideEmbeddedAttachments: true, discordMessages: true });
+    try {
+        const parent = await f.storage.get(f.item.id, gid, cid);
+        assert.equal(await grid._internal.replacePublic(f.interaction, parent, { data: Buffer.from('parent'), filename: 'grid.jpg' }, f.deps), 'done');
+        assert.equal(f.first.attachments.size, 0, 'the parent marker is visible only through its Embed');
+        const quoteFiles = [0, 1].map(index => {
+            const fileId = String(930000000000000000n + BigInt(index)), name = `restore-${'c'.repeat(32)}-${index}.jpg`;
+            return { id: fileId, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${cid}/${fileId}/${name}?ex=1&is=2&hm=abc` };
+        });
+        const embeds = f.first.embeds.map(embed => embed.toJSON());
+        const quoteStart = embeds.findIndex(embed => embed.title === 'quote'); assert.ok(quoteStart >= 0);
+        for (let i = 0; i < quoteFiles.length; i++) embeds[quoteStart + i].image = { url: quoteFiles[i].url };
+        f.serverByMessage.set(f.first.id, [...f.serverByMessage.get(f.first.id), ...quoteFiles]);
+        f.first._patch({ id: f.first.id, channel_id: cid, guild_id: gid, embeds, attachments: [] });
+        // Model the DB state after a previously verified quote restoration.
+        const quote = await f.storage.get(f.quote.id, gid, cid), payload = quote.payload;
+        payload.embedStart = quoteStart; payload.embedEnd = quoteStart + quoteFiles.length;
+        payload.embedWitness = { hashes: f.first.embeds.slice(payload.embedStart, payload.embedEnd).map(embed => cards.embedFingerprint(embed, f.first)), attachments: [] };
+        payload.partSignatures[0] = cards.fingerprint(f.first); payload.firstStaticSignature = cards.fingerprint(f.first, true);
+        await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.quote.id]);
+        if (scenario === 'missing sibling') await f.db.queryDatabase('DELETE FROM bot_media_galleries WHERE gallery_id=?', [f.quote.id]);
+        if (scenario === 'bad witness' || scenario === 'bad static') {
+            if (scenario === 'bad witness') payload.embedWitness.hashes[0] = 'f'.repeat(64);
+            else payload.firstStaticSignature = 'f'.repeat(64);
+            await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.quote.id]);
+        }
+        let freshParent = await f.storage.get(f.item.id, gid, cid);
+        const composed = { data: Buffer.from('new parent'), filename: 'grid.jpg' };
+        if (['missing sibling', 'bad witness', 'bad static'].includes(scenario)) {
+            const before = cards.fingerprint(f.first), editCount = f.editRequests.length;
+            assert.equal(await grid._internal.replacePublic(f.interaction, freshParent, composed, f.deps), 'changed');
+            assert.equal(f.editRequests.length, editCount, 'no Discord PATCH before sibling evidence is proved');
+            assert.equal(cards.fingerprint(f.first), before);
+            assert.ok(quoteFiles.every(file => f.serverByMessage.get(f.first.id).some(item => String(item.id) === file.id)));
+            return;
+        }
+        if (scenario === 'ack lost') {
+            const original = f.first.edit; let calls = 0;
+            f.first.edit = async request => { const message = await original(request); if (++calls === 1) throw new Error('response lost'); return message; };
+            assert.equal(await grid._internal.replacePublic(f.interaction, freshParent, composed, f.deps), 'unknown');
+        } else if (scenario === 'database rollback') {
+            const failing = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(async query => { await work(query); throw new Error('fixture rollback'); }) };
+            await assert.rejects(grid._internal.replacePublic(f.interaction, freshParent, composed, { ...f.deps, db: failing }), /fixture rollback/);
+        } else assert.equal(await grid._internal.replacePublic(f.interaction, freshParent, composed, f.deps), 'done');
+        if (scenario !== 'normal') {
+            freshParent = await f.storage.get(f.item.id, gid, cid);
+            assert.equal(await grid._internal.replacePublic(f.interaction, freshParent, composed, f.deps), 'done');
+        }
+        const retained = new Set(f.serverByMessage.get(f.first.id).map(file => String(file.id)));
+        assert.ok(quoteFiles.every(file => retained.has(file.id)), 'restored quote attachments must remain available');
+        assert.ok(quoteFiles.every(file => f.editRequests.at(-1).attachments.includes(file.id)), 'PATCH retains each verified quote ID');
+    } finally { await f.db.close(); }
+});
+
+for (const quote of [false, true]) test(`hidden Embed attachments remain ordered across display toggles (quote=${quote})`, { timeout: 60000 }, async () => {
+    const f = await fixture({ quote, hideEmbeddedAttachments: true });
+    try {
+        const firstIds = [...f.first.attachments.keys()], secondIds = [...f.second.attachments.keys()];
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(f.first.attachments.size, quote ? 2 : 0);
+        assert.equal(f.second.attachments.size, 0);
+        assert.equal(cards.gridIdFromMessage(f.first), f.item.id);
+        const signed = await f.storage.get(f.item.id, gid, cid);
+        assert.ok(cards.matchesFingerprint(f.first, signed.payload.partSignatures[0]));
+        assert.ok(cards.matchesFingerprint(f.second, signed.payload.partSignatures[1]));
+        await perform(f, 'showMediaAsAttachments');
+        assert.deepEqual([...f.first.attachments.keys()], firstIds, 'root photo order is preserved');
+        assert.deepEqual([...f.second.attachments.keys()], secondIds, 'continuation photo order is preserved');
+        assert.equal(cards.gridIdFromMessage(f.first), f.item.id);
+        if (quote) assert.ok(f.first.embeds.some(embed => embed.title === 'quote'));
+        const row = await f.storage.get(f.item.id, gid, cid);
+        assert.ok(cards.matchesFingerprint(f.first, row.payload.partSignatures[0]));
+        assert.ok(cards.matchesFingerprint(f.second, row.payload.partSignatures[1]));
+    } finally { await f.db.close(); }
+});
+
+test('hidden photos and a visible video survive both display modes', { timeout: 60000 }, async () => {
+    const f = await fixture({ nonImage: 'video', hideEmbeddedAttachments: true });
+    try {
+        const firstIds = [...f.first.attachments.keys()], secondIds = [...f.second.attachments.keys()];
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(f.second.attachments.size, 1);
+        assert.equal([...f.second.attachments.values()][0].contentType, 'video/mp4');
+        await perform(f, 'showMediaAsAttachments');
+        assert.deepEqual([...f.first.attachments.keys()], firstIds);
+        assert.deepEqual([...f.second.attachments.keys()], secondIds);
+        assert.equal(f.messages.size, 2);
+    } finally { await f.db.close(); }
+});
+
+for (const alteration of ['foreign host', 'other channel', 'other id', 'other name', 'duplicate'])
+    test(`hidden continuation rejects ${alteration} without altering either post`, { timeout: 60000 }, async () => {
+        const f = await fixture({ hideEmbeddedAttachments: true });
+        try {
+            await perform(f, 'showAttachmentsAsEmbedsImage');
+            const image = f.second.embeds[0].image;
+            if (alteration === 'foreign host') image.url = image.url.replace('cdn.discordapp.com', 'evil.invalid');
+            if (alteration === 'other channel') image.url = image.url.replace(`/attachments/${cid}/`, '/attachments/999999999999999999/');
+            if (alteration === 'other id') image.url = image.url.replace(/\/\d+\/([^/?]+\?)/, '/999999999999999999/$1');
+            if (alteration === 'other name') image.url = image.url.replace(/([^/]+)\?/, 'different.jpg?');
+            if (alteration === 'duplicate') f.second.embeds[1].image.url = image.url;
+            const firstBefore = cards.fingerprint(f.first), secondBefore = cards.fingerprint(f.second);
+            await assert.rejects(perform(f, 'showMediaAsAttachments'), /GRID_SOURCE_CHANGED/);
+            assert.equal(cards.fingerprint(f.first), firstBefore); assert.equal(cards.fingerprint(f.second), secondBefore);
+            assert.equal(f.messages.size, 2);
+        } finally { await f.db.close(); }
+    });
+
+for (const alteration of ['wrong message', 'wrong channel', 'wrong author'])
+    test(`hidden continuation rejects a ${alteration} response before editing`, { timeout: 60000 }, async () => {
+        const f = await fixture({ hideEmbeddedAttachments: true });
+        try {
+            await perform(f, 'showAttachmentsAsEmbedsImage');
+            const fetch = f.interaction.channel.messages.fetch;
+            f.interaction.channel.messages.fetch = async query => {
+                const result = await fetch(query);
+                if (query.message !== f.second.id) return result;
+                if (alteration === 'wrong message') return { ...result, id: '999999999999999999' };
+                if (alteration === 'wrong channel') return { ...result, channelId: '999999999999999999' };
+                return { ...result, author: { id: '999999999999999999' } };
+            };
+            const firstBefore = cards.fingerprint(f.first), secondBefore = cards.fingerprint(f.second);
+            await assert.rejects(perform(f, 'showMediaAsAttachments'), /GRID_SOURCE_CHANGED/);
+            assert.equal(cards.fingerprint(f.first), firstBefore); assert.equal(cards.fingerprint(f.second), secondBefore);
+            assert.equal(f.messages.size, 2);
+        } finally { await f.db.close(); }
+    });
+
+test('refreshed Discord signature parameters do not invalidate hidden photos', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        for (const message of [f.first, f.second]) for (const embed of message.embeds) if (embed.image?.url?.includes('cdn.discordapp.com'))
+            embed.image.url = embed.image.url.replace('?ex=1&is=2&hm=abc', '?ex=3&is=4&hm=def');
+        await perform(f, 'showMediaAsAttachments');
+        assert.equal(f.first.attachments.size, 10); assert.equal(f.second.attachments.size, 3);
+    } finally { await f.db.close(); }
+});
+
+for (const evidence of ['missing flags', 'missing refs', 'reordered sources', 'foreign source', 'hidden video'])
+    test(`hidden photos require saved ordered X evidence (${evidence})`, { timeout: 60000 }, async () => {
+        const f = await fixture({ nonImage: evidence === 'hidden video' ? 'video' : null, hideEmbeddedAttachments: true });
+        try {
+            await perform(f, 'showAttachmentsAsEmbedsImage');
+            const row = await f.storage.get(f.item.id, gid, cid), payload = row.payload;
+            if (evidence === 'missing flags') delete payload.partContainsNonImage;
+            if (evidence === 'missing refs') delete payload.partRefs;
+            if (evidence === 'reordered sources') [payload.partRefs[1][0], payload.partRefs[1][1]] = [payload.partRefs[1][1], payload.partRefs[1][0]];
+            if (evidence === 'foreign source') payload.partRefs[1][0].url = payload.imageUrls[10] = 'https://evil.invalid/photo.jpg';
+            if (evidence === 'hidden video') f.second.attachments.clear();
+            await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+            const before = [cards.fingerprint(f.first), cards.fingerprint(f.second)];
+            await assert.rejects(perform(f, 'showMediaAsAttachments'), /GRID_SOURCE_CHANGED/);
+            assert.deepEqual([cards.fingerprint(f.first), cards.fingerprint(f.second)], before);
+            assert.equal(f.messages.size, 2);
+        } finally { await f.db.close(); }
+    });
+
+test('revoked permissions prevent edits of verified hidden images', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        const before = [cards.fingerprint(f.first), cards.fingerprint(f.second)];
+        f.deps.freshAccess = async () => null;
+        await assert.rejects(perform(f, 'showMediaAsAttachments'), /GRID_PERMISSION_CHANGED/);
+        assert.deepEqual([cards.fingerprint(f.first), cards.fingerprint(f.second)], before);
+    } finally { await f.db.close(); }
+});
+
+test('missing legacy photo evidence prevents creating an unrecoverable hidden state', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true });
+    try {
+        const row = await f.storage.get(f.item.id, gid, cid), payload = row.payload;
+        delete payload.partContainsNonImage;
+        await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+        const before = [cards.fingerprint(f.first), cards.fingerprint(f.second)];
+        await assert.rejects(perform(f, 'showAttachmentsAsEmbedsImage'), /GRID_SOURCE_CHANGED/);
+        assert.deepEqual([cards.fingerprint(f.first), cards.fingerprint(f.second)], before);
+        assert.equal(f.first.attachments.size, 10); assert.equal(f.second.attachments.size, 3);
+    } finally { await f.db.close(); }
+});
+
+test('a video-bearing Embed is never lost during a hidden-image display change', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true });
+    try {
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        f.second.embeds[0].video = { url: 'https://example.invalid/video.mp4' };
+        const before = JSON.stringify(f.second.embeds), firstBefore = cards.fingerprint(f.first);
+        await assert.rejects(perform(f, 'showMediaAsAttachments'), /GRID_SOURCE_CHANGED/);
+        assert.equal(JSON.stringify(f.second.embeds), before);
+        assert.equal(cards.fingerprint(f.first), firstBefore);
     } finally { await f.db.close(); }
 });
 
@@ -488,7 +896,7 @@ test('twenty physical messages survive a 429 and can be explicitly retried witho
         const messages = [f.first, f.second];
         for (let index = 2; index < 20; index++) {
             const id = String(700000000000000000n + BigInt(index)), photo = { id: String(800000000000000000n + BigInt(index)), name: `photo${index}.jpg`, contentType: 'image/jpeg' };
-            const item = { id, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map([[photo.id, photo]]) };
+            const item = { id, channelId: cid, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map([[photo.id, photo]]) };
             f.messages.set(id, item); messages.push(item);
         }
         const attempts = new Map();
@@ -552,6 +960,26 @@ test('successful Discord edits followed by database rollback can be safely recov
         assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, await f.storage.get(f.item.id, gid, cid)), f.urls);
         assert.equal(f.first.embeds.filter(embed => embed.image).length, 10);
         assert.equal(f.second.embeds.filter(embed => embed.image).length, 3);
+    } finally { await f.db.close(); }
+});
+
+test('hidden continuation edits recover after DB rollback without changing other messages', { timeout: 60000 }, async () => {
+    const f = await fixture({ quote: true, hideEmbeddedAttachments: true });
+    try {
+        let edited = false, attempts = 0;
+        const edit = f.second.edit;
+        f.second.edit = async request => { attempts++; const result = await edit(request); edited = true; return result; };
+        const flaky = rollbackAfterSideEffect(f.db, () => edited);
+        await assert.rejects(perform(f, 'showAttachmentsAsEmbedsImage', false, flaky), /fixture commit failure/);
+        assert.equal(f.second.attachments.size, 0); assert.equal(f.messages.size, 2);
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(attempts, 1, 'the confirmed continuation edit is not submitted again');
+        assert.ok(f.first.embeds.some(embed => embed.title === 'quote'));
+        const row = await f.storage.get(f.item.id, gid, cid);
+        assert.ok(cards.matchesFingerprint(f.first, row.payload.partSignatures[0]));
+        assert.ok(cards.matchesFingerprint(f.second, row.payload.partSignatures[1]));
+        await perform(f, 'showMediaAsAttachments');
+        assert.equal(f.first.attachments.size, 10); assert.equal(f.second.attachments.size, 3);
     } finally { await f.db.close(); }
 });
 
@@ -684,6 +1112,23 @@ test('a lost acknowledgement after a successful Discord edit can be reconciled w
         assert.equal(f.messages.size, 2);
         assert.equal(attempts, 1, 'the successful edit was not submitted twice');
         assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, await f.storage.get(f.item.id, gid, cid)), f.urls);
+    } finally { await f.db.close(); }
+});
+
+test('a lost acknowledgement after a hidden continuation edit is not resubmitted', { timeout: 60000 }, async () => {
+    const f = await fixture({ hideEmbeddedAttachments: true });
+    try {
+        let attempts = 0;
+        const edit = f.second.edit;
+        f.second.edit = async request => {
+            attempts++; const result = await edit(request);
+            if (attempts === 1) throw Object.assign(new Error('response lost after write'), { code: 'ETIMEDOUT' });
+            return result;
+        };
+        await perform(f, 'showAttachmentsAsEmbedsImage');
+        assert.equal(attempts, 1); assert.equal(f.second.attachments.size, 0);
+        await perform(f, 'showMediaAsAttachments');
+        assert.equal(f.second.attachments.size, 3);
     } finally { await f.db.close(); }
 });
 

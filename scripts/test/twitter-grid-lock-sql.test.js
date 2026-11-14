@@ -22,7 +22,7 @@ test('same-message quote groups use one real SQL lock and preserve unrelated emb
         const original = { guildId, channelId, author: { id: user } };
         const prepared = await cards.prepare(step, original, { providerId: 'twitter', presentationSettings: settings }, storage);
         assert.equal(prepared.grids.length, 2); assert.equal(prepared.grids[0].lockId, prepared.grids[1].lockId);
-        const first = { id: '555555555555555555', author: { id: bot }, content: '', components: prepared.step.components, attachments: new Map(), embeds: [
+        const first = { id: '555555555555555555', channelId, author: { id: bot }, content: '', components: prepared.step.components, attachments: new Map(), embeds: [
             { title: '親', image: { url: img(1) } }, { url: 'https://x.com/a', image: { url: img(2) } },
             { title: '引用', image: { url: img(1) } }, { url: 'https://x.com/b', image: { url: img(3) } },
         ] };
@@ -35,7 +35,10 @@ test('same-message quote groups use one real SQL lock and preserve unrelated emb
         const entered = new Promise(resolve => { enter = resolve; }), gate = new Promise(resolve => { release = resolve; });
         first.edit = async payload => {
             editing++; enter(); await gate;
-            first.embeds = payload.embeds; first.attachments = new Map([['new', { id: '777777777777777777', name: payload.files[0].name, contentType: 'image/jpeg' }]]);
+            const id = '777777777777777777', name = payload.files[0].name;
+            const url = `https://cdn.discordapp.com/attachments/${channelId}/${id}/${name}`;
+            first.embeds = payload.embeds.map(embed => embed.image?.url === `attachment://${name}` ? { ...embed, image: { url } } : embed);
+            first.attachments = new Map([['new', { id, name, contentType: 'image/jpeg', url }]]);
             return first;
         };
         const interaction = { guildId, channelId, user: { id: user }, client: { user: { id: bot } }, channel: { nsfw: false, messages: { fetch: async () => first } } };
@@ -68,7 +71,7 @@ test('SQL rollback after Discord accepted both operations can be recovered using
         const attachment = (id, name) => ({ id: String(id), name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${channelId}/${id}/${name}` });
         const first = { id: '555555555555555555', channelId, author: { id: bot }, content: '', embeds: [{ title: '本文' }], components: prepared.step.components,
             attachments: new Map(Array.from({ length: 10 }, (_, i) => [String(i), attachment(i, `photo${i}.jpg`)])) };
-        const second = { id: '666666666666666666', author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map([['10', attachment(10, '10.jpg')], ['11', attachment(11, '11.jpg')]]) };
+        const second = { id: '666666666666666666', channelId, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map([['10', attachment(10, '10.jpg')], ['11', attachment(11, '11.jpg')]]) };
         assert.equal(await cards.bind(prepared.grids[0], first, storage, db), true); assert.equal(await cards.append(prepared.grids[0], part2, second, db), true);
         assert.deepEqual(await cards.finish(prepared.grids[0], db), { state: 'complete' });
         let deleted = false, deletes = 0;

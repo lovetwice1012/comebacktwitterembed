@@ -80,6 +80,25 @@ for (const kind of ['references', 'uploads']) test(`${kind} unknown edit is veri
         await cards.withGalleryLock(scope, async lock => { await recoverInline(args(f, lock, recorded, after)); }, f.db);
     } finally { await f.db.close(); }
 });
+
+test('unknown quote upload is recovered when Discord hides embedded upload objects', { timeout: 60000 }, async () => {
+    const f = await fixture('uploads');
+    try {
+        const { after, recorded } = await setup(f, 'uploads');
+        for (const item of [...after.attachments.values()]) if (item.name.startsWith(`restore-${operationId}-`)) after.attachments.delete(item.id);
+        assert.equal(after.attachments.size, 1, 'only the unrelated parent file remains visible');
+        const original = after.embeds[1].image.url;
+        await cards.withGalleryLock(scope, async lock => {
+            for (const forged of [original.replace(cid, '999999999999999999'), original.replace('cdn.discordapp.com', 'evil.example'), `${original}?width=50`]) {
+                after.embeds[1].image.url = forged;
+                await assert.rejects(recoverInline(args(f, lock, recorded, after)), /GRID_RESTORE_INLINE_RECOVERY/);
+            }
+            after.embeds[1].image.url = original;
+            const result = await recoverInline(args(f, lock, recorded, after));
+            assert.deepEqual(result.target.imageUrls, urls);
+        }, f.db);
+    } finally { await f.db.close(); }
+});
 for (const kind of ['references', 'uploads']) test(`${kind} recovery accepts normalized discord.js Message objects`, { timeout: 60000 }, async () => {
     const f = await fixture(kind);
     try {
@@ -302,6 +321,22 @@ for (const complete of [true]) test('variable 4+4+5 shared parent preserves quot
                 verifySource: async (_status, value) => value.imageUrls, hashAttachment: async () => sha,
                 fetchCurrent: async id => messages.find(message => message.id === id) });
             assert.equal(result.partial, true);
+        }, f.db);
+    } finally { await f.db.close(); }
+});
+
+test('inline journal recovery rejects changed or missing message identity before database updates', { timeout: 60000 }, async () => {
+    const f = await fixture('references');
+    try {
+        const { after, recorded } = await setup(f, 'references');
+        await cards.withGalleryLock(scope, async lock => {
+            for (const field of ['id', 'channelId', 'guildId', 'author']) for (const mode of ['wrong', 'missing']) {
+                const bad = { ...after, [field]: mode === 'missing' ? undefined : field === 'author' ? { id: uid } : '999999999999999999' };
+                await assert.rejects(recoverInline(args(f, lock, recorded, after, { messages: [bad] })), /GRID_RESTORE_INLINE_RECOVERY/);
+                await assert.rejects(recoverInline(args(f, lock, recorded, after, { fetchCurrent: async () => bad })), /GRID_RESTORE_INLINE_RECOVERY/);
+            }
+            const rows = await lock.query('SELECT gallery_id,payload_json FROM bot_media_galleries WHERE gallery_id IN (?,?)', [parentId, quoteId]);
+            for (const row of rows) assert.equal(JSON.parse(row.payload_json).partSignatures[0], cards.fingerprint(f.first));
         }, f.db);
     } finally { await f.db.close(); }
 });

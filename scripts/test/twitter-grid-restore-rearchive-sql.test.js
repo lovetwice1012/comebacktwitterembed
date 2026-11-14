@@ -42,7 +42,7 @@ async function fixture() {
     await db.queryDatabase('INSERT INTO bot_media_galleries (gallery_id,guild_id,channel_id,message_id,provider_id,payload_json,expires_at_ms) VALUES (?,?,?,?,?,?,?)',
         [galleryId, gid, cid, mid, 'twitter', JSON.stringify(payload), Date.now() + 600000]);
     const channel = { id: cid, guildId: gid, messages: { fetch: async query => {
-        if (query.limit === 1) return new Map([['999999999999999999', { id: '999999999999999999', channelId: cid }]]);
+        if (query.limit === 1) return new Map([['999999999999999999', { id: '999999999999999999', channelId: cid, guildId: gid }]]);
         if (query.message === mid) return first;
         throw Object.assign(new Error('deleted'), { code: 10008 });
     } } };

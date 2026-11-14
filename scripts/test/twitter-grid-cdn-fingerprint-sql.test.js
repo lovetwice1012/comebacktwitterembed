@@ -36,7 +36,7 @@ test('a newly stored group survives signed URL refresh while an old hash remains
         assert.equal((await cards.finish(group, db)).state, 'complete');
         const row = await storage.get(group.id, guildId, channelId), originalJson = JSON.stringify(row.payload);
         const channel = { id: channelId, messages: { fetch: async ({ message }) => message === firstId ? first : second } };
-        const interaction = { client: { user: { id: bot } }, channel };
+        const interaction = { guildId, channelId, client: { user: { id: bot } }, channel };
         second.embeds[0].image.url = second.embeds[0].image.url.replace('ex=111', 'ex=999');
         assert.equal(await grid.sourcesRemainValid(interaction, row), true);
         second.embeds[0].image.url = second.embeds[0].image.url.replace('cdn.discordapp.com', 'attacker.invalid');

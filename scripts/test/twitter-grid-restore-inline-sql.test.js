@@ -55,6 +55,53 @@ function simulateDiscord(first, plan) {
     return { ...first, content: plan.edit.content, components: plan.edit.components, embeds, attachments: new Map(all.map(item => [item.id, item])) };
 }
 
+function simulateDiscordHidden(first, plan) {
+    const uploaded = plan.uploads.map((item, i) => file(String(720000000000000000n + BigInt(i)), item.name));
+    const all = [...plan.retained, ...uploaded];
+    const embeds = plan.edit.embeds.map(embed => {
+        const copy = JSON.parse(JSON.stringify(embed));
+        if (copy.image?.url?.startsWith('attachment://')) {
+            const target = all.find(item => item.name === copy.image.url.slice(13));
+            if (target) copy.image.url = target.url;
+        }
+        return copy;
+    });
+    // Discord GET hides every upload referenced by an embed image.
+    const visible = all.filter(item => !embeds.some(embed => embed.image?.url === item.url));
+    return { ...first, content: plan.edit.content, components: plan.edit.components, embeds,
+        attachments: new Map(visible.map(item => [item.id, item])) };
+}
+
+for (const parentCombined of [false, true]) test(`hidden quote marker restores while preserving ${parentCombined ? 'hidden parent marker' : 'parent images'}`, { timeout: 60000 }, async () => {
+    const f = await fixture({ parentCombined, quoteCombined: true });
+    try {
+        // Reproduce the real Discord GET response: embedded marker uploads
+        // are absent from the attachments array but their CDN URLs remain.
+        for (const item of [...f.first.attachments.values()]) if (item.name.startsWith('tg-')) f.first.attachments.delete(item.id);
+        for (const id of [parentId, quoteId]) {
+            const [row] = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [id]);
+            const payload = JSON.parse(row.payload_json);
+            payload.partSignatures[0] = cards.fingerprint(f.first);
+            payload.firstStaticSignature = cards.fingerprint(f.first, true);
+            await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), id]);
+            if (id === quoteId) f.quotePayload = payload;
+        }
+        await f.db.withDatabaseTransaction(async query => {
+            const snapshot = await inline.inspect({ query, interaction: f.interaction, payload: f.quotePayload, message: f.first, authorize: async () => true });
+            assert.equal(snapshot.marker.name, `tg-${quoteId}.jpg`);
+            if (parentCombined) assert.ok(snapshot.attachments.some(item => item.name === `tg-${parentId}.jpg`));
+            const plan = await inline.prepareReferenceEdit(snapshot, quoteUrls, async () => quoteUrls);
+            const after = simulateDiscordHidden(f.first, plan);
+            const target = inline.referenceManifest(snapshot, plan, after);
+            await inline.commit({ query, interaction: f.interaction, snapshot, plan, message: after, targetPayload: target, authorize: async () => true });
+            assert.equal(after.embeds[1].image.url, quoteUrls[0]);
+            assert.equal(after.embeds[2].image.url, quoteUrls[1]);
+            if (parentCombined) assert.ok(require('../../src/discordGridMarkers').get(after, parentId));
+            else assert.equal(after.attachments.size, f.parentFiles.length);
+        });
+    } finally { await f.db.close(); }
+});
+
 test('a quoted marker must reference the attachment in the same Discord channel', { timeout: 60000 }, async () => {
     const f = await fixture();
     try {
@@ -68,30 +115,39 @@ test('a quoted marker must reference the attachment in the same Discord channel'
         }
     } finally { await f.db.close(); }
 });
-for (const outcome of ['done', 'editunknown', 'rollback']) test(`the production restoration adapter reconnects a shared quote using reference images: ${outcome}`, { timeout: 60000 }, async () => {
-    const f = await fixture();
+for (const scenario of ['done', 'editunknown', 'rollback', 'hidden:done', 'hidden:editunknown', 'hidden:rollback', 'hidden:rotate', 'hiddenboth:done', 'hiddenboth:editunknown', 'hiddenboth:rollback', 'hiddenboth:rotate']) test(`the production restoration adapter reconnects a shared quote using reference images: ${scenario}`, { timeout: 60000 }, async () => {
+    const [kind, value] = scenario.includes(':') ? scenario.split(':') : ['visible', scenario];
+    const outcome = value === 'rotate' ? 'done' : value, hidden = kind !== 'visible', parentCombined = kind === 'hiddenboth';
+    const f = await fixture({ parentCombined });
     try {
+        if (hidden) {
+            for (const item of [...f.first.attachments.values()]) if (item.name.startsWith('tg-')) f.first.attachments.delete(item.id);
+            if (value === 'rotate') for (const embed of f.first.embeds) if (embed.image?.url?.includes('/tg-')) embed.image.url += '?ex=abc&is=123&hm=fff';
+        }
         const settings = { enabled: true, button_disabled: {} };
         for (const id of [parentId, quoteId]) {
             const rows = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [id]);
             const value = JSON.parse(rows[0].payload_json);
             value.settingsHash = cards.safetyHash(settings); value.nsfw = false; value.nsfwContextVersion = 1;
+            value.partSignatures[0] = cards.fingerprint(f.first); value.firstStaticSignature = cards.fingerprint(f.first, true);
             await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(value), id]);
         }
-        const channel = { id: cid, messages: { fetch: async query => query.limit ? new Map([[mid, { id: mid, channelId: cid }]]) : f.first } };
+        if (value === 'rotate') for (const embed of f.first.embeds) if (embed.image?.url?.includes('/tg-')) embed.image.url = embed.image.url.replace('ex=abc', 'ex=def');
+        const channel = { id: cid, messages: { fetch: async query => query.limit ? new Map([[mid, { id: mid, channelId: cid, guildId: gid }]]) : f.first } };
         f.interaction.channel = channel;
         const grid = { freshAccess: async () => ({ channel, member: {}, permissions: { has: () => true }, guild: {} }),
             currentButtonAccess: () => true, mayReplace: () => true, sourcesRemainValid: async () => true };
         let edits = 0;
         const editor = { forMessage: () => ({ edit: async value => {
             edits++;
-            const retained = [...f.first.attachments.values()].filter(file => (value.attachments || []).some(item => String(item.id) === file.id));
+            const retained = inline.messageFiles(f.first).filter(file => (value.attachments || []).some(item => String(item.id) === file.id));
             const uploaded = (value.files || []).map((item, i) => file(String(810000000000000000n + BigInt(i)), item.name));
             const all = [...retained, ...uploaded];
             f.first.content = value.content; f.first.components = value.components; f.first.attachments = new Map(all.map(item => [item.id, item]));
             f.first.embeds = value.embeds.map(item => { const e = JSON.parse(JSON.stringify(item)); if (e.image?.url?.startsWith('attachment://')) {
                 const itemFile = all.find(file => file.name === e.image.url.slice(13)); if (itemFile) e.image.url = itemFile.url;
             } return e; });
+            if (hidden) for (const file of all) if (f.first.embeds.some(embed => embed.image?.url === file.url)) f.first.attachments.delete(file.id);
             if (outcome === 'editunknown') throw Error('response lost');
             return f.first;
         } }) };
@@ -112,8 +168,9 @@ for (const outcome of ['done', 'editunknown', 'rollback']) test(`the production 
             assert.equal(result.status, outcome === 'editunknown' ? 'unknown' : 'done');
         }
         if (outcome !== 'done') assert.equal((await adapters.recoverOnly()).status, 'recovered');
-        assert.equal(edits, 1); assert.equal(f.first.attachments.size, 9);
+        assert.equal(edits, 1); assert.equal(f.first.attachments.size, parentCombined ? 0 : 9);
         assert.deepEqual(f.first.embeds.slice(1, 3).map(embed => embed.image.url), quoteUrls);
+        if (parentCombined) assert.ok(require('../../src/discordGridMarkers').get(f.first, parentId));
         const rows = await f.db.queryDatabase('SELECT gallery_id,payload_json FROM bot_media_galleries WHERE gallery_id IN (?,?)', [parentId, quoteId]);
         for (const row of rows) assert.equal(JSON.parse(row.payload_json).partSignatures[0], cards.fingerprint(f.first));
     } finally { await f.db.close(); }
@@ -155,7 +212,7 @@ for (const outcome of ['done', 'editunknown', 'editunknownbad', 'rollback']) tes
         } }) };
         const sender = { forMessage: () => ({ send: async value => {
             const uploaded = value.files.map((item, i) => file(String(820000000000000000n + BigInt(i)), item.name));
-            sent = { id: '888888888888888888', channelId: cid, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map(uploaded.map(item => [item.id, item])) };
+            sent = { id: '888888888888888888', channelId: cid, guildId: gid, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map(uploaded.map(item => [item.id, item])) };
             return sent;
         } }) };
         const storage = { get: async id => { const rows = await f.db.queryDatabase('SELECT * FROM bot_media_galleries WHERE gallery_id=?', [id]); return rows[0] || null; } };
@@ -218,7 +275,7 @@ for (const choice of ['here', 'new']) test(`when a shared post has limited room,
             currentButtonAccess: () => true, mayReplace: () => true, sourcesRemainValid: async () => true };
         const sender = { forMessage: () => ({ send: async value => {
             const uploaded = value.files.map((item, i) => file(String(820000000000000000n + BigInt(i)), item.name));
-            sent = { id: '888888888888888888', channelId: cid, author: { id: bot }, content: value.content || '', embeds: value.embeds || [],
+            sent = { id: '888888888888888888', channelId: cid, guildId: gid, author: { id: bot }, content: value.content || '', embeds: value.embeds || [],
                 components: value.components || [], attachments: new Map(uploaded.map(item => [item.id, item])) };
             return sent;
         } }) };
@@ -248,7 +305,8 @@ for (const choice of ['here', 'new']) test(`when a shared post has limited room,
             assert.deepEqual(created.imageUrls, quoteUrls); assert.equal(created.partsState, 'complete');
             assert.equal(cards.gridIdFromMessage(sent), created.id);
         } else {
-            assert.equal(sent.attachments.size, 1); assert.equal(f.first.attachments.size, 10);
+            assert.equal(sent.attachments.size, 1); assert.equal(f.first.attachments.size, 9);
+            assert.equal(f.first.embeds[1].image.url, quoteUrls[0]);
             const rows = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [quoteId]);
             const saved = JSON.parse(rows[0].payload_json);
             assert.deepEqual(saved.imageUrls, quoteUrls); assert.deepEqual(saved.partSizes, [1, 1]);
@@ -299,7 +357,7 @@ for (const choice of ['first', 'rest', 'here', 'rest10']) test(`a capacity-limit
         let sent = null, edits = 0, sends = 0, latestId = choice === 'here' ? mid : '999999999999999999'; const history = new Map();
         const channel = { id: cid, messages: { fetch: async query => {
             if (query.around) return new Map([[mid, f.first], ...history]);
-            if (query.limit) return new Map([[latestId, { id: latestId, channelId: cid }]]);
+            if (query.limit) return new Map([[latestId, { id: latestId, channelId: cid, guildId: gid }]]);
             return query.message === mid ? f.first : history.get(query.message);
         } } };
         f.interaction.channel = channel;
@@ -316,7 +374,7 @@ for (const choice of ['first', 'rest', 'here', 'rest10']) test(`a capacity-limit
         } }) };
         const sender = { forMessage: () => ({ send: async value => {
             sends++; const uploaded = value.files.map((item, i) => file(String(820000000000000000n + BigInt(sends * 100 + i)), item.name));
-            sent = { id: String(888888888888888887n + BigInt(sends)), channelId: cid, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map(uploaded.map(item => [item.id, item])) };
+            sent = { id: String(888888888888888887n + BigInt(sends)), channelId: cid, guildId: gid, author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map(uploaded.map(item => [item.id, item])) };
             latestId = sent.id; history.set(sent.id, sent); return sent;
         } }) };
         const storage = { get: async id => { const rows = await f.db.queryDatabase('SELECT * FROM bot_media_galleries WHERE gallery_id=?', [id]); return rows[0] || null; } };

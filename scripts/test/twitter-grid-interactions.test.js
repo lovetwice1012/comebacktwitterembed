@@ -47,6 +47,19 @@ test('public button opens only a private editor with customizable defaults', asy
     const layout = view.components[0].components[0]; assert.equal(layout.options.length, 20);
     assert.ok(layout.custom_id.includes(`:${user}:layout:`));
 });
+test('an older grid survives a language change but not a changed media-safety policy', async () => {
+    const original = { ...settings, defaultLanguage: 'ja', silent_expansion: false,
+        show_previous_shares: true, editOriginalIfTranslate: false, media_display_mode: 'embed' };
+    const f = fixture(2, original);
+    let current = { ...original, defaultLanguage: 'en-US', silent_expansion: true };
+    f.deps.getSettings = async () => current;
+    await grid.handle(f.interaction, f.deps);
+    assert.ok(f.calls.at(-1)[1].components?.length, 'the old record is verified against legal prior presentation values');
+    current = { ...current, media_display_mode: 'link_only' };
+    f.calls.length = 0;
+    await grid.handle(f.interaction, f.deps);
+    assert.equal(f.calls.at(-1)[1].components?.length || 0, 0, 'changing media visibility still invalidates access');
+});
 test('a completed public combination offers original-image restoration immediately', async () => {
     const f = fixture(), state = grid._internal.defaults(settings, 13, true);
     f.interaction.customId = grid._internal.custom(id, user, 'confirm', state);
@@ -289,7 +302,7 @@ test('public replacement never deletes a continuation containing video or unexpe
 test('recorded non-image media in any part prevents public replacement', async () => {
     const f = fixture(); f.patchPayload({ partContainsNonImage: [false, true] });
     const result = await grid._internal.replacePublic(f.interaction, f.row(), { data: Buffer.from('grid'), filename: 'twitter-grid.jpg' }, f.deps);
-    assert.equal(result, 'changed'); assert.equal(f.editCalls, 0); assert.equal(f.deleteCalls, 0);
+    assert.equal(result, 'nonimage'); assert.equal(f.editCalls, 0); assert.equal(f.deleteCalls, 0);
 });
 test('replacement permission is requester or manager unless the server opts in to everyone', () => {
     const f = fixture(); f.interaction.user.id = '777777777777777777';
@@ -321,7 +334,7 @@ test('a removed or changed combined first message prevents any continuation dele
         f.first.edit = async payload => {
             const result = await originalEdit(payload); changed = true;
             if (scenario === 'content_changed') f.first.content = 'another update';
-            if (scenario === 'marker_removed') f.first.attachments.clear();
+            if (scenario === 'marker_removed') { f.first.attachments.clear(); delete f.first.embeds[0].image; }
             return result;
         };
         f.interaction.channel.messages.fetch = async request => {
@@ -337,7 +350,7 @@ test('a removed or changed combined first message prevents any continuation dele
 
 test('a first message removed between later deletions stops and preserves the remaining continuation', async () => {
     const f = fixture(), thirdId = '777777777777777777';
-    const third = { id: thirdId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
+    const third = { id: thirdId, channelId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
     let thirdDeleted = false, firstRemoved = false;
     third.delete = async () => { thirdDeleted = true; };
     const originalFetch = f.interaction.channel.messages.fetch;
@@ -356,7 +369,7 @@ test('a first message removed between later deletions stops and preserves the re
 });
 test('multi-part replacement stops on permission loss and resumes without repeating the first edit', async () => {
     const f = fixture(), thirdId = '777777777777777777';
-    const third = { id: thirdId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
+    const third = { id: thirdId, channelId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
     let thirdDeleted = false;
     third.delete = async () => { thirdDeleted = true; };
     const originalFetch = f.interaction.channel.messages.fetch;
@@ -378,7 +391,7 @@ test('multi-part replacement stops on permission loss and resumes without repeat
 });
 test('a lost acknowledgement deleting the third part is checked, not submitted twice', async () => {
     const f = fixture(), thirdId = '777777777777777777';
-    const third = { id: thirdId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
+    const third = { id: thirdId, channelId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 13) };
     let thirdDeleted = false, thirdAttempts = 0;
     third.delete = async () => { thirdAttempts++; thirdDeleted = true; throw Error('unknown acknowledgement'); };
     const originalFetch = f.interaction.channel.messages.fetch;
@@ -495,7 +508,7 @@ test('a pre-split three-message manifest retains every photo and rejects an inva
     assert.equal(item.totalParts, 3); assert.deepEqual(item.imageUrls, images);
 });
 test('inline quote replacement modifies only its verified embed range even when URLs overlap', () => {
-    const first = { attachments: new Map(), embeds: [
+    const first = { channelId, attachments: new Map(), embeds: [
         { title: '親', image: { url: image(1) } }, { url: 'https://x.com/parent', image: { url: image(2) } },
         { title: '引用', image: { url: image(1) } }, { url: 'https://x.com/quote', image: { url: image(3) } },
     ] };
@@ -510,7 +523,7 @@ test('inline quote replacement modifies only its verified embed range even when 
     first.attachments = files(1); assert.deepEqual(grid._internal.editPayload(first, payload, { data: Buffer.from('x'), filename: 'twitter-grid.jpg' }).attachments, [{ id: '0' }]);
 });
 test('primary attachment replacement retains inline quotes and quote replacement never deletes parent attachments', () => {
-    const first = { attachments: files(2), embeds: [{ title: '親' }, { title: '引用', image: { url: image(1) } }, { image: { url: image(2) } }] };
+    const first = { channelId, attachments: files(2), embeds: [{ title: '親' }, { title: '引用', image: { url: image(1) } }, { image: { url: image(2) } }] };
     const parent = { id, sharedInline: true, imageUrls: [image(1), image(2)], partSizes: [2], embedStart: 0, embedEnd: 1 };
     const output = grid._internal.editPayload(first, parent, { data: Buffer.from('image'), filename: 'twitter-grid.jpg' });
     assert.equal(output.embeds[1].image.url, image(1)); assert.equal(output.embeds[2].image.url, image(2));

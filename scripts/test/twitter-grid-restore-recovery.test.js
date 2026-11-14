@@ -10,8 +10,10 @@ test('recovery hashes only a bounded Discord CDN attachment and never follows re
     const fetch = async (url, options) => { calls.push({ url, options }); return { ok: true, body: Readable.from([bytes]) }; };
     assert.equal(await hashAttachment(value, { fetch }), createHash('sha256').update(bytes).digest('hex'));
     assert.equal(calls.length, 1); assert.equal(calls[0].options.redirect, 'manual');
+    assert.equal(await hashAttachment({ url: value.url.replace('cdn.discordapp.com', 'media.discordapp.net') }, { fetch }), createHash('sha256').update(bytes).digest('hex'));
+    assert.equal(calls.length, 2);
     await assert.rejects(hashAttachment({ url: 'https://127.0.0.1/attachments/1/2/file.jpg' }, { fetch }), /GRID_RESTORE_UNAVAILABLE/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
     await assert.rejects(hashAttachment(value, { fetch: async () => ({ ok: false, status: 302 }) }), /GRID_RESTORE_UNAVAILABLE/);
     await assert.rejects(hashAttachment(value, { fetch: async () => ({ ok: true, body: Readable.from([]) }) }), /GRID_RESTORE_UNAVAILABLE/);
     await assert.rejects(hashAttachment(value, { fetch, budget: { bytes: 0, maxBytes: 3 } }), /GRID_RESTORE_UNAVAILABLE/);
@@ -19,19 +21,23 @@ test('recovery hashes only a bounded Discord CDN attachment and never follows re
 });
 
 test('an unknown send is resolved only by one unambiguous Bot message in the scanned time window', async () => {
-    const op = 'a'.repeat(32), channelId = '111111111111111111', botId = '222222222222222222', startedAtMs = Date.now();
+    const guildId = '999999999999999999', op = 'a'.repeat(32), channelId = '111111111111111111', botId = '222222222222222222', startedAtMs = Date.now();
     const fileName = `restore-${op}-10.jpg`, attachmentId = '333333333333333333';
     const proof = { name: fileName, sha256: 'f'.repeat(64) };
-    const candidate = { id: '444444444444444444', channelId, author: { id: botId }, createdTimestamp: startedAtMs + 500,
+    const candidate = { id: '444444444444444444', channelId, guildId, author: { id: botId }, createdTimestamp: startedAtMs + 500,
         attachments: new Map([[attachmentId, { id: attachmentId, name: fileName, contentType: 'image/jpeg',
             url: `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/${fileName}` }]]) };
     let messages = new Map([[candidate.id, candidate]]);
-    const channel = { messages: { fetch: async () => messages } }, interaction = { channelId, client: { user: { id: botId } } };
+    const channel = { messages: { fetch: async () => messages } }, interaction = { channelId, guildId, client: { user: { id: botId } } };
     assert.equal((await findUnknownSend(channel, { startedAtMs }, { proofs: [proof] }, interaction)).id, candidate.id);
     messages = new Map([[candidate.id, candidate], ['555555555555555555', { ...candidate, id: '555555555555555555' }]]);
     assert.equal(await findUnknownSend(channel, { startedAtMs }, { proofs: [proof] }, interaction), null);
     messages = new Map([[candidate.id, { ...candidate, author: { id: '666666666666666666' } }]]);
     assert.equal(await findUnknownSend(channel, { startedAtMs }, { proofs: [proof] }, interaction), null);
+    for (const key of ['guildId', 'channelId']) for (const value of [undefined, '666666666666666666']) {
+        messages = new Map([[candidate.id, { ...candidate, [key]: value }]]);
+        assert.equal(await findUnknownSend(channel, { startedAtMs }, { proofs: [proof] }, interaction), null);
+    }
     assert.equal(await findUnknownSend(channel, {}, { proofs: [proof] }, interaction), null);
     channel.messages.fetch = async () => { throw Error('denied'); };
     assert.equal(await findUnknownSend(channel, { startedAtMs }, { proofs: [proof] }, interaction), null);

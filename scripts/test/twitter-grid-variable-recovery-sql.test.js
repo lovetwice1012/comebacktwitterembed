@@ -12,7 +12,7 @@ const urls = Array.from({ length: 13 }, (_, i) => `https://pbs.twimg.com/media/P
 const file = (id, name) => ({ id, name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${cid}/${id}/${name}` });
 function post(messageId, op, start, count, first = false, newGridId = null) {
     const files = Array.from({ length: count }, (_, i) => file(String(710000000000000000n + BigInt(start + i)), `restore-${op}-${start + i}.jpg`));
-    return { id: messageId, channelId: cid, author: { id: bot }, content: '',
+    return { id: messageId, channelId: cid, guildId: gid, author: { id: bot }, content: '',
         embeds: first ? [{ title: '本文', url: `https://x.com/u/status/${status}` }] : [],
         components: newGridId ? [{ type: 1, components: [{ custom_id: `tg:${newGridId}:0:open` }] }] : [],
         attachments: new Map(files.map(item => [item.id, item])) };
@@ -191,3 +191,18 @@ test('new gallery: two confirmed groups are bound once and preserve the remainin
         assert.deepEqual(payload.restoreContinuation, { sourceStatusId: status, nextIndex: 8, targetCount: 13 });
     } finally { await f.db.close(); }
 });
+
+for (const stage of ['root', 'continuation']) for (const field of ['id', 'channelId', 'guildId', 'author']) for (const mode of ['wrong', 'missing']) {
+    test(`journal recovery rejects ${mode} ${field} on ${stage}`, { timeout: 60000 }, async () => {
+        const f = await fixture(), op = 'b'.repeat(32), first = post(mid, op, 0, 4, true), second = post('666666666666666666', op, 4, 4);
+        try {
+            f.messages.set(mid, first); f.messages.set(second.id, second); await f.createPayload(id, first);
+            const journal = record(op, 'here', [4, 4, 5], [first, second], { plannedLast: false }); await f.insertJournal(journal);
+            const original = JSON.stringify(await f.read(id)), target = stage === 'root' ? first : second;
+            f.messages.set(target.id, { ...target, [field]: mode === 'missing' ? undefined : field === 'author' ? { id: uid } : '999999999999999999' });
+            assert.equal(await f.recover(id, mid, journal), null);
+            assert.equal(JSON.stringify(await f.read(id)), original);
+            assert.equal((await f.db.queryDatabase('SELECT * FROM bot_twitter_grid_action_intents')).length, 1);
+        } finally { await f.db.close(); }
+    });
+}
