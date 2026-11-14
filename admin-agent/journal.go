@@ -212,6 +212,10 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 	state := Object{"available": true, "observedAt": now(), "recordsInBatch": len(events), "lastEventAt": lastAt, "cursorPresent": !storageLimited && lastCursor != "" || cursor != "", "initialLookbackMinutes": 5, "batchLimit": journalBatchEventLimit, "batchByteLimit": journalBatchByteLimit, "stateBytes": stateBytes, "stateLimitBytes": stateLimit, "rawEventsStored": !storageLimited}
 	if storageLimited {
 		state["state"] = "paused"
+		// available describes collection, not merely whether journalctl starts.
+		// Expose the latter separately without claiming that all history exists.
+		state["available"] = false
+		state["journalctlStarted"] = true
 		state["reason"] = "storage_limit"
 		state["storageLimited"] = true
 		state["cursorAdvanced"] = false

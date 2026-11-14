@@ -50,12 +50,35 @@ func nested(m Object, k string) Object {
 	return o
 }
 
+func sqliteConnectionURI(path string, values url.Values) string {
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	return (&url.URL{Scheme: "file", Path: uriPath, RawQuery: values.Encode()}).String()
+}
+
+func sqliteWriterURI(path string) string {
+	pragmas := url.Values{}
+	pragmas.Add("_pragma", "busy_timeout(5000)")
+	pragmas.Add("_pragma", "synchronous(FULL)")
+	return sqliteConnectionURI(path, pragmas)
+}
+
+func sqliteReaderURI(path string) string {
+	pragmas := url.Values{}
+	pragmas.Add("_pragma", "busy_timeout(5000)")
+	return sqliteConnectionURI(path, pragmas)
+}
+
 func openStore(dir string) (*Store, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
 	dbPath := filepath.Join(dir, "state.db")
-	db, e := sql.Open("sqlite", dbPath)
+	// DSN pragmas run for every physical connection, including replacements
+	// after a failed COMMIT/ROLLBACK forces the writer connection out of pool.
+	db, e := sql.Open("sqlite", sqliteWriterURI(dbPath))
 	if e != nil {
 		return nil, e
 	}
@@ -106,14 +129,14 @@ WHERE trigger_type NOT IN ('diagnostic','admin_operation')`); e != nil {
 	// heavy read wait behind the previous one until its 15s deadline.
 	var readDB *sql.DB
 	if runtime.GOOS == "linux" {
-		readDB, e = sql.Open("sqlite", dbPath)
+		readDB, e = sql.Open("sqlite", sqliteReaderURI(dbPath))
 		if e != nil {
 			db.Close()
 			return nil, e
 		}
 		readDB.SetMaxOpenConns(4)
 		readDB.SetMaxIdleConns(4)
-		if _, e = readDB.Exec("PRAGMA busy_timeout=5000"); e != nil {
+		if e = readDB.Ping(); e != nil {
 			readDB.Close()
 			db.Close()
 			return nil, e
@@ -139,11 +162,7 @@ WHERE trigger_type NOT IN ('diagnostic','admin_operation')`); e != nil {
 	// Liveness must not reuse a WAL snapshot retained by an analytics reader.
 	// Closing each idle connection gives every heartbeat observation a fresh
 	// read transaction while preserving the existing query deadline and data.
-	uriPath := filepath.ToSlash(dbPath)
-	if !strings.HasPrefix(uriPath, "/") {
-		uriPath = "/" + uriPath
-	}
-	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro"}).String()
+	dsn := sqliteConnectionURI(dbPath, url.Values{"mode": {"ro"}})
 	s.heartbeatDB, e = sql.Open("sqlite", dsn)
 	if e != nil {
 		_ = s.Close()

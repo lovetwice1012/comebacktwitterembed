@@ -94,8 +94,16 @@ func TestJournalStoragePausePreservesCursorAndResumesWithoutDuplicates(t *testin
 	if err := a.store.getSetting("journal_health_bot", &health); err != nil {
 		t.Fatal(err)
 	}
-	if health["state"] != "paused" || health["reason"] != "storage_limit" || health["storageLimited"] != true || health["cursorAdvanced"] != false {
+	if health["state"] != "paused" || health["available"] != false || health["journalctlStarted"] != true || health["reason"] != "storage_limit" || health["storageLimited"] != true || health["cursorAdvanced"] != false {
 		t.Fatalf("storage pause was not visible: %#v", health)
+	}
+	response := request(t, a, "GET", "/v1/health", nil)
+	if response.Code != 200 {
+		t.Fatalf("health endpoint failed during a collection pause: %d", response.Code)
+	}
+	visible := nested(nested(object(t, response), "journalCollectors"), "bot")
+	if visible["available"] != false || visible["state"] != "paused" || visible["journalctlStarted"] != true {
+		t.Fatalf("health API misrepresented the paused collector: %#v", visible)
 	}
 	// Other event producers remain independent from the journal-only limit.
 	if _, accepted, err := a.store.ingest([]Object{{"id": "ordinary", "kind": "observation"}}); err != nil || accepted != 1 {

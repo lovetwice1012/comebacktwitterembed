@@ -85,7 +85,10 @@ backfill entries already skipped. A state database already above the configured
 limit remains paused. Resuming collection requires separately reviewed capacity
 provisioning or storage separation; recovering retained historical journal
 entries requires a separately reviewed, deduplicating backfill. Do not delete
-the existing state database or journal cursor as a shortcut.
+the existing state database or journal cursor as a shortcut. While paused,
+`journalCollectors` reports `available: false`; `journalctlStarted: true`
+only says that the command started and does not guarantee historical entries
+remain available.
 
 The owner can enroll and use origin-bound WebAuthn passkeys as well as the independent password login. Managed query cancellation accepts only registered query IDs and rechecks the current database statement, connection ownership and deadline; automatic cancellation always requires an overdue owned query. Provider-source overrides use an allowlisted source ID and expiry, with registry/revision details visible through the support catalog. Unclassified failures retain their evidence and open questions for manual investigation; an arbitrary command runner is not used as a substitute for a diagnosis.
 
