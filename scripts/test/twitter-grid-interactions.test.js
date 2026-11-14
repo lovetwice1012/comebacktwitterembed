@@ -39,6 +39,24 @@ function fixture(totalParts = 2, effectiveSettings = settings) {
         isAllowed: async () => true, freshAccess: async () => ({ has: () => true }), compose: async () => ({ data: Buffer.from('image'), filename: 'twitter-grid.jpg', adapted: false }), db };
     return { interaction, deps, row, first, second, calls, editPayloads, patchPayload: patch => { data = JSON.stringify({ ...JSON.parse(data), ...patch }); }, get data() { return JSON.parse(data); }, get deleted() { return deleted; }, get deleteCalls() { return deleteCalls; }, get editCalls() { return editCalls; }, failNextDelete: () => { failDelete = true; }, failNextDeleteAfterSuccess: () => { uncertainDelete = true; }, failNextEditAfterSuccess: () => { uncertainEdit = true; } };
 }
+test('grid uses the real X default while respecting explicit disable', async () => {
+    const provider = require('../../src/providers/twitter');
+    const providerSettings = require('../../src/providers/_provider_settings');
+    assert.equal(provider.enabledByDefault, true);
+    const f = fixture();
+    delete f.deps.getSettings;
+    const actual = await providerSettings.getFreshProviderSettings(provider, guildId);
+    assert.equal(actual.enabled, true);
+    f.patchPayload({ settingsHash: cards.safetyHash(actual) });
+    await grid.handle(f.interaction, f.deps);
+    assert.ok(f.calls.at(-1)[1].components?.length > 0);
+    await providerSettings.setSetting(provider, 'enabled', guildId, false);
+    try {
+        f.calls.length = 0;
+        await grid.handle(f.interaction, f.deps);
+        assert.equal(f.calls.at(-1)[1].components?.length || 0, 0);
+    } finally { await providerSettings.setSetting(provider, 'enabled', guildId, true); }
+});
 test('public button opens only a private editor with customizable defaults', async () => {
     const f = fixture(); await grid.handle(f.interaction, f.deps);
     assert.deepEqual(f.calls[0], ['deferReply', { ephemeral: true }]);

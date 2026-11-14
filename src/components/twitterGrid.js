@@ -4,6 +4,7 @@ const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, Channe
 const gallery = require('../mediaGallery');
 const cards = require('../twitterGridCards');
 const { getFreshProviderSettings } = require('../providers/_provider_settings');
+const twitterProvider = require('../providers/twitter');
 const { isAllowed } = require('./_permissionCheck');
 const { isNsfwChannel } = require('../providers/_sensitive_controls');
 
@@ -210,7 +211,7 @@ async function reconcileSibling(interaction, row, deps = {}) {
             || payload.partsState && payload.partsState !== 'complete' || payload.completedParts !== payload.totalParts
             || !Array.isArray(payload.messageIds) || payload.messageIds[0] !== String(rows[0].message_id)
             || !Array.isArray(payload.partSignatures) || payload.partSignatures.length !== payload.messageIds.length) return null;
-        const settings = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+        const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         const access = await (deps.freshAccess || freshAccess)(interaction);
         if (!access || settings.enabled !== true || cards.safetyHash(settings) !== payload.settingsHash || payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, settings, access.member)) return null;
@@ -373,7 +374,7 @@ async function replacePublic(interaction, row, composed, deps) {
         // resemble an image. Legacy records use the same MIME/count checks.
         if (Array.isArray(payload.partContainsNonImage) && (payload.partContainsNonImage.length !== payload.totalParts
             || payload.partContainsNonImage.some(Boolean))) return 'changed';
-        const settings = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+        const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         const access = await (deps.freshAccess || freshAccess)(interaction);
         if (!access || settings.enabled !== true || cards.safetyHash(settings) !== payload.settingsHash || payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, settings, access.member) || !mayReplace(interaction, payload, settings, access.permissions || access, access.guild?.ownerId)) return 'denied';
@@ -436,7 +437,7 @@ async function replacePublic(interaction, row, composed, deps) {
             if (!item.current) continue;
             // Access or source data may change while an earlier API call is
             // in flight. Recheck before every irreversible deletion.
-            const currentSettings = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+            const currentSettings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
             const currentAccess = await (deps.freshAccess || freshAccess)(interaction);
             if (!currentAccess || currentSettings.enabled !== true || cards.safetyHash(currentSettings) !== payload.settingsHash
                 || payload.nsfw && !currentNsfw(currentAccess, interaction)
@@ -464,7 +465,7 @@ async function replacePublic(interaction, row, composed, deps) {
         if (resumePrior) {
             // Finish the previously interrupted operation first, then apply
             // the layout selected for this new, explicitly confirmed action.
-            const latestSettings = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+            const latestSettings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
             const latestAccess = await (deps.freshAccess || freshAccess)(interaction);
             if (!latestAccess || latestSettings.enabled !== true || cards.safetyHash(latestSettings) !== payload.settingsHash
                 || payload.nsfw && !currentNsfw(latestAccess, interaction) || !currentButtonAccess(interaction, latestSettings, latestAccess.member)
@@ -517,7 +518,7 @@ async function handle(interaction, deps = {}) {
         || action === 'open' && sourceId(row) !== interaction.message.id || !Array.isArray(row.payload.imageUrls) || row.payload.imageUrls.length > 20
         || row.payload.imageUrls.length < 2 && !partsProgress(row.payload, interaction.locale)) return fail();
     if (interaction.channel?.isThread?.() && row.payload.nsfwContextVersion !== 1 && row.payload.nsfw !== true) return fail();
-    const settings = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+    const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
     if (settings.enabled !== true || cards.safetyHash(settings) !== row.payload.settingsHash) return fail();
     if (!await (deps.isAllowed || isAllowed)(interaction, { providerId: 'twitter' })) return;
     const initialAccess = await (deps.freshAccess || freshAccess)(interaction);
@@ -569,7 +570,7 @@ async function handle(interaction, deps = {}) {
             return interaction.editReply({ ...view(id, owner, state, settings, interaction.locale, labels[result] || (ja ? '公開画像が変更されたか、置換できませんでした。' : 'The public images changed or could not be replaced.'), canReplace, incomplete), embeds: [], attachments: [] });
         }
         const access = await (deps.freshAccess || freshAccess)(interaction);
-        const current = await (deps.getSettings || getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+        const current = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         if (!access || current.enabled !== true || cards.safetyHash(current) !== row.payload.settingsHash || row.payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, current, access.member)) return fail();
         if (!await sourcesRemainValid(interaction, row, access)) return fail();

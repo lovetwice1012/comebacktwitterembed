@@ -43,6 +43,51 @@ test('a confirmed single-post action checks the actual SQL rows and runs once', 
     try { const token = await f.offer(); await confirm.confirm(f.click(token), f.deps); assert.equal(f.executed, 1); }
     finally { await f.db.close(); }
 });
+test('real SQL unset, NULL and explicit enabled values govern private confirmation', { timeout: 60000 }, async () => {
+    const f = await fixture({ single: true });
+    try {
+        const { SETTINGS_PATH, TARGET_TABLES, compileSettings } = require('../benchmark_main_settings');
+        const { TABLES } = require('../../src/db_schema');
+        const fs = require('node:fs');
+        const provider = require('../../src/providers/twitter');
+        await f.db.queryDatabase(`CREATE TABLE ${TABLES.guildProviderSettings} (provider_id VARCHAR(32), guild_id VARCHAR(32), enabled TINYINT NULL, PRIMARY KEY(provider_id,guild_id))`);
+        for (const table of new Set(Object.values(TARGET_TABLES))) {
+            await f.db.queryDatabase(`CREATE TABLE ${table} (provider_id VARCHAR(32), guild_id VARCHAR(32), target_type VARCHAR(32), target_id VARCHAR(32))`);
+        }
+        await f.db.queryDatabase(`CREATE TABLE ${TABLES.guildProviderBannedWords} (provider_id VARCHAR(32), guild_id VARCHAR(32), word VARCHAR(255))`);
+        await f.db.queryDatabase(`CREATE TABLE ${TABLES.guildProviderButtonVisibility} (provider_id VARCHAR(32), guild_id VARCHAR(32), button_key VARCHAR(32), hidden TINYINT)`);
+        const settings = compileSettings(fs.readFileSync(SETTINGS_PATH, 'utf8'), f.db.queryDatabase);
+        const grid = require('../../src/components/twitterGrid');
+        f.deps.getSettings = async (input, guild) => {
+            assert.equal(input, provider, 'security checks must use the registered provider defaults');
+            return settings.getFreshProviderSettings(input, guild);
+        };
+        for (const value of ['absent', null, 0, 1]) {
+            await f.db.queryDatabase(`DELETE FROM ${TABLES.guildProviderSettings}`);
+            if (value !== 'absent') await f.db.queryDatabase(`INSERT INTO ${TABLES.guildProviderSettings} VALUES (?,?,?)`, ['twitter', gid, value]);
+            const actual = await settings.getFreshProviderSettings(provider, gid);
+            assert.equal(actual.enabled, value !== 0, `enabled=${value}`);
+            const rows = await f.db.queryDatabase('SELECT payload_json FROM bot_media_galleries WHERE gallery_id=?', [f.item.id]);
+            const payload = JSON.parse(rows[0].payload_json);
+            payload.settingsHash = cards.safetyHash(actual);
+            await f.db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=?', [JSON.stringify(payload), f.item.id]);
+            let gridView;
+            const gridClick = f.click(`tg:${f.item.id}:0:open`);
+            gridClick.message = f.first;
+            gridClick.memberPermissions = { has: () => true };
+            gridClick.editReply = async result => { gridView = result; };
+            await grid.handle(gridClick, { ...f.deps, isAllowed: async () => true });
+            assert.equal(Boolean(gridView.components?.length), value !== 0, `grid enabled=${value}`);
+            if (value === 0) await assert.rejects(f.offer(), /GRID_SOURCE_CHANGED/);
+            else {
+                const token = await f.offer();
+                const before = f.executed;
+                await confirm.confirm(f.click(token), f.deps);
+                assert.equal(f.executed, before + 1, `enabled=${value}`);
+            }
+        }
+    } finally { await f.db.close(); }
+});
 test('a source changed while confirmation waits for the SQL lock is not acted on', { timeout: 60000 }, async () => {
     const f = await fixture({ single: true });
     try {

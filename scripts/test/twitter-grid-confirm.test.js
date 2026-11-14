@@ -33,6 +33,22 @@ function fixture() {
         setAllowed: value => { allowed = value; }, setRowExists: value => { rowExists = value; },
         setDbExists: value => { dbExists = value; }, setAccessFailure: count => { failAtAccess = count; } };
 }
+test('confirmation uses the real X default while respecting explicit disable', async () => {
+    const provider = require('../../src/providers/twitter');
+    const providerSettings = require('../../src/providers/_provider_settings');
+    assert.equal(provider.enabledByDefault, true);
+    const f = fixture();
+    delete f.deps.getSettings;
+    assert.equal((await providerSettings.getFreshProviderSettings(provider, gid)).enabled, true);
+    const token = await f.offer();
+    await confirm.confirm(f.click(token), f.deps);
+    assert.equal(f.executed, 1);
+    await providerSettings.setSetting(provider, 'enabled', gid, false);
+    try {
+        await assert.rejects(f.offer(), /GRID_SOURCE_CHANGED/);
+        assert.equal(f.executed, 1);
+    } finally { await providerSettings.setSetting(provider, 'enabled', gid, true); }
+});
 test('a private review shows current source and executes exactly once for its owner', async () => {
     const f = fixture(), token = await f.offer();
     assert.match(f.view.content, /現在の投稿/); assert.match(f.view.embeds[0].description, /quoted description/);

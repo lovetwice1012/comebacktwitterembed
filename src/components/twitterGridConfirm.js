@@ -4,6 +4,7 @@
 // contains post content and a restart safely invalidates outstanding tokens.
 const { randomBytes } = require('node:crypto');
 const cards = require('../twitterGridCards');
+const twitterProvider = require('../providers/twitter');
 const { isResponseButtonHidden } = require('../utils');
 const allowedActions = new Set(['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete']);
 const tokens = new Map();
@@ -28,7 +29,7 @@ async function fresh(interaction, record, deps) {
     const grid = require('./twitterGrid')._internal;
     const access = await (deps.freshAccess || grid.freshAccess)(interaction);
     if (!access?.channel || !access?.member || !access?.permissions) return null;
-    const settings = await (deps.getSettings || require('../providers/_provider_settings').getFreshProviderSettings)({ id: 'twitter' }, interaction.guildId);
+    const settings = await (deps.getSettings || require('../providers/_provider_settings').getFreshProviderSettings)(twitterProvider, interaction.guildId);
     if (!settings || settings.enabled !== true || !grid.currentButtonAccess(interaction, settings, access.member)
         || isResponseButtonHidden(settings.button_invisible || {}, record.actionId)) return null;
     return { access, settings };
