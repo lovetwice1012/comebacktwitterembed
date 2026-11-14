@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -60,7 +63,11 @@ func TestJournalFailedCommitAndRollbackReopenConfiguredWriter(t *testing.T) {
 	fault := &rollbackFaultDriver{}
 	name := fmt.Sprintf("journal-fault-%d", time.Now().UnixNano())
 	sql.Register(name, fault)
-	uri, err := url.Parse(sqliteWriterURI(a.store.path))
+	writerURI, err := sqliteWriterURI(a.store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri, err := url.Parse(writerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +123,11 @@ func TestJournalFailedCommitAndRollbackReopenConfiguredWriter(t *testing.T) {
 
 	// The replacement must wait for another SQLite writer instead of failing
 	// immediately with SQLITE_BUSY when contention clears within the timeout.
-	locker, err := sql.Open("sqlite", sqliteConnectionURI(a.store.path, nil))
+	lockerURI, err := sqliteConnectionURI(a.store.path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locker, err := sql.Open("sqlite", lockerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +159,7 @@ func TestJournalFailedCommitAndRollbackReopenConfiguredWriter(t *testing.T) {
 }
 
 func TestSQLiteConnectionURIHandlesSpacesAndHash(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "state # 日本語")
+	dir := filepath.Join(t.TempDir(), "state # % 日本語")
 	store, err := openStore(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -163,9 +174,115 @@ func TestSQLiteConnectionURIHandlesSpacesAndHash(t *testing.T) {
 	}
 }
 
+// The helper's process working directory is an isolated temporary directory;
+// changing the parent test process's working directory would affect other
+// tests, including tests that run concurrently.
+func TestSQLiteRelativePathHelper(t *testing.T) {
+	if os.Getenv("CBTE_TEST_SQLITE_RELATIVE") != "1" {
+		return
+	}
+	relativeDir := filepath.Join("relative # 日本語", "nested state")
+	store, err := openStore(relativeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	expected, err := filepath.Abs(filepath.Join(relativeDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.path != expected || !filepath.IsAbs(store.path) {
+		t.Fatalf("state path was not resolved once: got %q want %q", store.path, expected)
+	}
+	if err := store.setSetting("relative_test", "written"); err != nil {
+		t.Fatal(err)
+	}
+	var value string
+	if err := store.getSetting("relative_test", &value); err != nil || value != "written" {
+		t.Fatalf("relative database not readable: %q %v", value, err)
+	}
+	uri, err := sqliteWriterURI(filepath.Join(relativeDir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := sql.Open("sqlite", uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := second.QueryRow("SELECT value FROM settings WHERE key='relative_test'").Scan(&value); err != nil || value != `"written"` {
+		t.Fatalf("relative URI resolved to another database: %q %v", value, err)
+	}
+}
+
+func TestSQLiteRelativePathUsesProcessWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSQLiteRelativePathHelper$")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "CBTE_TEST_SQLITE_RELATIVE=1")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("relative path helper failed: %v: %s", err, output)
+	}
+	expected := filepath.Join(dir, "relative # 日本語", "nested state", "state.db")
+	if info, err := os.Stat(expected); err != nil || info.IsDir() {
+		t.Fatalf("database not created inside the helper working directory: %v", err)
+	}
+}
+
+func TestSQLiteConnectionURIAbsoluteEscaping(t *testing.T) {
+	name := "space # % 日本語"
+	if runtime.GOOS != "windows" {
+		name += " ?"
+	}
+	path := filepath.Join(t.TempDir(), name, "state.db")
+	uri, err := sqliteConnectionURI(path, url.Values{"mode": {"ro"}, "_pragma": {"busy_timeout(5000)"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.ToSlash(path)
+	if !strings.HasPrefix(expected, "/") {
+		expected = "/" + expected
+	}
+	if parsed.Scheme != "file" || parsed.Host != "" || parsed.Path != expected || parsed.Query().Get("mode") != "ro" || parsed.Query().Get("_pragma") != "busy_timeout(5000)" {
+		t.Fatalf("bad escaped URI: %#v, expected path %q", parsed, expected)
+	}
+	if !strings.Contains(uri, "%23") || !strings.Contains(uri, "%20") || !strings.Contains(uri, "%25") ||
+		runtime.GOOS != "windows" && !strings.Contains(uri, "%3F") {
+		t.Fatalf("special characters were not escaped: %q", uri)
+	}
+}
+
+func TestSQLiteConnectionURIWindowsUNC(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows UNC syntax")
+	}
+	path := `\\server\share\folder # 日本語\state.db`
+	uri, err := sqliteConnectionURI(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An empty authority preserves the UNC path itself rather than asking
+	// SQLite to interpret a remote URI authority as the database host.
+	if parsed.Scheme != "file" || parsed.Host != "" || parsed.Path != "//server/share/folder # 日本語/state.db" {
+		t.Fatalf("bad UNC URI: %#v", parsed)
+	}
+}
+
 func TestSQLiteReaderPragmasApplyToMultipleConnections(t *testing.T) {
 	a := testApp(t)
-	db, err := sql.Open("sqlite", sqliteReaderURI(a.store.path))
+	readerURI, err := sqliteReaderURI(a.store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", readerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
