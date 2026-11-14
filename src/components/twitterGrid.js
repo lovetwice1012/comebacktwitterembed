@@ -1,12 +1,13 @@
 'use strict';
 
-const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType } = require('discord.js');
+const { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType, Routes } = require('discord.js');
 const gallery = require('../mediaGallery');
 const cards = require('../twitterGridCards');
+const { matchesUniqueReference } = require('../discordAttachmentIdentity');
 const { getFreshProviderSettings } = require('../providers/_provider_settings');
-const twitterProvider = require('../providers/twitter');
 const { isAllowed } = require('./_permissionCheck');
 const { isNsfwChannel } = require('../providers/_sensitive_controls');
+const twitterProvider = require('../providers/twitter');
 
 const clamp = (value, min, max, fallback) => Number.isInteger(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : fallback;
 const GRID_ERROR_TEXT = Object.freeze({
@@ -113,9 +114,21 @@ function marker(id, name) { return `tg-${id}.${name.split('.').pop()}`; }
 function hasMarker(message, id) { return cards.attachmentList(message).some(file => new RegExp(`^tg-${id}\\.(jpg|png|webp)$`).test(file.name || '')); }
 function safeContinuation(message, signature, expectedCount) {
     const attachments = cards.attachmentList(message);
-    return !message.content && !(message.embeds || []).length && !(message.components || []).length
+    const embeds = message.embeds || [];
+    // An existing display-mode switch may present the verified attachments as
+    // image-only embeds. Do not delete a continuation containing textual or
+    // unrelated embeds, even when it was otherwise Bot-authored.
+    const usedAttachments = new Set();
+    const pureImages = !embeds.length || embeds.length === attachments.length && embeds.every(embed => {
+        const clean = cards.cleanEmbed(embed);
+        if (Object.keys(clean).some(key => !['url', 'color', 'image'].includes(key)) || !clean.image?.url) return false;
+        const matching = attachments.filter(file => matchesUniqueReference(clean.image.url, file, attachments, message.channelId || message.channel?.id));
+        if (matching.length !== 1 || usedAttachments.has(String(matching[0].id))) return false;
+        usedAttachments.add(String(matching[0].id)); return true;
+    });
+    return !message.content && pureImages && !(message.components || []).length
         && Number.isInteger(expectedCount) && attachments.length === expectedCount && attachments.length > 0
-        && attachments.every(file => String(file.contentType || '').startsWith('image/')) && cards.fingerprint(message) === signature;
+        && attachments.every(file => String(file.contentType || '').startsWith('image/')) && cards.matchesFingerprint(message, signature);
 }
 async function sourcesRemainValid(interaction, row, access) {
     const payload = row.payload;
@@ -127,8 +140,8 @@ async function sourcesRemainValid(interaction, row, access) {
     try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); }
     catch { return false; }
     if (!sourceIsOwn(first, interaction.client)) return false;
-    const replaced = hasMarker(first, payload.id) && cards.fingerprint(first, true) === payload.firstStaticSignature;
-    if (!replaced && cards.fingerprint(first) !== payload.partSignatures[0]) return false;
+    const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
+    if (!replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) return false;
     for (let i = 1; i < payload.messageIds.length; i++) {
         let message;
         try { message = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); }
@@ -139,7 +152,7 @@ async function sourcesRemainValid(interaction, row, access) {
             if (replaced && Number(error?.code) === 10008) continue;
             return false;
         }
-        if (!sourceIsOwn(message, interaction.client) || cards.fingerprint(message) !== payload.partSignatures[i]) return false;
+        if (!sourceIsOwn(message, interaction.client) || !cards.matchesFingerprint(message, payload.partSignatures[i])) return false;
     }
     return true;
 }
@@ -150,15 +163,15 @@ async function sourceImageUrls(interaction, row, access) {
     if (!Array.isArray(payload.partRefs)) return payload.imageUrls;
     if (payload.partRefs.length !== payload.totalParts || payload.completedParts !== payload.totalParts) throw new Error('GRID_SOURCE_INCOMPLETE');
     const first = await channel.messages.fetch({ message: payload.messageIds[0], force: true });
-    const replaced = hasMarker(first, payload.id) && cards.fingerprint(first, true) === payload.firstStaticSignature;
-    if (!sourceIsOwn(first, interaction.client) || !replaced && cards.fingerprint(first) !== payload.partSignatures[0]) throw new Error('GRID_SOURCE_CHANGED');
+    const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
+    if (!sourceIsOwn(first, interaction.client) || !replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) throw new Error('GRID_SOURCE_CHANGED');
     const all = [];
     for (let i = 0; i < payload.partRefs.length; i++) {
         let message = first;
         if (i > 0) {
             try { message = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); }
             catch (error) { if (!replaced || Number(error?.code) !== 10008) throw error; message = null; }
-            if (message && (!sourceIsOwn(message, interaction.client) || cards.fingerprint(message) !== payload.partSignatures[i])) throw new Error('GRID_SOURCE_CHANGED');
+            if (message && (!sourceIsOwn(message, interaction.client) || !cards.matchesFingerprint(message, payload.partSignatures[i]))) throw new Error('GRID_SOURCE_CHANGED');
         }
         all.push(...cards.resolveReferences(payload.partRefs[i], message, replaced));
     }
@@ -171,9 +184,9 @@ function embedWitnessPosition(message, witness) {
     const attachments = cards.attachmentList(message);
     if (new Set(witness.attachments.map(file => file.id)).size !== witness.attachments.length
         || witness.attachments.some(expected => !/^\d{1,25}$/.test(expected.id || '') || !attachments.some(file => String(file.id) === expected.id && file.name === expected.name && String(file.contentType || '').startsWith('image/')))) return null;
-    const hashes = (message?.embeds || []).map(cards.embedFingerprint), matches = [];
-    for (let i = 0; i + witness.hashes.length <= hashes.length; i++) {
-        if (witness.hashes.every((value, offset) => hashes[i + offset] === value)) matches.push(i);
+    const embeds = message?.embeds || [], matches = [];
+    for (let i = 0; i + witness.hashes.length <= embeds.length; i++) {
+        if (witness.hashes.every((value, offset) => cards.matchesEmbedFingerprint(embeds[i + offset], message, value))) matches.push(i);
     }
     return matches.length === 1 ? { start: matches[0], end: matches[0] + witness.hashes.length } : null;
 }
@@ -183,15 +196,16 @@ async function markerRows(query, interaction, payload, message) {
     const markerIds = markerFiles.map(file => /^tg-([a-f0-9]{32})\.(?:jpg|png|webp)$/.exec(file.name)[1]);
     if (!markerIds.length) return new Map();
     if (new Set(markerIds).size !== markerIds.length) return null;
-    const rows = await query('SELECT gallery_id,message_id,payload_json FROM bot_media_galleries WHERE guild_id=? AND channel_id=? AND message_id=? AND provider_id=? AND expires_at_ms>? FOR UPDATE',
-        [interaction.guildId, interaction.channelId, payload.messageIds[0], 'twitter', Date.now()]);
     const markers = new Map();
-    for (const row of rows) {
-        if (!markerIds.includes(row.gallery_id)) continue;
+    for (const id of [...markerIds].sort()) {
+        const rows = await query('SELECT gallery_id,message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND message_id=? AND provider_id=? AND expires_at_ms>? FOR UPDATE',
+            [id, interaction.guildId, interaction.channelId, payload.messageIds[0], 'twitter', Date.now()]);
+        if (rows.length !== 1) return null;
+        const row = rows[0];
         let item; try { item = JSON.parse(row.payload_json); } catch { return null; }
         if (item.kind !== 'twitter-image-grid-v1' || item.id !== row.gallery_id || item.lockId !== payload.lockId
             || item.partsState && item.partsState !== 'complete' || item.completedParts !== item.totalParts
-            || item.messageIds?.[0] !== payload.messageIds[0] || item.firstStaticSignature !== cards.fingerprint(message, true)) return null;
+            || item.messageIds?.[0] !== payload.messageIds[0] || !cards.matchesFingerprint(message, item.firstStaticSignature, true)) return null;
         markers.set(item.id, item);
     }
     return markers.size === markerIds.length ? markers : null;
@@ -217,14 +231,14 @@ async function reconcileSibling(interaction, row, deps = {}) {
             || !currentButtonAccess(interaction, settings, access.member)) return null;
         const channel = access.channel || interaction.channel;
         let first; try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); } catch { return null; }
-        if (!sourceIsOwn(first, interaction.client) || cards.fingerprint(first, true) !== payload.firstStaticSignature) return null;
+        if (!sourceIsOwn(first, interaction.client) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return null;
         const markers = await markerRows(query, interaction, payload, first);
         if (!markers || ![...markers.keys()].some(id => id !== payload.id)) return null;
         const position = embedWitnessPosition(first, payload.embedWitness);
         if (!position) return null;
         for (let i = 1; i < payload.messageIds.length; i++) {
             let other; try { other = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); } catch { return null; }
-            if (!sourceIsOwn(other, interaction.client) || cards.fingerprint(other) !== payload.partSignatures[i]) return null;
+            if (!sourceIsOwn(other, interaction.client) || !cards.matchesFingerprint(other, payload.partSignatures[i])) return null;
         }
         const next = { ...payload, embedStart: position.start, embedEnd: position.end,
             partSignatures: [cards.fingerprint(first), ...payload.partSignatures.slice(1)], firstStaticSignature: cards.fingerprint(first, true) };
@@ -242,13 +256,22 @@ async function freshAccess(interaction) {
         const guild = await interaction.client.guilds.fetch({ guild: interaction.guildId, force: true });
         const channel = await interaction.client.channels.fetch(interaction.channelId, { force: true });
         if (!guild || guild.id !== interaction.guildId || !channel || channel.id !== interaction.channelId || channel.guildId !== interaction.guildId) return null;
+        if (!interaction.client.rest?.get) return null;
+        const raw = await interaction.client.rest.get(Routes.guildMember(interaction.guildId, interaction.user.id));
+        if (String(raw?.user?.id || '') !== String(interaction.user.id) || !Array.isArray(raw.roles)
+            || raw.roles.some(id => typeof id !== 'string' || !id) || new Set(raw.roles).size !== raw.roles.length
+            || raw.guild_id != null && String(raw.guild_id) !== String(interaction.guildId)
+            || raw.guild?.id != null && String(raw.guild.id) !== String(interaction.guildId)) return null;
         const member = await guild.members.fetch({ user: interaction.user.id, force: true });
         // GuildMember.roles.cache drops role IDs not yet in the guild cache.
         // Fetch the authoritative role list and verify every ID before using
         // it for channel permissions or prohibited-role checks.
         const roleList = await guild.roles.fetch();
-        if (!roleList?.has?.(guild.id) || !Array.isArray(member?._roles)
-            || member._roles.some(id => typeof id !== 'string' || !roleList.has(id))) return null;
+        if (String(member?.id || member?.user?.id || '') !== String(interaction.user.id)
+            || member?.guild?.id != null && String(member.guild.id) !== String(interaction.guildId)
+            || member?.partial === true || !roleList?.has?.(guild.id) || !Array.isArray(member?._roles)
+            || member._roles.some(id => typeof id !== 'string' || !roleList.has(id))
+            || JSON.stringify([...member._roles].sort()) !== JSON.stringify([...raw.roles].sort())) return null;
         let parent = null;
         if (channel.isThread?.()) {
             parent = await interaction.client.channels.fetch(channel.parentId, { force: true });
@@ -276,16 +299,21 @@ function currentButtonAccess(interaction, settings, member) {
     const users = Array.isArray(disabled.user) ? disabled.user : [];
     const channels = Array.isArray(disabled.channel) ? disabled.channel : [];
     const roles = Array.isArray(disabled.role) ? disabled.role : [];
-    if (users.includes(interaction.user.id) || channels.includes(interaction.channelId)) return false;
+    if (disabled.role != null && !Array.isArray(disabled.role) || roles.some(role => typeof role !== 'string' || !/^\d{16,22}$/.test(role))
+        || users.includes(interaction.user.id) || channels.includes(interaction.channelId) || roles.includes(interaction.guildId)) return false;
     if (Array.isArray(member?._roles)) return !roles.some(role => member._roles.includes(role));
     const memberRoles = member?.roles;
     if (roles.length && !Array.isArray(memberRoles) && typeof memberRoles?.cache?.has !== 'function') return false;
     const hasRole = role => Array.isArray(memberRoles) ? memberRoles.includes(role) : !!memberRoles?.cache?.has?.(role);
     return !roles.some(hasRole);
 }
-function withoutImages(embed, images) {
+function withoutImages(embed, images, attachments = [], channelId) {
     const output = cards.cleanEmbed(embed);
-    if (output.image?.url && images.includes(output.image.url)) delete output.image;
+    if (output.image?.url) {
+        const url = output.image.url;
+        const attached = attachments.filter(file => matchesUniqueReference(url, file, attachments, channelId)).length === 1;
+        if (images.includes(url) || attached) delete output.image;
+    }
     return output;
 }
 function editPayload(first, payload, composed, markers = new Map()) {
@@ -306,9 +334,10 @@ function editPayload(first, payload, composed, markers = new Map()) {
         embeds = (first.embeds || []).map(cards.cleanEmbed);
         const existing = hasMarker(first, payload.id);
         if (existing) {
+            const own = attachments.filter(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
+            if (own.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
             const matching = embeds.flatMap((embed, index) => {
-                const url = String(embed.image?.url || '');
-                return new RegExp(`(?:/|^)tg-${payload.id}\\.(jpg|png|webp)(?:\\?|$)`).test(url) ? [index] : [];
+                return matchesUniqueReference(embed.image?.url, own[0], attachments, first.channelId || first.channel?.id) ? [index] : [];
             });
             if (matching.length !== 1) throw new Error('GRID_SOURCE_CHANGED');
             destination = matching[0];
@@ -318,12 +347,26 @@ function editPayload(first, payload, composed, markers = new Map()) {
             if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > embeds.length) throw new Error('GRID_SOURCE_CHANGED');
             const found = [];
             for (let i = start; i < end; i++) if (payload.imageUrls.includes(embeds[i]?.image?.url)) found.push(i);
-            if (!found.length && originalAttachments.length) {
+            const primaryAttachments = payload.isPrimary !== false && start === 0 && originalAttachments.length > 0
+                && originalAttachments.length === payload.partSizes?.[0]
+                && originalAttachments.every(file => String(file.contentType || '').startsWith('image/'));
+            if (primaryAttachments) {
                 // Only the primary group can own source attachments. Keep
                 // already combined siblings while replacing its originals.
-                if (start !== 0 || originalAttachments.length !== payload.partSizes?.[0]
-                    || originalAttachments.some(file => !String(file.contentType || '').startsWith('image/'))) throw new Error('GRID_SOURCE_CHANGED');
+                // A display-mode switch may have referenced these same
+                // attachments from the primary group's embeds. Remove only
+                // verified attachment images, never a quoted image.
+                for (let i = start; i < end; i++) {
+                    const url = embeds[i]?.image?.url;
+                    if (!url) continue;
+                    const belongs = payload.imageUrls.includes(url) || originalAttachments.filter(file =>
+                        matchesUniqueReference(url, file, attachments, first.channelId || first.channel?.id)).length === 1;
+                    if (!belongs) throw new Error('GRID_SOURCE_CHANGED');
+                    delete embeds[i].image;
+                }
                 destination = start;
+            } else if (!found.length && originalAttachments.length) {
+                throw new Error('GRID_SOURCE_CHANGED');
             } else {
                 if (found.length !== payload.imageUrls.length
                     || JSON.stringify(found.map(i => embeds[i].image.url).sort()) !== JSON.stringify([...payload.imageUrls].sort())) throw new Error('GRID_SOURCE_CHANGED');
@@ -334,7 +377,15 @@ function editPayload(first, payload, composed, markers = new Map()) {
             }
             for (const i of found) delete embeds[i].image;
         }
-    } else embeds = (first.embeds || []).map(embed => withoutImages(embed, payload.imageUrls));
+    } else {
+        if (hasMarker(first, payload.id) && (first.embeds || []).some(embed => cards.cleanEmbed(embed).image?.url)) {
+            const own = attachments.filter(file => new RegExp(`^tg-${payload.id}\\.(jpg|png|webp)$`).test(file.name || ''));
+            if (own.length !== 1 || (first.embeds || []).filter(embed => matchesUniqueReference(cards.cleanEmbed(embed).image?.url,
+                own[0], attachments, first.channelId || first.channel?.id)).length !== 1) throw new Error('GRID_SOURCE_CHANGED');
+        }
+        embeds = (first.embeds || []).map(embed => withoutImages(embed, payload.imageUrls, originalAttachments, first.channelId || first.channel?.id))
+            .filter(embed => Object.keys(embed).some(key => !['url', 'color'].includes(key)));
+    }
     if (!embeds.length && !payload.sharedInline) {
         if (hasMarker(first, payload.id)) keptAttachments.push(...originalAttachments.map(file => ({ id: String(file.id) })));
         return { embeds: [], attachments: keptAttachments, files: [{ attachment: composed.data, name: marker(payload.id, composed.filename) }], allowedMentions: { parse: [], repliedUser: false } };
@@ -360,6 +411,10 @@ async function replacePublic(interaction, row, composed, deps) {
         const locks = await query('SELECT gallery_id,message_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
             [lockId, interaction.guildId, interaction.channelId, Date.now()]);
         if (!locks[0] || String(locks[0].message_id) !== sourceId(row)) return 'unavailable';
+        // A legacy multi-message edit may have reached Discord even when its
+        // SQL acknowledgement was lost. Do not race or invalidate recovery.
+        const intents = await query('SELECT operation_id FROM bot_twitter_grid_action_intents WHERE gallery_id=? LIMIT 1', [lockId]);
+        if (intents.length) return 'unavailable';
         const rows = await query('SELECT * FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
             [row.payload.id, interaction.guildId, interaction.channelId, Date.now()]);
         if (!rows[0]) return 'unavailable';
@@ -381,11 +436,11 @@ async function replacePublic(interaction, row, composed, deps) {
         let first;
         const channel = access.channel || interaction.channel;
         try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); } catch { return 'unavailable'; }
-        if (!sourceIsOwn(first, interaction.client) || cards.fingerprint(first, true) !== payload.firstStaticSignature) return 'changed';
+        if (!sourceIsOwn(first, interaction.client) || !cards.matchesFingerprint(first, payload.firstStaticSignature, true)) return 'changed';
         const already = hasMarker(first, payload.id);
         const markers = await markerRows(query, interaction, payload, first);
         if (!markers || already && !markers.has(payload.id)) return 'changed';
-        if (!already && cards.fingerprint(first) !== payload.partSignatures?.[0]) return 'changed';
+        if (!already && !cards.matchesFingerprint(first, payload.partSignatures?.[0])) return 'changed';
         const continuations = [];
         for (let index = 1; index < payload.totalParts; index++) {
             let current;
@@ -429,7 +484,7 @@ async function replacePublic(interaction, row, composed, deps) {
         const combinedAttachments = cards.attachmentList(combined), combinedIds = combinedAttachments.map(file => String(file.id || ''));
         if (!sourceIsOwn(combined, interaction.client) || !hasMarker(combined, payload.id)
             || combinedAttachments.length !== retainedIds.length + 1 || retainedIds.some(id => !combinedIds.includes(id))
-            || cards.fingerprint(combined, true) !== payload.firstStaticSignature) {
+            || !cards.matchesFingerprint(combined, payload.firstStaticSignature, true)) {
             await update('partial'); return 'partial';
         }
         const combinedFingerprint = cards.fingerprint(combined);
@@ -492,20 +547,22 @@ async function replacePublic(interaction, row, composed, deps) {
             const retained = (replacement.attachments || []).map(file => String(file.id)), actual = cards.attachmentList(confirmed);
             if (!sourceIsOwn(confirmed, interaction.client) || !hasMarker(confirmed, payload.id)
                 || actual.length !== retained.length + 1 || retained.some(id => !actual.some(file => String(file.id) === id))
-                || cards.fingerprint(confirmed, true) !== payload.firstStaticSignature) { await update('unknown'); return 'unknown'; }
+                || !cards.matchesFingerprint(confirmed, payload.firstStaticSignature, true)) { await update('unknown'); return 'unknown'; }
         }
         await update('done'); return 'done';
     });
 }
 async function handle(interaction, deps = {}) {
     const ja = String(interaction.locale || '').startsWith('ja');
-    const match = /^tg:([a-f0-9]{32}):(0|\d{16,22}):(open|layout|fit|format|target|run|preview|advanced|submit|replace|confirm|back)(?::([0-9a-z.]+))?$/.exec(interaction.customId || '');
+    const match = /^tg:([a-f0-9]{32}):(0|\d{16,22}):(open|layout|fit|format|target|run|preview|advanced|submit|replace|confirm|back|restore|resume|rh|rf|rr|rn|rc|r1)(?::([0-9a-z.]+))?$/.exec(interaction.customId || '');
     if (!match || !interaction.guildId || !interaction.user?.id || !sourceIsOwn(interaction.message, interaction.client)) return;
     const [, id, owner, action, packed] = match;
     if (owner !== '0' && owner !== interaction.user.id) { await interaction.reply({ content: ja ? 'この画面は開いた本人だけが操作できます。' : 'Only the person who opened this view can use it.', ephemeral: true }); return; }
-    let state = packed ? decode(packed) : null;
-    if (action !== 'open' && (!state || owner === '0')) return;
     if (owner !== '0' && !interaction.message.flags?.has?.(64)) return;
+    const splitConfirmation = action === 'r1' ? require('../twitterGridRestoreUI').consumeSplitConfirmation(packed, id, owner) : null;
+    if (action === 'r1' && !splitConfirmation) { await interaction.reply({ content: ja ? '確認の期限が切れました。もう一度お選びください。' : 'The confirmation expired. Choose again.', ephemeral: true }); return; }
+    let state = action === 'r1' ? splitConfirmation && decode(splitConfirmation.packedState) : packed ? decode(packed) : null;
+    if (action !== 'open' && (!state || owner === '0')) return;
     if (action === 'advanced') { await interaction.showModal(modal(id, owner, state, interaction.locale)); return; }
     if (action === 'open') await interaction.deferReply({ ephemeral: true });
     else if (action === 'submit') await interaction.deferUpdate();
@@ -516,7 +573,8 @@ async function handle(interaction, deps = {}) {
     let row = await storage.get(id, interaction.guildId, interaction.channelId);
     if (!row || row.provider_id !== 'twitter' || !sourceId(row) || row.payload.kind !== 'twitter-image-grid-v1' || row.payload.id !== id
         || action === 'open' && sourceId(row) !== interaction.message.id || !Array.isArray(row.payload.imageUrls) || row.payload.imageUrls.length > 20
-        || row.payload.imageUrls.length < 2 && !partsProgress(row.payload, interaction.locale)) return fail();
+        || row.payload.imageUrls.length < 2 && !partsProgress(row.payload, interaction.locale)
+            && !(row.payload.imageUrls.length === 1 && row.payload.restoreContinuation && row.payload.restoreArchive)) return fail();
     if (interaction.channel?.isThread?.() && row.payload.nsfwContextVersion !== 1 && row.payload.nsfw !== true) return fail();
     const settings = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
     if (settings.enabled !== true || cards.safetyHash(settings) !== row.payload.settingsHash) return fail();
@@ -524,11 +582,35 @@ async function handle(interaction, deps = {}) {
     const initialAccess = await (deps.freshAccess || freshAccess)(interaction);
     if (!initialAccess || row.payload.nsfw && !currentNsfw(initialAccess, interaction) || !currentButtonAccess(interaction, settings, initialAccess.member)) return fail();
     if (!await sourcesRemainValid(interaction, row, initialAccess)) {
-        row = await reconcileSibling(interaction, row, deps).catch(() => null);
-        if (!row || !await sourcesRemainValid(interaction, row, initialAccess)) return fail();
+        let recovered = false;
+        if (action === 'open' && row.payload.replacePhase === 'done') {
+            try {
+                const adapter = (deps.createRestoreAdapters || require('../twitterGridRestoreAdapters').createAdapters)(interaction, id, deps.restoreDeps);
+                recovered = (await adapter.recoverOnly())?.status === 'recovered';
+            } catch { /* An uncertain recovery must never be guessed or retried. */ }
+        }
+        row = recovered ? await storage.get(id, interaction.guildId, interaction.channelId) : await reconcileSibling(interaction, row, deps).catch(() => null);
+        if (!row || !await sourcesRemainValid(interaction, row, initialAccess))
+            return fail(ja ? '現在の投稿を確認できませんでした。時間をおいて再試行するか、元のリンクをもう一度展開してください。'
+                : 'Could not verify the current post. Try again later, or expand the original link again.');
     }
     const canReplace = mayReplace(interaction, row.payload, settings, initialAccess.permissions || initialAccess, initialAccess.guild?.ownerId);
     const incomplete = partsProgress(row.payload, interaction.locale);
+    let restoreFirst = null;
+    if (canReplace && !incomplete && (row.payload.replacePhase === 'done' || row.payload.restoreContinuation)) {
+        try { restoreFirst = await (initialAccess.channel || interaction.channel).messages.fetch({ message: sourceId(row), force: true }); } catch { /* No restore control without a verified source. */ }
+    }
+    const canRestore = !!restoreFirst && !!require('../twitterGridRestore').statusFromCombined(row.payload, restoreFirst);
+    const canResume = !!restoreFirst && !!require('../twitterGridRestore').statusFromPartial(row.payload, restoreFirst);
+    // A one-image group is actionable only when the complete persisted
+    // continuation and the current public message have been verified.
+    if (row.payload.imageUrls.length < 2 && !incomplete && !canResume) return fail();
+    function addRestore(result, restoreOwner) {
+        if ((canRestore || canResume) && restoreOwner !== '0' && result?.components?.[4]?.components?.length < 5)
+            result.components[4].components.push({ type: 2, style: 2, label: canResume ? (ja ? '残りの画像を投稿' : 'Post remaining images') : (ja ? '元の画像に戻す' : 'Restore original images'),
+                custom_id: custom(id, restoreOwner, canResume ? 'resume' : 'restore', state) });
+        return result;
+    }
     if (action === 'open') {
         const expected = Array.isArray(row.payload.expectedImageUrls) && row.payload.expectedImageUrls.length >= 2 && row.payload.expectedImageUrls.length <= 20
             ? row.payload.expectedImageUrls.length : row.payload.imageUrls.length;
@@ -545,8 +627,51 @@ async function handle(interaction, deps = {}) {
     }
     if (action === 'submit') {
         const next = modalState(interaction, state);
-        if (!next) return interaction.editReply({ ...view(id, owner, state, settings, interaction.locale, ja ? '入力した値を確認してください。' : 'Check the values and try again.', canReplace, incomplete), embeds: [], attachments: [] });
+        if (!next) return interaction.editReply({ ...addRestore(view(id, owner, state, settings, interaction.locale, ja ? '入力した値を確認してください。' : 'Check the values and try again.', canReplace, incomplete), owner), embeds: [], attachments: [] });
         state = next;
+    }
+    if (action === 'restore' || action === 'resume' || ['rh', 'rf', 'rr', 'rn', 'rc', 'r1'].includes(action)) {
+        if (!canReplace || owner === '0' || (action === 'resume' || action === 'rc' || action === 'r1' && splitConfirmation.mode === 'resume' ? !canResume : !canRestore)) return fail();
+        if (action === 'resume') return interaction.editReply({ content: ja ? '残りの画像を新しい投稿で送信します。' : 'Post the remaining images in a new message?',
+            embeds: [], attachments: [], components: [{ type: 1, components: [{ type: 2, style: 1, label: ja ? '残りを投稿' : 'Post remaining',
+                custom_id: custom(id, owner, 'rc', state) }] }] });
+        if (action === 'restore') {
+            try {
+                const adapter = (deps.createRestoreAdapters || require('../twitterGridRestoreAdapters').createAdapters)(interaction, id, deps.restoreDeps);
+                const available = await adapter.inPlaceAvailable();
+                if (available?.status === 'recovered') return interaction.editReply({ content: ja ? '前回の復旧結果を確認しました。' : 'The previous restoration was verified.',
+                    components: [], embeds: [], attachments: [] });
+                if (available?.status !== 'ok') return fail(ja ? '投稿の状態を確認できませんでした。' : 'Could not verify the message state.');
+                const panel = await require('../twitterGridRestoreUI').restoreMenu(interaction, { payload: row.payload, first: restoreFirst }, encode(state),
+                    { authorize: async () => canReplace, latestMessageId: async () => require('../twitterGridRestore').latestMessageId(initialAccess.channel || interaction.channel) }, available.separateOnly, available.rootCapacity);
+                return interaction.editReply({ ...panel, embeds: [], attachments: [] });
+            } catch { return fail(ja ? '投稿の状態を確認できませんでした。' : 'Could not verify the message state.'); }
+        }
+        try {
+            const adapters = (deps.createRestoreAdapters || require('../twitterGridRestoreAdapters').createAdapters)(interaction, id, deps.restoreDeps);
+            const result = action === 'r1' ? await require('../twitterGridRestore').executeRestore({ id, owner, mode: splitConfirmation.mode,
+                confirmedPlan: splitConfirmation.planDigest, confirmedSizes: splitConfirmation.sizes, locale: interaction.locale, interaction }, adapters)
+                : await require('../twitterGridRestoreUI').restoreSelection(interaction, adapters);
+            if (result.status === 'confirm_split') {
+                const panel = require('../twitterGridRestoreUI').offerSplitConfirmation({ id, owner, packedState: encode(state), sizes: result.sizes,
+                    mode: result.mode || 'first', planDigest: result.planDigest }, interaction.locale);
+                return interaction.editReply({ ...panel, embeds: [], attachments: [] });
+            }
+            const labels = { done: ja ? '画像を戻しました。' : 'Images restored.',
+                choice_changed: ja ? '投稿の順序が変わりました。もう一度選んでください。' : 'The message order changed. Choose again.',
+                source_unavailable: ja ? '元の投稿を確認できませんでした。' : 'Could not verify the original post.',
+                image_too_large: ja ? `元画像が復旧できるサイズの上限（${(Number(result.fileLimit || 0) / 1048576).toFixed(1)} MiB）を超えています。` : `An original image exceeds the ${(Number(result.fileLimit || 0) / 1048576).toFixed(1)} MiB restoration limit.`,
+                discord_upload_too_large: ja ? '画像1枚を送信できませんでした。サイズを小さくして再度お試しください。' : 'One image could not be uploaded. Reduce its size and try again.',
+                size_limit_unavailable: ja ? '投稿できる画像のサイズを確認できませんでした。' : 'The upload size limit could not be verified.',
+                partial: ja ? '一部の画像を戻しました。チャンネルで結果を確認してください。' : 'Some images were restored. Check the channel.',
+                separated: ja ? '画像の間に新しい投稿が入りました。チャンネルで結果を確認してください。' : 'Another message appeared between the images. Check the channel.',
+                order_unverified: ja ? '画像の並びを確認できませんでした。チャンネルで結果を確認してください。' : 'The image order could not be verified. Check the channel.',
+                unknown: ja ? '復旧結果を確認できませんでした。チャンネルで結果を確認してください。' : 'The result is unknown. Check the channel.',
+                recovered: ja ? '前回の復旧結果を確認しました。' : 'The previous restoration was verified.',
+                blocked: ja ? '前回の操作結果を確認できません。チャンネルを確認してください。' : 'The previous result could not be verified. Check the channel.',
+                busy: ja ? '画像を戻す処理が混み合っています。' : 'Image restoration is busy.' };
+            return interaction.editReply({ content: labels[result.status] || (ja ? '画像を戻せませんでした。' : 'Images could not be restored.'), components: [], embeds: [], attachments: [] });
+        } catch { return fail(ja ? '復旧結果を確認できませんでした。チャンネルで結果を確認してください。' : 'The result is unknown. Check the channel.'); }
     }
     if (incomplete && ['preview', 'run', 'replace', 'confirm'].includes(action)) return interaction.editReply({ ...view(id, owner, state, settings, interaction.locale, incomplete, canReplace), embeds: [], attachments: [] });
     if (action === 'replace' || action === 'run' && state.target === 'r') {
@@ -556,7 +681,7 @@ async function handle(interaction, deps = {}) {
             { type: 2, style: 2, label: ja ? '戻る' : 'Back', custom_id: custom(id, owner, 'back', state) },
         ] }] });
     }
-    if (action !== 'preview' && action !== 'confirm' && action !== 'run') return interaction.editReply({ ...view(id, owner === '0' ? interaction.user.id : owner, state, settings, interaction.locale, undefined, canReplace, incomplete), embeds: [], attachments: [] });
+    if (action !== 'preview' && action !== 'confirm' && action !== 'run') { const viewOwner = owner === '0' ? interaction.user.id : owner; return interaction.editReply({ ...addRestore(view(id, viewOwner, state, settings, interaction.locale, undefined, canReplace, incomplete), viewOwner), embeds: [], attachments: [] }); }
     if (action === 'confirm' && !canReplace) return fail(ja ? '公開画像の置換は投稿者・管理者が利用できます。' : 'Only the requester or an administrator can replace the public images.');
     try {
         const imageUrls = await sourceImageUrls(interaction, row, initialAccess);
@@ -567,14 +692,18 @@ async function handle(interaction, deps = {}) {
             const labels = { done: ja ? '公開画像を置き換えました。' : 'Public images replaced.', partial: ja ? 'まとめ画像を表示しました。後続の画像は残っています。もう一度操作できます。' : 'The combined image is visible; the later images remain. You can retry.',
                 attachment_limit: ja ? '添付がいっぱいです。先に親投稿の画像をまとめてから、もう一度お試しください。' : 'The message has no attachment space. Combine the parent images first, then try again.',
                 unknown: ja ? '置換結果を確認できませんでした。公開画像を確認してから再操作してください。' : 'The result is unknown. Check the public message before retrying.' };
-            return interaction.editReply({ ...view(id, owner, state, settings, interaction.locale, labels[result] || (ja ? '公開画像が変更されたか、置換できませんでした。' : 'The public images changed or could not be replaced.'), canReplace, incomplete), embeds: [], attachments: [] });
+            const panel = view(id, owner, state, settings, interaction.locale, labels[result] || (ja ? '公開画像が変更されたか、置換できませんでした。' : 'The public images changed or could not be replaced.'), canReplace, incomplete);
+            const actionRow = /** @type {any} */ (panel.components[4]);
+            if (result === 'done' && canReplace && actionRow.components.length < 5)
+                actionRow.components.push({ type: 2, style: 2, label: ja ? '元の画像に戻す' : 'Restore original images', custom_id: custom(id, owner, 'restore', state) });
+            return interaction.editReply({ ...panel, embeds: [], attachments: [] });
         }
         const access = await (deps.freshAccess || freshAccess)(interaction);
         const current = await (deps.getSettings || getFreshProviderSettings)(twitterProvider, interaction.guildId);
         if (!access || current.enabled !== true || cards.safetyHash(current) !== row.payload.settingsHash || row.payload.nsfw && !currentNsfw(access, interaction)
             || !currentButtonAccess(interaction, current, access.member)) return fail();
         if (!await sourcesRemainValid(interaction, row, access)) return fail();
-        return interaction.editReply({ ...view(id, owner, state, current, interaction.locale, composed.adapted ? (ja ? '表示できるよう画像サイズを調整しました。' : 'The image size was adjusted to fit.') : undefined, mayReplace(interaction, row.payload, current, access.permissions || access, access.guild?.ownerId), incomplete), attachments: [], files: [{ attachment: composed.data, name: composed.filename }] });
+        return interaction.editReply({ ...addRestore(view(id, owner, state, current, interaction.locale, composed.adapted ? (ja ? '表示できるよう画像サイズを調整しました。' : 'The image size was adjusted to fit.') : undefined, mayReplace(interaction, row.payload, current, access.permissions || access, access.guild?.ownerId), incomplete), owner), attachments: [], files: [{ attachment: composed.data, name: composed.filename }] });
     } catch (cause) { return interaction.editReply({ ...view(id, owner, state, settings, interaction.locale, gridErrorText(cause, interaction.locale), canReplace, incomplete), embeds: [], attachments: [] }); }
 }
 module.exports = { handle, _internal: { defaults, encode, decode, modalState, mayReplace, freshAccess, currentButtonAccess, sourcesRemainValid, sourceImageUrls, reconcileSibling, embedWitnessPosition, markerRows, partsProgress, gridErrorText, fingerprint: cards.fingerprint, safeContinuation, editPayload, replacePublic, custom, view } };

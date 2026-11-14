@@ -77,8 +77,8 @@ async function replyComponentError(interaction, err) {
         return;
     }
 
-    const paused = err?.message === 'GRID_SPLIT_ACTION_PAUSED';
-    if (!paused) {
+    const displayUnavailable = ['GRID_SPOILER_DISPLAY_UNAVAILABLE', 'GRID_NO_DISPLAYABLE_IMAGES'].includes(err?.message);
+    if (!displayUnavailable) {
         recordError(err, {
             errorType: 'component_failed',
             source: 'messageComponents.handle',
@@ -87,9 +87,12 @@ async function replyComponentError(interaction, err) {
         recordMetric('component_error', { interaction });
         console.error('Failed to handle component interaction:', err);
     }
+    const sourceError = ['GRID_SOURCE_CHANGED', 'GRID_SOURCE_INCOMPLETE', 'GRID_LOCK_UNAVAILABLE'].includes(err?.message);
+    const permissionError = err?.message === 'GRID_PERMISSION_CHANGED';
+    const timeError = err?.message === 'GRID_OPERATION_TIME';
     const payload = { content: String(interaction.locale || '').startsWith('ja')
-        ? (paused ? '複数に分かれた投稿の一括操作は準備中です。' : '操作を完了できませんでした。時間をおいて再試行してください。繰り返し失敗する場合は /support をご利用ください。')
-        : (paused ? 'Actions for split posts are being prepared.' : 'The action could not be completed. Please try again later, or use /support if it keeps failing.'), ephemeral: true };
+        ? (err?.message === 'GRID_SPOILER_DISPLAY_UNAVAILABLE' ? 'スポイラー保護のため、画像は現在の表示を維持します。' : err?.message === 'GRID_NO_DISPLAYABLE_IMAGES' ? '表示を変更できる画像がありません。' : timeError ? '操作に時間がかかったため、ここまでの結果を保存しました。投稿を確認して、残りをもう一度操作してください。' : permissionError ? '操作に必要な権限を確認できませんでした。投稿と権限を確認してください。' : sourceError ? '投稿の状態を確認できませんでした。投稿を確認して、もう一度お試しください。' : '操作を完了できませんでした。投稿を確認してから、もう一度お試しください。')
+        : (err?.message === 'GRID_SPOILER_DISPLAY_UNAVAILABLE' ? 'Spoiler protection keeps the images in their current display.' : err?.message === 'GRID_NO_DISPLAYABLE_IMAGES' ? 'There are no images to change.' : timeError ? 'The completed steps were saved. Check the post and retry the remaining action.' : permissionError ? 'Your current permissions could not be verified. Check the post and your permissions.' : sourceError ? 'The post could not be verified. Check the post and try again.' : 'The action could not be completed. Check the post before trying again.'), ephemeral: true };
 
     if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload).catch(async () => {
@@ -243,11 +246,12 @@ function register(client) {
             }
 
             if (['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete'].includes(baseCustomId)) {
+                const options = { action: baseCustomId, buttons: buildButtons(interaction), getButtons: () => buildButtons(interaction) };
                 try {
-                    await require('../twitterGridCards').withMessageLock(interaction, policy => handler.handle(interaction, { client, buttons: buildButtons(interaction), ...policy }));
+                    await require('../twitterGridCards').withMessageLock(interaction, group => handler.handle(interaction, { client, buttons: options.buttons, ...group }), undefined, options);
                 } catch (error) {
                     if (error?.code !== 'GRID_SNAPSHOT_MISMATCH') throw error;
-                    await require('../components/twitterGridConfirm').offer(interaction);
+                    await require('../components/twitterGridConfirm').offer(interaction, { galleryId: error.galleryId });
                     return;
                 }
             } else await handler.handle(interaction, { client, buttons: buildButtons(interaction) });
@@ -278,6 +282,7 @@ function register(client) {
 module.exports = {
     register,
     _internal: {
+        replyComponentError,
         resolveGuisettingDelegatedEditPermissions,
         withGuisettingDelegatedEditPermissions,
     },

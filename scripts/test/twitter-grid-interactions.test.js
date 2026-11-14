@@ -8,21 +8,22 @@ const image = n => `https://pbs.twimg.com/media/photo${n}?format=jpg`;
 const settings = { enabled: true, defaultLanguage: 'ja', button_disabled: { user: [], role: [], channel: [] }, twitter_grid_replace_permission: 'restricted' };
 const files = (n, start = 0) => new Map(Array.from({ length: n }, (_, i) => [String(i + start), { id: String(i + start), name: `photo${i + start}.jpg`, contentType: 'image/jpeg' }]));
 function fixture(totalParts = 2, effectiveSettings = settings) {
-    const first = { id: '555555555555555555', author: { id: bot }, content: '', embeds: [{ title: '投稿本文', description: '本文', url: 'https://x.com/example/status/1' }], components: [], attachments: files(10) };
-    const second = { id: '666666666666666666', author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 10) };
+    const first = { id: '555555555555555555', channelId, author: { id: bot }, content: '', embeds: [{ title: '投稿本文', description: '本文', url: 'https://x.com/example/status/1' }], components: [], attachments: files(10) };
+    const second = { id: '666666666666666666', channelId, author: { id: bot }, content: '', embeds: [], components: [], attachments: files(3, 10) };
     const payload = { id, lockId: id, kind: 'twitter-image-grid-v1', imageUrls: Array.from({ length: totalParts === 2 ? 13 : 10 }, (_, i) => image(i)),
         totalParts, completedParts: totalParts, messageIds: totalParts === 2 ? [first.id, second.id] : [first.id], partSizes: totalParts === 2 ? [10, 3] : [10],
         partSignatures: totalParts === 2 ? [cards.fingerprint(first), cards.fingerprint(second)] : [cards.fingerprint(first)], firstStaticSignature: cards.fingerprint(first, true), requesterId: user,
         settingsHash: cards.safetyHash(effectiveSettings), nsfw: false, nsfwContextVersion: 1 };
     let data = JSON.stringify(payload), deleted = false, deleteCalls = 0, editCalls = 0, failDelete = false, uncertainDelete = false, uncertainEdit = false;
     const editPayloads = [];
-    first.edit = async obj => { editCalls++; editPayloads.push(obj); first.embeds = obj.embeds; const kept = [...first.attachments].filter(([, file]) => obj.attachments.some(item => item.id === file.id)); first.attachments = new Map([...kept, ['grid', { id: '999999999999999999', name: obj.files[0].name, contentType: obj.files[0].name.endsWith('.png') ? 'image/png' : 'image/jpeg' }]]); if (uncertainEdit) { uncertainEdit = false; throw Error('timeout'); } return first; };
+    first.edit = async obj => { editCalls++; editPayloads.push(obj); const kept = [...first.attachments].filter(([, file]) => obj.attachments.some(item => item.id === file.id)); const marker = { id: '999999999999999999', name: obj.files[0].name, contentType: obj.files[0].name.endsWith('.png') ? 'image/png' : 'image/jpeg' }; first.attachments = new Map([...kept, ['grid', marker]]); first.embeds = obj.embeds.map(embed => embed.image?.url === `attachment://${marker.name}` ? { ...embed, image: { url: `https://cdn.discordapp.com/attachments/${channelId}/${marker.id}/${marker.name}?ex=1&is=2&hm=abc` } } : embed); if (uncertainEdit) { uncertainEdit = false; throw Error('timeout'); } return first; };
     second.delete = async () => { deleteCalls++; if (failDelete) { failDelete = false; throw Error('temporary'); } deleted = true; if (uncertainDelete) { uncertainDelete = false; throw Error('timeout'); } };
     const row = () => ({ gallery_id: id, provider_id: 'twitter', message_id: first.id, payload: JSON.parse(data), payload_json: data });
     let lock = Promise.resolve();
     const db = { withDatabaseTransaction: async fn => {
         let unlock; const previous = lock; lock = new Promise(r => { unlock = r; }); await previous;
         try { return await fn(async (sql, values) => {
+            if (/bot_twitter_grid_action_intents/.test(sql)) return [];
             if (/^SELECT/.test(sql)) return [row()];
             if (/^UPDATE/.test(sql)) { data = values[0]; return { affectedRows: 1 }; }
             throw Error(sql);
@@ -39,30 +40,21 @@ function fixture(totalParts = 2, effectiveSettings = settings) {
         isAllowed: async () => true, freshAccess: async () => ({ has: () => true }), compose: async () => ({ data: Buffer.from('image'), filename: 'twitter-grid.jpg', adapted: false }), db };
     return { interaction, deps, row, first, second, calls, editPayloads, patchPayload: patch => { data = JSON.stringify({ ...JSON.parse(data), ...patch }); }, get data() { return JSON.parse(data); }, get deleted() { return deleted; }, get deleteCalls() { return deleteCalls; }, get editCalls() { return editCalls; }, failNextDelete: () => { failDelete = true; }, failNextDeleteAfterSuccess: () => { uncertainDelete = true; }, failNextEditAfterSuccess: () => { uncertainEdit = true; } };
 }
-test('grid uses the real X default while respecting explicit disable', async () => {
-    const provider = require('../../src/providers/twitter');
-    const providerSettings = require('../../src/providers/_provider_settings');
-    assert.equal(provider.enabledByDefault, true);
-    const f = fixture();
-    delete f.deps.getSettings;
-    const actual = await providerSettings.getFreshProviderSettings(provider, guildId);
-    assert.equal(actual.enabled, true);
-    f.patchPayload({ settingsHash: cards.safetyHash(actual) });
-    await grid.handle(f.interaction, f.deps);
-    assert.ok(f.calls.at(-1)[1].components?.length > 0);
-    await providerSettings.setSetting(provider, 'enabled', guildId, false);
-    try {
-        f.calls.length = 0;
-        await grid.handle(f.interaction, f.deps);
-        assert.equal(f.calls.at(-1)[1].components?.length || 0, 0);
-    } finally { await providerSettings.setSetting(provider, 'enabled', guildId, true); }
-});
 test('public button opens only a private editor with customizable defaults', async () => {
     const f = fixture(); await grid.handle(f.interaction, f.deps);
     assert.deepEqual(f.calls[0], ['deferReply', { ephemeral: true }]);
     const view = f.calls.at(-1)[1]; assert.equal(view.components.length, 5); assert.equal(view.files, undefined);
     const layout = view.components[0].components[0]; assert.equal(layout.options.length, 20);
     assert.ok(layout.custom_id.includes(`:${user}:layout:`));
+});
+test('a completed public combination offers original-image restoration immediately', async () => {
+    const f = fixture(), state = grid._internal.defaults(settings, 13, true);
+    f.interaction.customId = grid._internal.custom(id, user, 'confirm', state);
+    f.interaction.message.flags.has = n => n === 64;
+    await grid.handle(f.interaction, f.deps);
+    const panel = f.calls.at(-1)[1];
+    assert.equal(panel.content, '公開画像を置き換えました。');
+    assert.ok(panel.components[4].components.some(button => button.label === '元の画像に戻す'));
 });
 test('automatic sizing uses one target size while cropped cells retain width and height', async () => {
     for (const [fit, expectedValue, expectedLabel] of [['i', '640', /画像サイズの目安/], ['c', '640x384', /枠の幅×高さ/]]) {
@@ -215,7 +207,8 @@ test('role restrictions fail closed for incomplete role data and accept only com
 test('private thread membership is fetched again and removal during composition denies output', async () => {
     const f = fixture(), state = grid._internal.defaults(settings, 13); let inThread = true;
     f.interaction.customId = grid._internal.custom(id, user, 'preview', state); f.interaction.message.flags.has = n => n === 64;
-    f.interaction.guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ _roles: [], roles: [] }) } };
+    f.interaction.guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ id: user, _roles: [], roles: [] }) } };
+    f.interaction.client.rest = { get: async () => ({ user: { id: user }, roles: [] }) };
     f.interaction.channel.isThread = () => true; f.interaction.channel.type = 12;
     f.interaction.channel.id = channelId; f.interaction.channel.guildId = guildId; f.interaction.channel.parentId = '999999999999999999';
     const parent = { id: f.interaction.channel.parentId, guildId, permissionsFor: () => ({ has: permission => Array.isArray(permission) }) };
@@ -232,7 +225,8 @@ test('private thread membership is fetched again and removal during composition 
 test('current channel overwrites and NSFW state are refetched after composition', async () => {
     const f = fixture(), state = grid._internal.defaults(settings, 13); let allowed = true;
     f.interaction.customId = grid._internal.custom(id, user, 'preview', state); f.interaction.message.flags.has = n => n === 64;
-    const guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ _roles: [], roles: [] }) } };
+    const guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ id: user, _roles: [], roles: [] }) } };
+    f.interaction.client.rest = { get: async () => ({ user: { id: user }, roles: [] }) };
     const channel = { ...f.interaction.channel, id: channelId, guildId, permissionsFor: () => ({ has: p => Array.isArray(p) && allowed }) };
     f.interaction.client.guilds = { fetch: async () => guild };
     f.interaction.client.channels = { fetch: async (_, opts) => { assert.equal(opts.force, true); return channel; } };
@@ -244,14 +238,32 @@ test('current channel overwrites and NSFW state are refetched after composition'
 test('current NSFW channel state is rechecked and incomplete role lists fail closed', async () => {
     const f = fixture(), state = grid._internal.defaults(settings, 13); f.patchPayload({ nsfw: true });
     f.interaction.customId = grid._internal.custom(id, user, 'preview', state); f.interaction.message.flags.has = n => n === 64;
-    const guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ _roles: [], roles: [] }) } };
+    const guild = { id: guildId, roles: { fetch: async () => new Map([[guildId, {}]]) }, members: { fetch: async () => ({ id: user, _roles: [], roles: [] }) } };
+    f.interaction.client.rest = { get: async () => ({ user: { id: user }, roles: [] }) };
     const channel = { ...f.interaction.channel, nsfw: true, id: channelId, guildId, permissionsFor: () => ({ has: p => Array.isArray(p) }) };
     f.interaction.client.guilds = { fetch: async () => guild }; f.interaction.client.channels = { fetch: async () => channel };
     f.deps.freshAccess = grid._internal.freshAccess;
     f.deps.compose = async () => { channel.nsfw = false; return { data: Buffer.from('image'), filename: 'twitter-grid.jpg' }; };
     await grid.handle(f.interaction, f.deps); assert.equal(f.calls.at(-1)[1].files, undefined);
-    guild.members.fetch = async () => ({ _roles: ['888888888888888888'], roles: { cache: new Map() } });
+    guild.members.fetch = async () => ({ id: user, _roles: ['888888888888888888'], roles: { cache: new Map() } });
     assert.equal(await grid._internal.freshAccess(f.interaction), null);
+});
+test('fresh grid access requires a matching raw member with an explicit complete role list', async () => {
+    const f = fixture(), blocked = '888888888888888888'; let raw = { user: { id: user }, roles: [] };
+    const member = { id: user, _roles: [], partial: false }, guild = { id: guildId,
+        roles: { fetch: async () => new Map([[guildId, {}], [blocked, {}]]) }, members: { fetch: async () => member } };
+    const channel = { ...f.interaction.channel, id: channelId, guildId, permissionsFor: () => ({ has: () => true }) };
+    f.interaction.client.guilds = { fetch: async () => guild }; f.interaction.client.channels = { fetch: async () => channel };
+    f.interaction.client.rest = { get: async () => raw };
+    assert.ok(await grid._internal.freshAccess(f.interaction));
+    for (const value of [{ user: { id: user } }, { user: { id: '999999999999999999' }, roles: [] },
+        { user: { id: user }, guild_id: '999999999999999999', roles: [] }, { user: { id: user }, roles: [blocked] }]) {
+        raw = value; assert.equal(await grid._internal.freshAccess(f.interaction), null);
+    }
+    raw = { user: { id: user }, roles: [blocked] }; member._roles = [blocked];
+    const access = await grid._internal.freshAccess(f.interaction); assert.ok(access);
+    assert.equal(grid._internal.currentButtonAccess(f.interaction, { button_disabled: { role: [blocked] } }, access.member), false);
+    assert.equal(grid._internal.currentButtonAccess(f.interaction, { button_disabled: { role: [guildId] } }, access.member), false);
 });
 test('another user, disabled provider and missing original cannot use the private editor', async () => {
     const f = fixture(); const state = grid._internal.defaults(settings, 13); f.interaction.message.flags.has = n => n === 64;

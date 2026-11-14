@@ -670,7 +670,16 @@ function splitMediaSteps(step, tweet) {
     // A spoiler must not be turned into an unmasked composite. Preserve all
     // original attachments and omit the control for the entire tweet.
     if (parts.some(part => (part.files || []).some(file => typeof file === 'object'
-        && (file?.spoiler === true || file?.name?.startsWith('SPOILER_'))))) return parts;
+        && (file?.spoiler === true || file?.name?.startsWith('SPOILER_'))))) {
+        // Track the exact physical messages without storing image URLs or
+        // exposing a combine control for any part of a spoiler-bearing post.
+        // Provisional metadata also lets a later 413 split be tracked.
+        if (parts.length > 1 || files.length > 1) parts.forEach((part, sequence) => {
+            part.twitterGrid = { imageUrls: [], sequence, totalParts: parts.length,
+                ...(sequence === 0 ? { embedStart: 0, embedEnd: (part.embeds || []).length } : {}) };
+        });
+        return parts;
+    }
     const imageUrls = parts.map(part => {
         const fromFiles = (part.files || []).map(file => typeof file === 'string' ? file : file?.attachment)
             .filter(url => typeof url === 'string' && tweetUrls.has(url) && isImageUrl(url) && !isVideoUrl(url));
@@ -679,11 +688,14 @@ function splitMediaSteps(step, tweet) {
             .filter(url => typeof url === 'string' && tweetUrls.has(url) && !attached.has(url) && isImageUrl(url) && !isVideoUrl(url));
         return [...fromFiles, ...fromEmbeds];
     });
-    if (imageUrls.reduce((sum, urls) => sum + urls.length, 0) > 1) {
-        const imageParts = imageUrls.map((urls, index) => ({ urls, index })).filter(part => part.urls.length > 0);
-        imageParts.forEach((part, sequence) => {
+    const photoCount = imageUrls.reduce((sum, urls) => sum + urls.length, 0);
+    if (photoCount > 1 || parts.length > 1 || (parts[0].files || []).length > 1) {
+        // Track every physical media message, even a continuation containing
+        // only video. Image operations still use only the photo references.
+        const mediaParts = imageUrls.map((urls, index) => ({ urls, index }));
+        mediaParts.forEach((part, sequence) => {
             const imageStep = parts[part.index];
-            imageStep.twitterGrid = { imageUrls: part.urls, sequence, totalParts: imageParts.length,
+            imageStep.twitterGrid = { imageUrls: part.urls, sequence, totalParts: mediaParts.length,
                 ...(sequence === 0 ? { embedStart: 0, embedEnd: (imageStep.embeds || []).length } : {}) };
         });
     }
@@ -878,6 +890,9 @@ async function extract(message, url, s, opts) {
                 const summaryStep = summarizeQuoteSteps(childSteps, lang);
                 if (summaryStep && !quoted && shouldInlineQuotes(s) && (step.embeds || []).length < MAX_EMBEDS_PER_STEP) {
                     step.embeds.push(summaryStep.embeds[0]);
+                    // The summary shares the parent message but is not one
+                    // of the parent's images. Preserve it during edits.
+                    step.twitterGridSharedInline = true;
                 } else if (summaryStep) {
                     allSteps.push(summaryStep);
                 }

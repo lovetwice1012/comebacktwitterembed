@@ -4,8 +4,8 @@
 // contains post content and a restart safely invalidates outstanding tokens.
 const { randomBytes } = require('node:crypto');
 const cards = require('../twitterGridCards');
-const twitterProvider = require('../providers/twitter');
 const { isResponseButtonHidden } = require('../utils');
+const twitterProvider = require('../providers/twitter');
 const allowedActions = new Set(['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete']);
 const tokens = new Map();
 const TTL = 2 * 60 * 1000, MAX_PENDING = 1000;
@@ -43,7 +43,8 @@ async function getSource(interaction, record, access, deps) {
     if (!message || String(message.id) !== record.messageId || message.author?.id !== interaction.client?.user?.id
         || message.channelId && String(message.channelId) !== String(interaction.channelId)
         || message.guildId && String(message.guildId) !== String(interaction.guildId)
-        || cards.gridIdFromMessage(message) !== record.galleryId || !buttonExists(message, record.actionId)) return null;
+        || (cards.gridIdFromMessage(message) !== record.galleryId && row.payload.headless !== true)
+        || !buttonExists(message, record.actionId)) return null;
     return { message, row };
 }
 async function groupSnapshot(source, row, channel, client) {
@@ -67,7 +68,7 @@ function preview(message, locale, record) {
     const embeds = (message.embeds || []).map(cards.cleanEmbed), ja = String(locale || '').startsWith('ja');
     const excerpt = [message.content, ...embeds.flatMap(embed => [embed.title, embed.description])].filter(value => typeof value === 'string' && value.trim()).join('\n').slice(0, 1400);
     const link = `https://discord.com/channels/${record.guildId}/${record.channelId}/${record.messageId}`;
-    return { content: ja ? '現在の投稿と続きの画像を確認してください。' : 'Review the post and its remaining images.',
+    return { content: ja ? '現在の投稿を確認してください。リンクから画像や続きも確認できます。' : 'Review the current post. The link includes its images and continuation.',
         embeds: [{ description: excerpt || (ja ? '画像・添付ファイル' : 'Images or attachments'), url: link, title: ja ? '投稿を開く' : 'Open post' }],
         allowedMentions: { parse: [], repliedUser: false } };
 }
@@ -76,7 +77,7 @@ async function offer(interaction, deps = {}) {
     // Never copy a post into a public response, even if a future caller uses
     // this module without the usual ephemeral defer in the event handler.
     if (interaction.deferred !== true || interaction.ephemeral !== true) throw new Error('GRID_SOURCE_CHANGED');
-    const galleryId = cards.gridIdFromMessage(interaction.message), actionId = interaction.customId;
+    const galleryId = deps.galleryId || cards.gridIdFromMessage(interaction.message), actionId = interaction.customId;
     if (!galleryId || typeof actionId !== 'string' || !allowedActions.has(actionId.split(':')[0])) throw new Error('GRID_SOURCE_CHANGED');
     const record = { galleryId, actionId, messageId: String(interaction.message?.id || ''),
         guildId: String(interaction.guildId || ''), channelId: String(interaction.channelId || ''), userId: String(interaction.user?.id || '') };
@@ -124,8 +125,9 @@ async function confirm(interaction, deps = {}) {
     if (!allowedActions.has(action) || !handler) throw new Error('GRID_SOURCE_CHANGED');
     interaction.message = fetched.message; interaction.member = valid.access.member; interaction.memberPermissions = valid.access.permissions;
     const buildButtons = deps.buildButtons || require('./_buttons').buildButtons;
-    const confirmation = { expectedFingerprint: record.fingerprint, actionId: record.actionId, galleryId: record.galleryId, channel: valid.access.channel,
-        deadlineCheck: () => (deps.now || Date.now)() < record.expiresAt };
+    const confirmation = { expectedFingerprint: record.fingerprint, actionId: record.actionId, galleryId: record.galleryId,
+        channel: valid.access.channel, action, buttons: buildButtons(interaction), freshAccess: deps.freshAccess, getSettings: deps.getSettings,
+        expiresAt: record.expiresAt, now: deps.now || Date.now };
     confirmation.revalidate = async () => {
         if ((deps.now || Date.now)() >= record.expiresAt) throw new Error('GRID_SOURCE_CHANGED');
         const latest = await fresh(interaction, record, deps);
@@ -136,6 +138,6 @@ async function confirm(interaction, deps = {}) {
         confirmation.channel = latest.access.channel;
         interaction.member = latest.access.member; interaction.memberPermissions = latest.access.permissions;
     };
-    await cards.withMessageLock(interaction, policy => handler.handle(interaction, { client: interaction.client, buttons: buildButtons(interaction), ...policy }), deps.db, confirmation);
+    await cards.withMessageLock(interaction, group => handler.handle(interaction, { client: interaction.client, buttons: confirmation.buttons, ...group }), deps.db, confirmation);
 }
 module.exports = { offer, confirm, _internal: { activeRecord, buttonExists, preview, tokens, TTL } };

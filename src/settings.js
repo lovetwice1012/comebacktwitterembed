@@ -1018,16 +1018,7 @@ async function getButtonInvisibleSettings(guildId, providerId = null) {
 }
 
 function detectProviderIdFromMessage(message) {
-    const url = message?.embeds?.[0]?.url || '';
-    if (/open\.spotify\.com/.test(url)) return 'spotify';
-    if (/pixiv\.net|phixiv\.net|ppxiv\.net/.test(url)) return 'pixiv';
-    if (/booth\.pm/.test(url)) return 'booth';
-    if (/twitch\.tv/.test(url)) return 'twitch';
-    if (/instagram\.com/.test(url)) return 'instagram';
-    if (/youtube\.com|youtu\.be|youtube-nocookie\.com/.test(url)) return 'youtube';
-    if (/nicovideo\.jp|nico\.ms/.test(url)) return 'niconico';
-    if (/twitter\.com|x\.com|vxtwitter\.com|fxtwitter\.com|twidata\.sprink\.cloud/.test(url)) return 'twitter';
-    return null;
+    return require('./providerIdentity').detectProviderIdFromMessage(message);
 }
 
 async function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, providerId = null) {

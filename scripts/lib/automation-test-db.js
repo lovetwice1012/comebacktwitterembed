@@ -7,6 +7,7 @@ async function createTestDatabase(port) {
     if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === 3306) throw new Error('Set an explicit non-production AUTOMATION_TEST_DB_PORT');
     const schema = `cbte_automation_test_${randomBytes(10).toString('hex')}`;
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 8, supportBigNumbers: true, bigNumberStrings: true });
+    const intentPool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
     const context = new AsyncLocalStorage();
     const acquire = async () => {
         for (let attempt = 1; ; attempt++) {
@@ -46,6 +47,16 @@ async function createTestDatabase(port) {
             const c = await acquire();
             try { await queryOn(c)(`USE ${mysql.escapeId(schema)}`); return await queryOn(c)(sql, params); } finally { c.release(); }
         },
+        queryDatabaseIndependent: (sql, params = []) => context.exit(async () => {
+            const c = await new Promise((resolve, reject) => intentPool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+            try { await queryOn(c)(`USE ${mysql.escapeId(schema)}`); return await queryOn(c)(sql, params); } finally { c.release(); }
+        }),
+        withIndependentTransaction: work => context.exit(async () => {
+            const c = await new Promise((resolve, reject) => intentPool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+            const query = queryOn(c);
+            try { await query(`USE ${mysql.escapeId(schema)}`); await query('START TRANSACTION'); const result = await work(query); await query('COMMIT'); return result; }
+            catch (error) { await query('ROLLBACK'); throw error; } finally { c.release(); }
+        }),
         withDatabaseTransaction: async work => {
             if (context.getStore()) return work(context.getStore());
             const c = await acquire(), query = queryOn(c);
@@ -56,6 +67,7 @@ async function createTestDatabase(port) {
             if (closed) return; closed = true;
             if (!/^cbte_automation_test_[0-9a-f]{20}$/.test(schema)) throw new Error('Unsafe fixture schema');
             await adminQuery(`DROP DATABASE ${mysql.escapeId(schema)}`); admin.release();
+            await new Promise((resolve, reject) => intentPool.end(error => error ? reject(error) : resolve()));
             await new Promise((resolve, reject) => pool.end(error => error ? reject(error) : resolve()));
         },
     };
@@ -63,6 +75,8 @@ async function createTestDatabase(port) {
         const needed = /CREATE TABLE IF NOT EXISTS (?:users|webhook_endpoints|auto_watch_sources|auto_watch_targets|auto_watch_items|auto_watch_deliveries|price_watch_sources|price_watch_targets|price_watch_deliveries)\s*\(/;
         for (const sql of require('../../src/db_schema').SCHEMA_STATEMENTS.filter(sql => needed.test(sql))) await db.queryDatabase(sql);
         for (const sql of require('../../src/automation/schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const gridMigration = require('node:fs').readFileSync(require('node:path').join(require('../../src/db_schema').MIGRATIONS_DIR, '20261113_add_twitter_grid_action_intents.sql'), 'utf8');
+        for (const sql of require('../../src/db_schema')._internal.splitSqlStatements(gridMigration)) await db.queryDatabase(sql);
     } catch (error) { await db.close(); throw error; }
     return db;
 }

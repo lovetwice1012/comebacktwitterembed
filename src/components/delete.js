@@ -67,7 +67,7 @@ async function handle(interaction, context = {}) {
     const permissions = interaction.memberPermissions
         || interaction.channel?.permissionsFor?.(interaction.member);
     if (permissions?.has?.(PermissionsBitField.Flags.ManageMessages)) {
-        await interaction.message.delete();
+        await (context.deleteMessage ? context.deleteMessage() : interaction.message.delete());
         await finishAndCleanup();
         return;
     }
@@ -81,8 +81,8 @@ async function handle(interaction, context = {}) {
         setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
         return;
     }
-    await interaction.message.delete();
+    await (context.deleteMessage ? context.deleteMessage() : interaction.message.delete());
     await finishAndCleanup();
 }
 
-module.exports = { handle };
+module.exports = { handle, _internal: { getRequesterIdFromMessage } };

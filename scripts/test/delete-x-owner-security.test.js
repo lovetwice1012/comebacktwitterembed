@@ -18,9 +18,11 @@ function create({ url = 'https://x.com/example/status/123', requester = owner, u
 function dbFor(message, requester, totalParts = 1) {
     const payload = { id, lockId: id, requesterId: requester, kind: 'twitter-image-grid-v1', totalParts, completedParts: totalParts,
         partsState: 'complete', messageIds: totalParts === 1 ? [messageId] : [messageId, '666666666666666666'], partSignatures: [cards.fingerprint(message)] };
-    const row = { message_id: messageId, payload_json: JSON.stringify(payload) };
-    return { withDatabaseTransaction: async fn => fn(async () => [row]) };
+    const row = { message_id: messageId, provider_id: 'twitter', payload_json: JSON.stringify(payload) };
+    return { withDatabaseTransaction: async fn => fn(async sql => /^SELECT/.test(sql) ? [row] : { affectedRows: 1 }),
+        queryDatabaseIndependent: async () => [] };
 }
+function opts(interaction) { return { action: 'delete', buttons: {}, freshAccess: async () => ({ permissions: interaction.memberPermissions, member: { _roles: [] } }), getSettings: async () => ({ enabled: true }) }; }
 test('X display names cannot impersonate the requester on an old untracked post', async t => {
     t.mock.method(global, 'setTimeout', () => ({ unref() {} }));
     for (const url of ['https://x.com/u/status/1', 'https://twitter.com/u/status/1', 'https://twidata.sprink.cloud/data/1/2/data.json']) {
@@ -49,24 +51,24 @@ test('bound gallery requester is authoritative, including a verified webhook own
     // The displayed source requester can be a webhook, while the saved ID is
     // an independently verified notification owner.
     const f = create({ grid: true, requester: '777777777777777777' }), db = dbFor(f.message, owner);
-    await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db);
+    await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db, opts(f.interaction));
     assert.equal(f.deletes, 0);
     f.interaction.user.id = owner;
-    await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db);
+    await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db, opts(f.interaction));
     assert.equal(f.deletes, 1);
 });
 test('missing or malformed saved requester never falls back to a spoofable display', async t => {
     t.mock.method(global, 'setTimeout', () => ({ unref() {} }));
     for (const requester of [null, 'not-an-id']) {
         const f = create({ grid: true, user: owner }), db = dbFor(f.message, requester);
-        await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db);
+        await cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db, opts(f.interaction));
         assert.equal(f.deletes, 0);
     }
 });
-test('known split posts remain paused before deleting any part', async t => {
+test('a split post with an unverifiable continuation does not delete any part', async t => {
     t.mock.method(global, 'setTimeout', () => ({ unref() {} }));
     const f = create({ grid: true, user: owner }), db = dbFor(f.message, owner, 2);
-    await assert.rejects(cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db), /GRID_SPLIT_ACTION_PAUSED/);
+    await assert.rejects(cards.withMessageLock(f.interaction, policy => del.handle(f.interaction, policy), db, opts(f.interaction)), /GRID_SOURCE_CHANGED|GRID_SOURCE_INCOMPLETE/);
     assert.equal(f.deletes, 0);
 });
 test('channel managers retain moderation rights and anonymous or ambiguous ownership is denied', async t => {

@@ -174,7 +174,8 @@ test('twitter extract: long link-only media lists remain within Discord message 
         legacy_mode: true, media_display_mode: 'link_only',
     });
     assert.ok(steps.length > 1);
-    assert.ok(steps.every(step => step.content.length <= 2000 && step.twitterGrid === undefined));
+    assert.ok(steps.every((step, index) => step.content.length <= 2000 && step.twitterGrid?.imageUrls.length === 0
+        && step.twitterGrid.sequence === index && step.twitterGrid.totalParts === steps.length));
     const text = steps.map(step => step.content).join('\n');
     for (const url of images) assert.ok(text.includes(url));
     assert.ok(steps.slice(1).every(step => step.requiresPreviousSuccess === true));
@@ -211,17 +212,17 @@ test('twitter extract: actual video and GIF extensions remain distinct from phot
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: [image, video, gif] }) });
     const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
     assert.deepEqual(steps[0].files, [video, gif]);
-    assert.equal(steps[0].twitterGrid, undefined);
+    assert.deepEqual(steps[0].twitterGrid, { imageUrls: [image], sequence: 0, totalParts: 1, embedStart: 0, embedEnd: 2 });
     assert.deepEqual(steps[0].embeds.map(embed => embed.image?.url).filter(Boolean), [image]);
 });
 
-test('twitter extract: a later photo-only part has its own grid when the first contains only video', async () => {
+test('twitter extract: a video-only first part and later photos remain one physical group', async () => {
     const video = Array.from({ length: 10 }, (_, index) => `https://video.twimg.com/ext_tw_video/${index}/clip.mp4`);
     const images = manyImages(2);
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: [...video, ...images] }) });
     const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
-    assert.equal(steps[0].twitterGrid, undefined);
-    assert.deepEqual(steps[1].twitterGrid, { imageUrls: images, sequence: 0, totalParts: 1, embedStart: 0, embedEnd: 0 });
+    assert.deepEqual(steps[0].twitterGrid, { imageUrls: [], sequence: 0, totalParts: 2, embedStart: 0, embedEnd: 1 });
+    assert.deepEqual(steps[1].twitterGrid, { imageUrls: images, sequence: 1, totalParts: 2 });
     assert.deepEqual(steps.flatMap(step => step.files), [...video, ...images]);
 });
 
@@ -557,6 +558,30 @@ test('twitter extract: quote display mode can summarize or hide quoted tweets', 
     assert.ok(Array.isArray(hidden));
     assert.equal(hidden.length, 1);
     assert.equal(hidden[0].embeds.length, 1);
+});
+
+test('twitter extract: inline summary stays marked as shared content after image splitting', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: manyImages(11), qrtURL: 'https://twitter.com/a/status/2' }),
+        2: createTweet('2'),
+    });
+    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true, twitter_quote_mode: 'summary', twitter_quote_layout: 'inline', quote_repost_do_not_extract: false,
+    });
+    assert.equal(steps.length, 2);
+    assert.equal(steps[0].twitterGrid.embedEnd, 1);
+    assert.equal(steps[0].twitterGridSharedInline, true);
+    assert.match(steps[0].embeds[1].title, /^Quoted tweet:/);
+});
+
+test('twitter extract: a video-only continuation remains part of the physical group', async () => {
+    const images = manyImages(9), videos = ['https://video.twimg.com/ext_tw_video/123/1.mp4', 'https://video.twimg.com/ext_tw_video/123/2.mp4'];
+    const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: [...images, ...videos] }) });
+    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
+    assert.equal(steps.length, 2);
+    assert.deepEqual(steps[0].twitterGrid.imageUrls, images);
+    assert.deepEqual(steps[1].twitterGrid, { imageUrls: [], sequence: 1, totalParts: 2 });
+    assert.deepEqual(steps[1].files, [videos[1]]);
 });
 
 test('twitter extract: compact single-image tweet keeps bot embed image-free', async () => {

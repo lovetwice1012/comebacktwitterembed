@@ -26,8 +26,10 @@ test('real gallery row binds deletion to its verified webhook owner, not X foote
         assert.deepEqual(await cards.finish(item, db), { state: 'complete' });
         const interaction = { guildId, channelId, message, customId: 'delete', locale: 'ja', client: { user: { id: bot } }, user: { id: attacker },
             memberPermissions: { has: () => false }, channel: { messages: { fetch: async () => message } }, editReply: async () => {}, deleteReply: async () => {} };
-        await cards.withMessageLock(interaction, policy => del.handle(interaction, policy), db); assert.equal(deletions, 0);
+        const options = { action: 'delete', getSettings: async () => ({ enabled: true }),
+            freshAccess: async () => ({ channel: interaction.channel, member: { _roles: [] }, permissions: { has: () => false } }) };
+        await cards.withMessageLock(interaction, policy => del.handle(interaction, policy), db, options); assert.equal(deletions, 0);
         interaction.user.id = owner;
-        await cards.withMessageLock(interaction, policy => del.handle(interaction, policy), db); assert.equal(deletions, 1);
+        await cards.withMessageLock(interaction, policy => del.handle(interaction, policy), db, options); assert.equal(deletions, 1);
     } finally { await db.close(); }
 });

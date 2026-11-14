@@ -65,8 +65,8 @@ test('SQL rollback after Discord accepted both operations can be recovered using
         const settings = { enabled: true, defaultLanguage: 'ja', twitter_grid_replace_permission: 'restricted' };
         const part1 = { imageUrls: Array.from({ length: 10 }, (_, i) => img(i)), sequence: 0, totalParts: 2 }, part2 = { imageUrls: [img(10), img(11)], sequence: 1, totalParts: 2 };
         const prepared = await cards.prepare({ components: [], twitterGrid: part1 }, { guildId, channelId, author: { id: user } }, { providerId: 'twitter', presentationSettings: settings }, storage, { twitterGrid: part2 });
-        const attachment = (id, name) => ({ id: String(id), name, contentType: 'image/jpeg' });
-        const first = { id: '555555555555555555', author: { id: bot }, content: '', embeds: [{ title: '本文' }], components: prepared.step.components,
+        const attachment = (id, name) => ({ id: String(id), name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${channelId}/${id}/${name}` });
+        const first = { id: '555555555555555555', channelId, author: { id: bot }, content: '', embeds: [{ title: '本文' }], components: prepared.step.components,
             attachments: new Map(Array.from({ length: 10 }, (_, i) => [String(i), attachment(i, `photo${i}.jpg`)])) };
         const second = { id: '666666666666666666', author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map([['10', attachment(10, '10.jpg')], ['11', attachment(11, '11.jpg')]]) };
         assert.equal(await cards.bind(prepared.grids[0], first, storage, db), true); assert.equal(await cards.append(prepared.grids[0], part2, second, db), true);
@@ -170,8 +170,8 @@ test('three physical parts require every ordered ACK and safely resume a partial
             { providerId: 'twitter', presentationSettings: settings }, storage, [{ twitterGrid: lastMeta }]);
         assert.equal(prepared.grids.length, 1);
         const item = prepared.grids[0];
-        const attachment = (id, name) => ({ id: String(id), name, contentType: 'image/jpeg' });
-        const message = (id, start, count) => ({ id, author: { id: bot }, content: '', embeds: start ? [] : [{ title: '投稿本文' }],
+        const attachment = (id, name) => ({ id: String(id), name, contentType: 'image/jpeg', url: `https://cdn.discordapp.com/attachments/${channelId}/${id}/${name}` });
+        const message = (id, start, count) => ({ id, channelId, author: { id: bot }, content: '', embeds: start ? [] : [{ title: '投稿本文' }],
             components: start ? [] : prepared.step.components,
             attachments: new Map(Array.from({ length: count }, (_, n) => [String(start + n), attachment(start + n, `photo${start + n}.jpg`)])) });
         const first = message('555555555555555555', 0, 8), second = message('666666666666666666', 8, 8), third = message('777777777777777777', 16, 4);

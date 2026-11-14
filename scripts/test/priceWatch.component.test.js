@@ -47,9 +47,10 @@ test('all registration entry points enforce the correct provider button policy b
 test('button policy supports raw modal roles and private denial before acknowledgement', async t => {
     const settings = require('../../src/providers/_provider_settings');
     const { isAllowed } = require('../../src/components/_permissionCheck');
-    let policy = { user: [], channel: [], role: ['blocked'] };
+    const blocked = '888888888888888888'; let policy = { user: [], channel: [], role: [blocked] };
     t.mock.method(settings, 'getSetting', async (provider, key, guild) => { assert.equal(provider.id, 'steam'); assert.equal(key, 'button_disabled'); assert.equal(guild, 'guild'); return policy; });
-    const replies = [], interaction = { guildId: 'guild', channelId: 'channel', member: { roles: ['blocked'] }, user: { id: 'user' }, locale: 'ja', reply: async data => replies.push(data) };
+    const replies = [], interaction = { guildId: 'guild', channelId: 'channel', member: { roles: [blocked] }, user: { id: 'user' }, locale: 'ja', reply: async data => replies.push(data),
+        client: { rest: { get: async () => ({ user: { id: 'user' }, roles: interaction.member?.roles }) } } };
     assert.equal(await isAllowed(interaction, { providerId: 'steam' }), false);
     assert.equal(replies[0].ephemeral, true);
     interaction.member.roles = [];

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const gallery = require('../../src/mediaGallery'), cards = require('../../src/twitterGridCards'), grid = require('../../src/components/twitterGrid');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
-if (port !== 33621) throw Error('Explicit isolated DB port required');
+if (![33621, 33622].includes(port)) throw Error('Explicit isolated DB port required');
 const gid = '333333333333333333', cid = '444444444444444444', user = '111111111111111111', bot = '222222222222222222';
 const img = n => `https://pbs.twimg.com/media/photo${n}.jpg`;
 async function setup(db, { parentAttached = false, parentCount = 2 } = {}) {

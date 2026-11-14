@@ -64,13 +64,52 @@ function resolveReferences(refs, message, allowFallback = false) {
         if (ref.type !== 'attachment' || typeof ref.name !== 'string') throw new Error('GRID_REFERENCE_INVALID');
         const matches = attachments.filter(file => file.name === ref.name);
         const value = matches.length === 1 && /^image\/(jpeg|png|webp|avif)$/i.test(matches[0].contentType || '') ? matches[0].url : allowFallback ? ref.initialUrl : null;
-        require('./components/twitter-image-grid')._internal.validateUrl(value);
+        const parsed = require('./components/twitter-image-grid')._internal.validateUrl(value);
+        // A Discord attachment must refer to the same ID in the message and
+        // in its CDN path. Never map a same-named image from another message.
+        if (!['cdn.discordapp.com', 'media.discordapp.net'].includes(parsed.hostname)
+            || matches.length === 1 && parsed.pathname.split('/')[3] !== String(matches[0].id || '')) throw new Error('GRID_REFERENCE_INVALID');
         return value;
     });
 }
 function gridButton(id, language, quote) {
     const ja = String(language || 'ja').startsWith('ja');
     return { type: 2, style: 2, label: quote ? (ja ? `引用${quote}の画像をまとめる` : `Combine quote ${quote}`) : (ja ? '画像をまとめる' : 'Combine images'), custom_id: `tg:${id}:0:open` };
+}
+const LOCATOR_ACTIONS = new Set(['delete', 'translate', 'showMediaAsAttachments', 'showAttachmentsAsEmbedsImage']);
+function locatorIdFromAction(value) {
+    if (typeof value !== 'string') return null;
+    const match = /^(delete|translate|showMediaAsAttachments|showAttachmentsAsEmbedsImage):sl1:([a-f0-9]{32})$/.exec(value);
+    return match ? match[2] : null;
+}
+function attachActionLocator(step, galleryId) {
+    if (!Array.isArray(step.components) || !step.components.length) return step;
+    let changed = false;
+    const components = step.components.map(row => {
+        const value = plain(row);
+        return { ...value, components: (value.components || []).map(component => {
+            const id = component.custom_id || component.customId;
+            if (!LOCATOR_ACTIONS.has(id)) return component;
+            changed = true;
+            const next = { ...component, custom_id: `${id}:sl1:${galleryId}` };
+            delete next.customId;
+            return next;
+        }) };
+    });
+    return changed ? { ...step, components } : step;
+}
+function withoutUnlinkedActions(step) {
+    if (!Array.isArray(step.components)) return step;
+    let changed = false;
+    const components = step.components.map(row => {
+        const value = plain(row);
+        return { ...value, components: (value.components || []).filter(component => {
+            const id = component.custom_id || component.customId || '';
+            if (!LOCATOR_ACTIONS.has(String(id).split(':')[0])) return true;
+            changed = true; return false;
+        }) };
+    }).filter(row => row.components.length);
+    return changed ? { ...step, components } : step;
 }
 function attachmentList(message) {
     const items = message?.attachments;
@@ -87,7 +126,16 @@ function cleanEmbed(item) {
     }
     return out;
 }
-function embedFingerprint(item) { return createHash('sha256').update(JSON.stringify(cleanEmbed(item))).digest('hex'); }
+function embedFingerprint(item, message) {
+    const embed = cleanEmbed(item);
+    if (message && typeof message === 'object') for (const key of ['image', 'thumbnail']) {
+        if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message);
+    }
+    return createHash('sha256').update(JSON.stringify(embed)).digest('hex');
+}
+function matchesEmbedFingerprint(item, message, expected) {
+    return typeof expected === 'string' && (embedFingerprint(item, message) === expected || embedFingerprint(item) === expected);
+}
 function embedWitness(grid, message, part) {
     const embeds = message?.embeds || [], start = grid.embedStart, end = grid.embedEnd;
     if (!grid.sharedInline || !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > embeds.length) return null;
@@ -98,30 +146,43 @@ function embedWitness(grid, message, part) {
     const attached = grid.isPrimary && start === 0 && urls.length === 0 && part.containsNonImage !== true
         && attachments.length === part.imageUrls.length && attachments.every(file => /^\d{1,25}$/.test(String(file.id || '')) && String(file.contentType || '').startsWith('image/'));
     if (!embedded && !attached) return null;
-    return { hashes: entries.map(embedFingerprint), attachments: attached ? attachments.map(file => ({ id: String(file.id), name: String(file.name || '') })) : [] };
+    return { hashes: entries.map(entry => embedFingerprint(entry, message)), attachments: attached ? attachments.map(file => ({ id: String(file.id), name: String(file.name || '') })) : [] };
 }
-function fingerprint(message, omitImages = false) {
+function fingerprintValue(message, omitImages = false, legacy = false) {
     const embeds = (message?.embeds || []).map(cleanEmbed).map(embed => {
-        if (!omitImages) return embed;
-        delete embed.image;
+        if (omitImages) delete embed.image;
+        if (!legacy) for (const key of ['image', 'thumbnail']) {
+            if (embed[key]?.url) embed[key].url = require('./discordAttachmentIdentity').canonicalUrl(embed[key].url, message);
+        }
         return embed;
     }).filter(embed => !omitImages || Object.keys(embed).some(key => !['url', 'type', 'color'].includes(key)));
     const value = { content: message?.content || '', embeds, components: (message?.components || []).map(plain) };
     if (!omitImages) value.attachments = attachmentList(message).map(file => ({ id: String(file.id || ''), name: file.name || '' }));
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
+function fingerprint(message, omitImages = false) { return fingerprintValue(message, omitImages); }
+function legacyFingerprint(message, omitImages = false) { return fingerprintValue(message, omitImages, true); }
+function matchesFingerprint(message, expected, omitImages = false) {
+    return typeof expected === 'string' && (fingerprint(message, omitImages) === expected || legacyFingerprint(message, omitImages) === expected);
+}
 async function prepare(step, message, context, storage, nextStep) {
     const meta = step?.twitterGrid, guildId = message.guildId || message.guild?.id;
     if (context.providerId !== 'twitter' || !guildId) return { step };
     const settings = context.presentationSettings || {};
-    if (settings.button_invisible?.all || settings.button_invisible?.tg || (step.components || []).length >= 5) return { step };
+    const buttonEnabled = !settings.button_invisible?.all && !settings.button_invisible?.tg && (step.components || []).length < 5;
     storage ||= gallery.store();
     const candidates = [meta, ...(Array.isArray(step.twitterGridInline) ? step.twitterGridInline : [])];
     const grids = [], buttons = [];
-    let lockId = null;
-    const maxButtons = (5 - (step.components || []).length) * 5;
+    let lockId = null, persistentGroup = false;
+    const maxButtons = buttonEnabled ? (5 - (step.components || []).length) * 5 : 0;
     for (const [index, part] of candidates.entries()) {
-        if (buttons.length >= maxButtons || !validPart(part) || part.sequence !== 0 || part.totalParts === 1 && part.imageUrls.length < 2) continue;
+        if (index > 0 && meta?.totalParts > 1 && !lockId) continue;
+        if (!validPart(part) || part.sequence !== 0 || part.totalParts === 1 && part.imageUrls.length < 2) continue;
+        // The primary multipart group also needs a record when the combine
+        // control is hidden or no component row is available. Existing card
+        // actions must not treat its continuation as an unrelated message.
+        const canRecordHeadless = index === 0 && part.totalParts > 1;
+        if (buttons.length >= maxButtons && !canRecordHeadless) continue;
         const firstRefs = references(part, step, context);
         const following = Array.isArray(nextStep) ? nextStep : nextStep ? [nextStep] : [];
         const otherParts = [];
@@ -137,16 +198,20 @@ async function prepare(step, message, context, storage, nextStep) {
             if (otherParts.length !== part.totalParts - 1) continue;
         }
         if (!firstRefs) continue;
-        // Saved-post URLs must be mapped to the actual Discord attachment IDs
-        // after every part succeeds. Do not expose a control until that can be
-        // published without racing existing message actions.
-        if ([...firstRefs, ...otherParts.flatMap(item => item.refs)].some(ref => ref.type === 'attachment')) continue;
-        const id = randomBytes(16).toString('hex');
+        // Saved-post attachments may be mapped after delivery for a headless
+        // record, but a visible combine control must not race that binding.
+        const hasSavedAttachments = [...firstRefs, ...otherParts.flatMap(item => item.refs)].some(ref => ref.type === 'attachment');
         const expectedImageUrls = [...part.imageUrls, ...otherParts.flatMap(item => item.metadata.imageUrls)];
-        if (expectedImageUrls.length < 2 || expectedImageUrls.length > 20) continue;
-        const payload = { id, kind: 'twitter-image-grid-v1', imageUrls: [], expectedImageUrls,
+        const showButton = buttons.length < maxButtons && !hasSavedAttachments && expectedImageUrls.length >= 2;
+        if (!showButton && !canRecordHeadless) continue;
+        const id = randomBytes(16).toString('hex');
+        if (expectedImageUrls.length > 20) continue;
+        const sourceEmbed = (step.embeds || [])[Number.isInteger(part.embedStart) ? part.embedStart : 0];
+        const sourceStatusId = require('./providers/twitter/twitterSourceParser/fxTwitter')._internal.statusIdentity(sourceEmbed?.url);
+        const payload = { id, kind: 'twitter-image-grid-v1', ...(sourceStatusId ? { sourceStatusId } : {}), imageUrls: [], expectedImageUrls,
             expectedRefs: [...firstRefs, ...otherParts.flatMap(item => item.refs)], initialImageUrls: [...part.imageUrls],
-            isPrimary: index === 0, totalParts: part.totalParts, completedParts: 0, messageIds: [], partSizes: [],
+            isPrimary: index === 0, ...(showButton ? {} : { headless: true }), ...(canRecordHeadless || persistentGroup ? { persistentParts: true } : {}),
+            totalParts: part.totalParts, completedParts: 0, messageIds: [], partSizes: [],
             partContainsNonImage: [], partSignatures: [], firstStaticSignature: null,
             partsState: 'pending', pendingAtMs: null,
             sharedInline: step.twitterGridSharedInline === true || Array.isArray(step.twitterGridInline) && step.twitterGridInline.length > 0,
@@ -156,13 +221,21 @@ async function prepare(step, message, context, storage, nextStep) {
             partRefs: [],
             requesterId: /^\d{16,22}$/.test(String(context.gridRequesterId || '')) ? String(context.gridRequesterId) : String(message.author?.id || message.user?.id || ''),
             nsfw: isNsfwChannel(message), nsfwContextVersion: 1, settingsHash: safetyHash(settings) };
-        try { await storage.save(payload, message, 'twitter'); lockId ||= id; grids.push(payload); buttons.push(gridButton(id, settings.defaultLanguage, index)); }
+        try {
+            await storage.save(payload, message, 'twitter');
+            lockId ||= id;
+            if (canRecordHeadless) persistentGroup = true;
+            grids.push(payload);
+            if (showButton) buttons.push(gridButton(id, settings.defaultLanguage, index));
+        }
         catch (error) { gallery.report(error); }
     }
-    if (!buttons.length) return { step };
-    const rows = [...(step.components || [])];
+    const primary = grids.find(grid => grid.isPrimary && grid.persistentParts);
+    const located = primary ? attachActionLocator(step, primary.id) : meta?.totalParts > 1 ? withoutUnlinkedActions(step) : step;
+    if (!buttons.length) return grids.length ? { step: located, grids } : { step: located };
+    const rows = [...(located.components || [])];
     for (let i = 0; i < buttons.length; i += 5) rows.push({ type: 1, components: buttons.slice(i, i + 5) });
-    return { step: { ...step, components: rows }, grids };
+    return { step: { ...located, components: rows }, grids };
 }
 function physicalPart(part) {
     return part && Array.isArray(part.imageUrls) && part.imageUrls.length <= 10
@@ -178,13 +251,15 @@ function expectedNext(grid, part) {
 async function bind(grid, sent, storage = gallery.store(), db = require('./db'), actualFirstPart) {
     if (!grid || !sent?.id) return false;
     const part = actualFirstPart || { imageUrls: grid.initialImageUrls };
-    if (!physicalPart(part) || !expectedNext(grid, part) || grid.completedParts !== 0 || grid.messageIds.length !== 0) return false;
+    if (!physicalPart(part) || !expectedNext(grid, part) || Number.isInteger(part.sequence) && part.sequence !== 0
+        || grid.completedParts !== 0 || grid.messageIds.length !== 0) return false;
     const refs = grid.expectedRefs.slice(0, part.imageUrls.length);
     let urls;
     try { urls = resolveReferences(refs, sent); } catch { return false; }
-    await storage.bind(grid.id, sent.id);
+    await storage.bind(grid.id, sent.id, grid.persistentParts === true);
     const actualRefs = refs.map((ref, n) => ref.type === 'attachment' ? { ...ref, initialUrl: urls[n] } : ref);
     const next = { ...grid, imageUrls: [...part.imageUrls], partRefs: [actualRefs], completedParts: 1,
+        totalParts: Math.max(grid.totalParts, Number.isInteger(part.totalParts) ? part.totalParts : 1),
         partSizes: [part.imageUrls.length], partContainsNonImage: [part.containsNonImage === true],
         messageIds: [String(sent.id)], partSignatures: [fingerprint(sent)], firstStaticSignature: fingerprint(sent, true),
         embedWitness: embedWitness(grid, sent, part), pendingAtMs: Date.now() };
@@ -195,7 +270,8 @@ async function bind(grid, sent, storage = gallery.store(), db = require('./db'),
     return true;
 }
 async function append(grid, part, sent, db = require('./db')) {
-    if (!grid || !sent?.id || !physicalPart(part) || part.imageUrls.length === 0 || !expectedNext(grid, part)
+    if (!grid || !sent?.id || !physicalPart(part) || !expectedNext(grid, part)
+        || Number.isInteger(part.sequence) && part.sequence !== grid.completedParts
         || grid.partsState !== 'pending' || grid.completedParts >= 20 || grid.messageIds.length !== grid.completedParts
         || grid.messageIds.includes(String(sent.id))) return false;
     const refs = grid.expectedRefs.slice(grid.imageUrls.length, grid.imageUrls.length + part.imageUrls.length);
@@ -204,7 +280,8 @@ async function append(grid, part, sent, db = require('./db')) {
     const actualRefs = refs.map((ref, n) => ref.type === 'attachment' ? { ...ref, initialUrl: urls[n] } : ref);
     const completed = grid.completedParts + 1;
     const next = { ...grid, partRefs: [...grid.partRefs, actualRefs], imageUrls: [...grid.imageUrls, ...part.imageUrls], completedParts: completed,
-        totalParts: Math.max(grid.totalParts, completed + 1),
+        totalParts: Math.max(grid.totalParts, Number.isInteger(part.totalParts) ? part.totalParts : completed,
+            completed + Number(grid.imageUrls.length + part.imageUrls.length < grid.expectedImageUrls.length)),
         messageIds: [...grid.messageIds, String(sent.id)], partSizes: [...grid.partSizes, part.imageUrls.length],
         partContainsNonImage: [...grid.partContainsNonImage, part.containsNonImage === true],
         partSignatures: [...grid.partSignatures, fingerprint(sent)] };
@@ -214,7 +291,7 @@ async function append(grid, part, sent, db = require('./db')) {
     Object.assign(grid, next); return true;
 }
 async function finish(grid, db = require('./db')) {
-    if (!grid || grid.partsState !== 'pending' || !Array.isArray(grid.expectedImageUrls) || grid.expectedImageUrls.length < 2
+    if (!grid || grid.partsState !== 'pending' || !Array.isArray(grid.expectedImageUrls) || grid.expectedImageUrls.length < (grid.headless ? 0 : 2)
         || grid.expectedImageUrls.length > 20 || !Array.isArray(grid.imageUrls) || grid.imageUrls.length > grid.expectedImageUrls.length
         || grid.imageUrls.some((url, index) => url !== grid.expectedImageUrls[index])
         || grid.completedParts < 1 || grid.completedParts > 20 || grid.messageIds.length !== grid.completedParts
@@ -222,7 +299,7 @@ async function finish(grid, db = require('./db')) {
         || grid.partSizes.length !== grid.completedParts || grid.partContainsNonImage.length !== grid.completedParts
         || grid.partSignatures.length !== grid.completedParts || grid.partSizes.reduce((sum, count) => sum + count, 0) !== grid.imageUrls.length)
         throw new Error('GRID_MANIFEST_INVALID');
-    if (grid.imageUrls.length < grid.expectedImageUrls.length) return { state: 'pending' };
+    if (grid.imageUrls.length < grid.expectedImageUrls.length || grid.completedParts < grid.totalParts) return { state: 'pending' };
     const next = { ...grid, totalParts: grid.completedParts, partsState: 'complete' };
     const result = await db.queryDatabase('UPDATE bot_media_galleries SET payload_json=? WHERE gallery_id=? AND message_id=? AND BINARY payload_json=BINARY ?',
         [JSON.stringify(next), grid.id, grid.messageIds[0], JSON.stringify(grid)]);
@@ -262,50 +339,178 @@ function gridIdFromMessage(message) {
     }
     return null;
 }
-async function withMessageLock(interaction, work, db = require('./db'), confirmation = null) {
-    const id = gridIdFromMessage(interaction.message);
-    if (!id || !interaction.guildId || !interaction.channelId) return work();
-    const messageId = String(interaction.message.id || ''), before = fingerprint(interaction.message);
-    return db.withDatabaseTransaction(async query => {
-        const rows = await query('SELECT message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? LIMIT 1',
-            [id, interaction.guildId, interaction.channelId]);
-        if (!rows[0]) throw new Error('GRID_LOCK_UNAVAILABLE');
-        const payload = JSON.parse(rows[0].payload_json);
-        if (payload.kind !== 'twitter-image-grid-v1' || !/^[a-f0-9]{32}$/.test(payload.lockId || '') || String(rows[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
-        const locks = await query('SELECT message_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? FOR UPDATE',
-            [payload.lockId, interaction.guildId, interaction.channelId]);
-        if (!locks[0]) throw new Error('GRID_LOCK_UNAVAILABLE');
-        if (String(locks[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
-        // Until the group-wide controls are available, never run a legacy
-        // action that can edit or delete only one message of a split post.
-        const latest = await query('SELECT message_id,payload_json FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
-            [id, interaction.guildId, interaction.channelId, Date.now()]);
-        if (!latest[0] || String(latest[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
-        const saved = JSON.parse(latest[0].payload_json);
-        if (saved.id !== id || saved.kind !== 'twitter-image-grid-v1' || saved.lockId !== payload.lockId
-            || !Number.isInteger(saved.totalParts) || saved.totalParts < 1 || saved.totalParts > 20) throw new Error('GRID_LOCK_UNAVAILABLE');
-        const action = String(confirmation?.actionId || interaction.customId || '').split(':')[0];
-        if (saved.totalParts > 1 && ['delete', 'showMediaAsAttachments', 'showAttachmentsAsEmbedsImage'].includes(action))
-            throw new Error('GRID_SPLIT_ACTION_PAUSED');
-        if (confirmation) {
-            if (id !== confirmation.galleryId
-                || saved.partsState && saved.partsState !== 'complete' || saved.replacePhase && saved.replacePhase !== 'done'
-                || saved.completedParts !== saved.totalParts || !Array.isArray(saved.messageIds)
-                || saved.messageIds[0] !== messageId || saved.messageIds.length !== saved.totalParts
-                || new Set(saved.messageIds).size !== saved.messageIds.length) throw new Error('GRID_LOCK_UNAVAILABLE');
-        }
-        if (confirmation?.revalidate) await confirmation.revalidate();
-        const current = await (confirmation?.channel || interaction.channel).messages.fetch({ message: messageId, force: true });
-        if (current?.author?.id !== interaction.client?.user?.id || String(current.id || '') !== messageId) throw new Error('GRID_SOURCE_CHANGED');
-        if (fingerprint(current) !== before) throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { code: 'GRID_SNAPSHOT_MISMATCH' });
-        if (confirmation && (fingerprint(current) !== confirmation.expectedFingerprint || gridIdFromMessage(current) !== id
-            || !require('./components/twitterGridConfirm')._internal.buttonExists(current, confirmation.actionId))) throw new Error('GRID_SOURCE_CHANGED');
-        if (confirmation?.deadlineCheck && !confirmation.deadlineCheck()) throw new Error('GRID_SOURCE_CHANGED');
-        interaction.message = current;
-        const policy = {};
-        if (action === 'delete') policy.verifiedRequesterId = saved.requesterId || null;
-        if (saved.totalParts > 1 && action === 'translate') policy.previewOnlyTranslation = true;
-        return work(Object.keys(policy).length ? policy : undefined);
-    });
+function sourceProvider(message) {
+    return require('./providerIdentity').detectProviderIdFromMessage(message);
 }
-module.exports = { safetyHash, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, embedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, withMessageLock };
+const localLocks = new Map();
+async function withLocalLock(key, work) {
+    let state = localLocks.get(key);
+    if (!state) { state = { tail: Promise.resolve(), count: 0 }; localLocks.set(key, state); }
+    if (state.count >= 8) throw new Error('GRID_LOCK_UNAVAILABLE');
+    const previous = state.tail;
+    let release = () => {}, timer;
+    const turn = new Promise(resolve => { release = () => resolve(undefined); });
+    state.tail = previous.then(() => turn);
+    state.count++;
+    try {
+        await Promise.race([previous, new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('GRID_LOCK_UNAVAILABLE')), 20000);
+            timer.unref?.();
+        })]);
+        return await work();
+    } finally {
+        clearTimeout(timer); release(); state.count--;
+        if (!state.count && localLocks.get(key) === state) localLocks.delete(key);
+    }
+}
+// Shared exclusion for restoration and legacy controls. Callers must still
+// validate current Discord messages and permissions, and persist any intent
+// on an independent connection before making an external change.
+async function withGalleryLock(scope, work, db = require('./db')) {
+    const { galleryId, guildId, channelId, messageId } = scope || {};
+    if (!/^[a-f0-9]{32}$/.test(galleryId || '')
+        || ![guildId, channelId, messageId].every(value => /^\d{1,25}$/.test(String(value || ''))))
+        throw new Error('GRID_LOCK_UNAVAILABLE');
+    return withLocalLock(`${guildId}:${channelId}:${messageId}`, () => db.withDatabaseTransaction(async query => {
+        const initial = await query('SELECT message_id,payload_json,provider_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? LIMIT 1',
+            [galleryId, guildId, channelId, Date.now()]);
+        if (!initial[0] || initial[0].provider_id !== 'twitter' || String(initial[0].message_id) !== String(messageId)) throw new Error('GRID_LOCK_UNAVAILABLE');
+        let first; try { first = JSON.parse(initial[0].payload_json); } catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+        if (first.kind !== 'twitter-image-grid-v1' || first.id !== galleryId || !/^[a-f0-9]{32}$/.test(first.lockId || ''))
+            throw new Error('GRID_LOCK_UNAVAILABLE');
+        const roots = await query('SELECT message_id,provider_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
+            [first.lockId, guildId, channelId, Date.now()]);
+        if (!roots[0] || roots[0].provider_id !== 'twitter' || String(roots[0].message_id) !== String(messageId)) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const rows = await query('SELECT * FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? AND expires_at_ms>? FOR UPDATE',
+            [galleryId, guildId, channelId, Date.now()]);
+        if (!rows[0] || rows[0].provider_id !== 'twitter' || String(rows[0].message_id) !== String(messageId)) throw new Error('GRID_LOCK_UNAVAILABLE');
+        let payload; try { payload = JSON.parse(rows[0].payload_json); } catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+        if (payload.kind !== 'twitter-image-grid-v1' || payload.id !== galleryId || payload.lockId !== first.lockId)
+            throw new Error('GRID_LOCK_UNAVAILABLE');
+        if (typeof db.queryDatabaseIndependent !== 'function') throw new Error('GRID_LOCK_UNAVAILABLE');
+        const journals = await db.queryDatabaseIndependent('SELECT operation_id,payload_json,guild_id,channel_id,message_id FROM bot_twitter_grid_action_intents WHERE gallery_id=? LIMIT 1', [payload.lockId]);
+        let journal = null;
+        if (journals[0]) {
+            try { journal = { operationId: journals[0].operation_id, payload: JSON.parse(journals[0].payload_json),
+                guildId: String(journals[0].guild_id), channelId: String(journals[0].channel_id), messageId: String(journals[0].message_id) }; }
+            catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+        }
+        return work({ query, db, row: rows[0], payload, journal, scope: { galleryId, guildId, channelId, messageId }, lockId: payload.lockId });
+    }));
+}
+async function withMessageLock(interaction, work, db = require('./db'), options = {}) {
+    const visibleId = gridIdFromMessage(interaction.message);
+    const locatorId = locatorIdFromAction(interaction.customId);
+    if (typeof interaction.customId === 'string' && interaction.customId.includes(':sl1:') && !locatorId)
+        throw new Error('GRID_LOCK_UNAVAILABLE');
+    if (!interaction.guildId || !interaction.channelId || !visibleId && !locatorId && !options.action) return work();
+    const messageId = String(interaction.message.id || ''), before = fingerprint(interaction.message);
+    if (!visibleId && !locatorId) {
+        let provider = sourceProvider(interaction.message);
+        if (!provider) {
+            if (!interaction.channel?.messages?.fetch) throw new Error('GRID_LOCK_UNAVAILABLE');
+            try {
+                const latest = await interaction.channel.messages.fetch({ message: messageId, force: true });
+                if (latest?.author?.id === interaction.client?.user?.id) provider = sourceProvider(latest);
+            } catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+            if (!provider) throw new Error('GRID_LOCK_UNAVAILABLE');
+        }
+        if (provider !== 'twitter') return work();
+    }
+    const result = await withLocalLock(`${interaction.guildId}:${interaction.channelId}:${messageId}`, async () => {
+    let headlessId;
+    if (!visibleId && !locatorId) {
+        let candidates;
+        try {
+            candidates = await db.queryDatabase('SELECT gallery_id,payload_json FROM bot_media_galleries FORCE INDEX (idx_media_galleries_locator) WHERE guild_id=? AND channel_id=? AND message_id=? AND provider_id=? AND expires_at_ms>?',
+                [interaction.guildId, interaction.channelId, messageId, 'twitter', Date.now()]);
+        } catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+        const matching = [];
+        for (const candidate of candidates) {
+            let data; try { data = JSON.parse(candidate.payload_json); } catch { throw new Error('GRID_LOCK_UNAVAILABLE'); }
+            // Gateway snapshots may omit the grid button even for a visible
+            // gallery. The bound message ID, scope and primary row identify
+            // it without guessing at neighboring posts.
+            if (data.kind === 'twitter-image-grid-v1' && data.isPrimary === true) matching.push(candidate.gallery_id);
+        }
+        if (!matching.length) return work();
+        if (matching.length !== 1) throw new Error('GRID_LOCK_UNAVAILABLE');
+        [headlessId] = matching;
+    }
+    return db.withDatabaseTransaction(async query => {
+        let id = locatorId || visibleId || headlessId;
+        const rows = await query('SELECT message_id,payload_json,provider_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? LIMIT 1',
+            [id, interaction.guildId, interaction.channelId]);
+        // If all saved metadata is already gone, no grid edit can begin.
+        if (!rows[0] || rows[0].provider_id !== 'twitter') throw new Error('GRID_LOCK_UNAVAILABLE');
+        let payload = JSON.parse(rows[0].payload_json);
+        if (payload.kind !== 'twitter-image-grid-v1' || !/^[a-f0-9]{32}$/.test(payload.lockId || '') || String(rows[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const locks = await query('SELECT message_id,payload_json,provider_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? FOR UPDATE',
+            [payload.lockId, interaction.guildId, interaction.channelId]);
+        if (!locks[0] || locks[0].provider_id !== 'twitter') throw new Error('GRID_LOCK_UNAVAILABLE');
+        if (String(locks[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const lockId = payload.lockId;
+        // A quoted image group can have the only visible grid button while
+        // the actual split parent is recorded headlessly. Legacy actions
+        // operate on the shared post, so resolve its primary group first.
+        if (options.action && locks[0].payload_json) {
+            const root = JSON.parse(locks[0].payload_json);
+            if (root.kind === 'twitter-image-grid-v1' && root.id === lockId && root.isPrimary === true) id = lockId;
+        }
+        const refreshed = await query('SELECT message_id,payload_json,provider_id FROM bot_media_galleries WHERE gallery_id=? AND guild_id=? AND channel_id=? FOR UPDATE',
+            [id, interaction.guildId, interaction.channelId]);
+        if (!refreshed[0] || refreshed[0].provider_id !== 'twitter' || String(refreshed[0].message_id || '') !== messageId) throw new Error('GRID_LOCK_UNAVAILABLE');
+        payload = JSON.parse(refreshed[0].payload_json);
+        if (payload.kind !== 'twitter-image-grid-v1' || payload.id !== id || payload.lockId !== lockId) throw new Error('GRID_LOCK_UNAVAILABLE');
+        const legacy = require('./twitterGridLegacyActions');
+        const recovered = options.action ? await legacy.recover({ interaction, payload, query, db }) : null;
+        if (options.revalidate) await options.revalidate();
+        const current = await (options.channel || interaction.channel).messages.fetch({ message: messageId, force: true });
+        if (current?.author?.id !== interaction.client?.user?.id || visibleId && gridIdFromMessage(current) !== visibleId) throw new Error('GRID_SOURCE_CHANGED');
+        if (!options.action && fingerprint(current) !== before) throw new Error('GRID_SOURCE_CHANGED');
+        if (recovered && recovered.action !== options.action) return { error: new Error('GRID_OPERATION_RECOVERED'), intent: recovered, safeClear: true };
+        if (recovered && recovered.action === options.action && recovered.steps.some(step => step.type === 'edit' && step.index === 0)) {
+            await interaction.editReply({ content: String(interaction.locale || '').startsWith('ja') ? '投稿の表示を更新しました。' : 'The post display was updated.', ephemeral: true });
+            return { intent: recovered };
+        }
+        const actionId = options.actionId || interaction.customId || options.action;
+        if (options.action && !require('./components/twitterGridConfirm')._internal.buttonExists(current, actionId)) throw new Error('GRID_SOURCE_CHANGED');
+        const currentSignature = fingerprint(current);
+        let isOriginal = matchesFingerprint(current, payload.partSignatures?.[0]);
+        const marker = attachmentList(current).some(file => new RegExp(`^tg-${id}\\.(jpg|png|webp)$`).test(file.name || ''));
+        let isReplaced = marker && matchesFingerprint(current, payload.firstStaticSignature, true);
+        if (!isOriginal && !isReplaced && payload.sharedInline) {
+            const reconciled = await require('./components/twitterGrid')._internal.reconcileSibling(interaction,
+                { ...refreshed[0], payload }, { db, freshAccess: options.freshAccess, getSettings: options.getSettings });
+            if (reconciled) {
+                payload = reconciled.payload;
+                isOriginal = matchesFingerprint(current, payload.partSignatures?.[0]);
+                isReplaced = marker && matchesFingerprint(current, payload.firstStaticSignature, true);
+            }
+        }
+        if (!isOriginal && !isReplaced) throw new Error('GRID_SOURCE_CHANGED');
+        if (options.expectedFingerprint) {
+            if (options.galleryId !== id || currentSignature !== options.expectedFingerprint) throw new Error('GRID_SOURCE_CHANGED');
+        } else if (before !== currentSignature) {
+            throw Object.assign(new Error('GRID_SOURCE_CHANGED'), { code: 'GRID_SNAPSHOT_MISMATCH', galleryId: id });
+        }
+        // A gateway interaction can contain a partial/stale representation of
+        // the message. All following operations use the verified REST copy.
+        interaction.message = current;
+        if (options.expiresAt && (options.now || Date.now)() >= options.expiresAt) throw new Error('GRID_SOURCE_CHANGED');
+        if (options.getButtons) options.buttons = options.getButtons();
+        const action = options.action;
+        if (action && ['delete', 'showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate'].includes(action)) {
+            return legacy.run({ interaction, current, payload, query, work, options, db, recovered });
+        }
+        return { value: await work() };
+    });
+    });
+    if ((!result?.error || result.safeClear) && result?.intent && typeof db.queryDatabaseIndependent === 'function') {
+        await db.queryDatabaseIndependent('DELETE FROM bot_twitter_grid_action_intents WHERE gallery_id=? AND operation_id=?',
+            [result.intent.lockId, result.intent.operationId]);
+    }
+    if (result?.error) throw result.error;
+    return result?.value;
+}
+module.exports = { safetyHash, validPart, references, resolveReferences, prepare, bind, append, finish, markIncomplete, discardUnbound, gridButton, fingerprint, legacyFingerprint, matchesFingerprint, embedFingerprint, matchesEmbedFingerprint, attachmentList, cleanEmbed, gridIdFromMessage, locatorIdFromAction, withMessageLock, withGalleryLock };

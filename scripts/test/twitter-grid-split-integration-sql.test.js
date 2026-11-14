@@ -54,6 +54,96 @@ function sourceSteps(urls) {
         twitterGrid: { imageUrls: urls.slice(10), sequence: 1, totalParts: 2 } }];
 }
 
+function splitProviderOutput(step, tweet) {
+    const filename = require.resolve('../../src/providers/twitter'), actual = createRequire(filename), mod = { exports: {} };
+    const source = readFileSync(filename, 'utf8') + '\nmodule.exports.__testSplit = splitMediaSteps;';
+    compileFunction(source, ['require', 'module', 'exports'], { filename })(actual, mod, mod.exports);
+    return mod.exports.__testSplit(step, tweet);
+}
+test('spoiler-bearing split output tracks physical messages without saving image URLs or exposing a grid', { timeout: 60000 }, async () => {
+    const accepted = [], messages = new Map(); let counter = 0;
+    const send = async payload => {
+        const id = String(555555555555555550n + BigInt(++counter));
+        const result = { id, channelId, guildId, author: { id: bot }, content: payload.content || '', embeds: payload.embeds || [],
+            components: payload.components || [], attachments: new Map((payload.files || []).map((file, index) => {
+                const attachment = { id: String(BigInt(id) * 100n + BigInt(index)), name: file.name, contentType: 'image/jpeg' };
+                return [attachment.id, attachment];
+            })) };
+        result.delete = async () => messages.delete(id);
+        messages.set(id, result); accepted.push(result); return result;
+    };
+    const f = await setup(send);
+    try {
+        const urls = Array.from({ length: 11 }, (_, index) => `https://pbs.twimg.com/media/secret${index}.jpg`);
+        const files = urls.map((url, index) => ({ attachment: url, name: `SPOILER_photo${index}.jpg`, spoiler: true }));
+        const step = { files, embeds: [{ title: 'source', url: 'https://x.com/u/status/1',
+            author: { name: `展開者: requester(id:${owner})` } }], components: [{ type: 1, components: [{ type: 2, custom_id: 'delete' }] }], send: 'channel' };
+        const parts = splitProviderOutput(step, { mediaURLs: urls });
+        assert.equal(parts.length, 2);
+        assert.ok(parts.every(part => part.twitterGrid.imageUrls.length === 0));
+        const result = await f.run(parts), row = await f.storage.get(f.saved.at(-1).id, guildId, channelId);
+        assert.equal(result.outcome, 'F'); assert.equal(row.payload.headless, true); assert.equal(row.payload.partsState, 'complete');
+        assert.deepEqual(row.payload.messageIds, accepted.map(message => message.id));
+        assert.ok(accepted.every(message => [...message.attachments.values()].every(file => file.name.startsWith('SPOILER_'))));
+        assert.deepEqual(row.payload.imageUrls, []); assert.deepEqual(row.payload.expectedImageUrls, []);
+        assert.ok(!JSON.stringify(row.payload).includes('pbs.twimg.com'));
+        assert.equal(cards.gridIdFromMessage(accepted[0]), null);
+        const interaction = { guildId, channelId, locale: 'ja', user: { id: owner }, client: { user: { id: bot } },
+            memberPermissions: { has: () => true }, customId: accepted[0].components[0].components[0].custom_id, message: accepted[0],
+            channel: { messages: { fetch: async ({ message }) => {
+                if (!messages.has(message)) throw Object.assign(Error('unknown message'), { code: 10008 });
+                return messages.get(message);
+            } } }, editReply: async () => {}, deleteReply: async () => {} };
+        const handler = require('../../src/components/delete');
+        await cards.withMessageLock(interaction, group => handler.handle(interaction, group), f.db,
+            { action: 'delete', freshAccess: async () => ({ permissions: { has: () => true }, member: { _roles: [] } }),
+                getSettings: async () => ({ enabled: true }) });
+        assert.equal(messages.size, 0);
+    } finally { await f.db.close(); }
+});
+
+test('text-only continuations are recorded without exposing hidden images', { timeout: 60000 }, async () => {
+    const accepted = []; let counter = 0;
+    const send = async payload => {
+        const id = String(555555555555555550n + BigInt(++counter));
+        const result = { id, channelId, author: { id: bot }, content: payload.content || '', embeds: payload.embeds || [],
+            components: payload.components || [], attachments: new Map() };
+        accepted.push(result); return result;
+    };
+    const f = await setup(send);
+    try {
+        const steps = [{ content: 'first list', embeds: [{ title: 'fixture' }], send: 'channel',
+            twitterGrid: { imageUrls: [], sequence: 0, totalParts: 2, embedStart: 0, embedEnd: 1 } },
+        { content: 'second list', send: 'channel', requiresPreviousSuccess: true,
+            twitterGrid: { imageUrls: [], sequence: 1, totalParts: 2 } }];
+        const result = await f.run(steps), row = await f.storage.get(f.saved.at(-1).id, guildId, channelId);
+        assert.equal(result.outcome, 'F'); assert.equal(row.payload.headless, true); assert.equal(row.payload.partsState, 'complete');
+        assert.deepEqual(row.payload.messageIds, accepted.map(message => message.id));
+        assert.deepEqual(row.payload.partSizes, [0, 0]); assert.deepEqual(row.payload.partContainsNonImage, [false, true]);
+        assert.deepEqual(row.payload.imageUrls, []);
+    } finally { await f.db.close(); }
+});
+test('a video-only post split after a definite 413 is recorded as one headless group', { timeout: 60000 }, async () => {
+    const accepted = []; let counter = 0;
+    const send = async payload => {
+        if (payload.files.length > 1) throw { status: 413 };
+        const id = String(555555555555555550n + BigInt(++counter));
+        const result = { id, channelId, author: { id: bot }, content: '', embeds: payload.embeds || [], components: payload.components || [],
+            attachments: new Map(payload.files.map((url, index) => [String(index), { id: `${id}${index}`, name: `v${index}.mp4`, contentType: 'video/mp4', url }])) };
+        accepted.push(result); return result;
+    };
+    const f = await setup(send);
+    try {
+        const videos = ['https://video.twimg.com/ext_tw_video/1/clip.mp4', 'https://video.twimg.com/ext_tw_video/2/clip.mp4'];
+        const steps = [{ files: videos, embeds: [{ title: 'fixture' }], send: 'channel',
+            twitterGrid: { imageUrls: [], sequence: 0, totalParts: 1, embedStart: 0, embedEnd: 1 } }];
+        const result = await f.run(steps), row = await f.storage.get(f.saved.at(-1).id, guildId, channelId);
+        assert.equal(result.outcome, 'F'); assert.equal(row.payload.headless, true); assert.equal(row.payload.partsState, 'complete');
+        assert.deepEqual(row.payload.messageIds, accepted.map(message => message.id));
+        assert.deepEqual(row.payload.partSizes, [0, 0]); assert.deepEqual(row.payload.partContainsNonImage, [true, true]);
+    } finally { await f.db.close(); }
+});
+
 test('real DB grid is complete only after every 413-split physical message is acknowledged', { timeout: 60000 }, async () => {
     let n = 0; const accepted = [], attempts = [];
     const send = async payload => {
@@ -140,7 +230,7 @@ test('413 split can start with video-only output without losing later photos or 
     } finally { await f.db.close(); }
 });
 
-test('a video-only middle split remains outside the complete photo group and is never a replacement target', { timeout: 60000 }, async () => {
+test('a video-only middle split is tracked but is never a replacement target', { timeout: 60000 }, async () => {
     let n = 0; const accepted = [];
     const send = async payload => {
         if (payload.files.length > 5) throw { status: 413 };
@@ -159,8 +249,9 @@ test('a video-only middle split remains outside the complete photo group and is 
         const result = await f.run(steps), row = await f.storage.get(f.saved.at(-1).id, guildId, channelId);
         assert.equal(result.outcome, 'F'); assert.equal(row.payload.partsState, 'complete');
         assert.deepEqual(row.payload.imageUrls, photos);
-        assert.deepEqual(row.payload.messageIds, [accepted[0].id, accepted[2].id, accepted[3].id]);
-        assert.ok(!row.payload.messageIds.includes(accepted[1].id));
+        assert.deepEqual(row.payload.messageIds, accepted.map(message => message.id));
+        assert.deepEqual(row.payload.partSizes, [5, 0, 5, 5]);
+        assert.deepEqual(row.payload.partContainsNonImage, [false, true, false, false]);
     } finally { await f.db.close(); }
 });
 

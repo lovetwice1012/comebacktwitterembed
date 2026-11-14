@@ -122,7 +122,7 @@ test('failed durable fence completion retains the legacy cutoff and retries with
 for (const complete of [true, false]) test(`actual ready lifecycle ${complete ? 'starts all workloads after the compatible fence upgrade' : 'keeps workloads stopped for incomplete linked BOOTH recovery'}`, async () => fixture(async f => {
     const readyPath = require.resolve('../../src/handlers/ready'), dbPath = require.resolve('../../src/db');
     const lifecycle = ['deregisterNotifier', 'statsPoster', 'consoleFlush', 'boothSaleNotifier', 'errorRateNotifier', 'mediaDeliveryServer', 'runtimeDiagnostics'].map(name => require.resolve(`../../src/lifecycle/${name}`));
-    const workers = ['../providers/autoWatch/runner', '../providers/priceWatch/runner', '../automation/runtime', '../personalLinks/runner'].map(name => require.resolve(`../../src/handlers/${name}`));
+    const workers = ['../providers/autoWatch/runner', '../providers/priceWatch/runner', '../automation/runtime', '../personalLinks/runner', '../twitterGridDeletedCleanup'].map(name => require.resolve(`../../src/handlers/${name}`));
     const ids = [readyPath, dbPath, ...lifecycle, ...workers], saved = new Map(ids.map(id => [id, require.cache[id]])), started = [];
     const stub = (id, exports) => { require.cache[id] = { id, filename: id, loaded: true, exports }; };
     try {

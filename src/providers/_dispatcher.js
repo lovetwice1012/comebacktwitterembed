@@ -142,7 +142,8 @@ function actualTwitterGridPart(step) {
     const part = step.twitterGrid;
     if (!part) return null;
     const photos = new Set(part.imageUrls || []);
-    return { ...part, containsNonImage: (step.files || []).some(file => !photos.has(twitterFileUrl(file))) };
+    return { ...part, containsNonImage: (step.files || []).some(file => !photos.has(twitterFileUrl(file)))
+        || part.sequence > 0 && !!(step.content || step.embeds?.length || step.components?.length) };
 }
 
 const FILE_FALLBACK_HTTP_STATUSES = new Set([400, 413, 415, 422]);
@@ -610,9 +611,9 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 }
             } else if (pendingTwitterGrid && step.twitterGrid?.sequence > 0) {
                 if (!withoutFiles) {
-                    // A video-only physical part is intentionally not added to
-                    // the photo group and must never be deleted by replacement.
-                    if (step.twitterGrid.imageUrls?.length) {
+                    // Preserve the physical message even if it has no
+                    // photographs; non-image contents stay separately marked.
+                    {
                         let recorded = false;
                         try { recorded = await require('../twitterGridCards').append(pendingTwitterGrid, actualTwitterGridPart(step), sent); }
                         catch (error) { require('../mediaGallery').report(error); }

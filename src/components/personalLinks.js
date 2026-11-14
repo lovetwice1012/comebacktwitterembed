@@ -4,6 +4,7 @@ const { getStore } = require('../personalLinks/store');
 const model = require('../personalLinks/model');
 const ui = require('../personalLinks/ui');
 const { isAllowed } = require('./_permissionCheck');
+const { TIMEOUT, beforeAck, replyTimeout } = require('./_ackDeadline');
 
 function input(id, label, value, maxLength, style = 1, required = false) {
     return { type: 1, components: [{ type: 4, custom_id: id, label, style, value: String(value || '').slice(0, maxLength), max_length: maxLength, required }] };
@@ -15,7 +16,7 @@ async function cardFor(interaction, id, owner, store) {
     if (!owner && interaction.message.id !== card.messageId) throw model.error('NOT_FOUND');
     if (owner) {
         if (!interaction.memberPermissions?.has?.(['ViewChannel', 'ReadMessageHistory'])) throw model.error('NOT_FOUND');
-        const source = await interaction.channel.messages.fetch({ message: card.messageId, force: true }).catch(() => null);
+        const source = await interaction.channel.messages.fetch({ message: card.messageId, force: true, cache: false }).catch(() => null);
         if (source?.author?.id !== interaction.client.user.id) throw model.error('CARD_EXPIRED');
     }
     return card;
@@ -47,7 +48,8 @@ async function handle(interaction, store = getStore()) {
     const modal = interaction.type === InteractionType.ModalSubmit;
     try {
         if (action === 'edit') {
-            const saved = await store.getSaved(interaction.user.id, id);
+            const saved = await beforeAck(interaction, () => store.getSaved(interaction.user.id, id));
+            if (saved === TIMEOUT) { await replyTimeout(interaction); return; }
             if (!saved) throw model.error('NOT_FOUND');
             await interaction.showModal({ custom_id: `personal:note:${id}`, title: ui.text(interaction.locale, 'タグ・メモの編集', 'Edit tags / note'),
                 components: [input('tags', ui.text(interaction.locale, 'タグ（カンマ区切り）', 'Tags (comma-separated)'), JSON.parse(saved.tags_json).join(', '), 410),
@@ -61,7 +63,8 @@ async function handle(interaction, store = getStore()) {
         }
         const customTime = action === 'time' && option === 'custom';
         if (!customTime) await interaction.deferReply({ ephemeral: true });
-        const card = await cardFor(interaction, id, owner, store);
+        const card = customTime ? await beforeAck(interaction, () => cardFor(interaction, id, owner, store)) : await cardFor(interaction, id, owner, store);
+        if (card === TIMEOUT) { await replyTimeout(interaction); return; }
         if (!await isAllowed(interaction, { providerId: card.providerId })) return;
         if (action === 'save') return await interaction.editReply(ui.savedReply(await store.save(interaction.user.id, card.entry), interaction.locale));
         if (action === 'remind') return await interaction.editReply(timeMenu(card, interaction));

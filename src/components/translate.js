@@ -69,18 +69,24 @@ async function handle(interaction, context = {}) {
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
     messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
-    if (context.previewOnlyTranslation) messageObject.content = String(interaction.locale || '').startsWith('ja')
-        ? '翻訳はこの画面に表示します。' : 'The translation is shown here.';
     await interaction.editReply(messageObject);
-    if (context.previewOnlyTranslation) return;
 
     const editOriginalIfTranslate = await getSetting({ id: providerId || 'twitter' }, 'editOriginalIfTranslate', interaction.guildId) === true;
 
     if (editOriginalIfTranslate) {
-        const attachmentUrls = getAttachmentUrls(interaction.message.attachments);
-        if (attachmentUrls.length > 0) messageObject.files = attachmentUrls;
+        const files = interaction.message.attachments;
+        const attachmentItems = !files ? [] : typeof files.values === 'function' ? [...files.values()] : Array.from(files);
+        // Reuse Discord attachment IDs. Reuploading already attached files
+        // duplicates them and may exceed the ten-attachment message limit.
+        if (attachmentItems.length && attachmentItems.every(file => /^\d{1,25}$/.test(String(file?.id || ''))))
+            messageObject.attachments = attachmentItems.map(file => ({ id: String(file.id) }));
+        else {
+            const attachmentUrls = getAttachmentUrls(files);
+            if (attachmentUrls.length > 0) messageObject.files = attachmentUrls;
+        }
         messageObject.components = interaction.message.components;
         messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
+        if (context.beforeTranslateEdit) await context.beforeTranslateEdit(messageObject);
         await interaction.message.edit(messageObject);
     }
 }

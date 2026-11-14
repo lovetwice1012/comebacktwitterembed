@@ -33,6 +33,7 @@ function getDbCredentials() {
 
 let _mysql = null;
 let _database = null;
+let _intentDatabase = null;
 
 function ensureDatabase() {
     if (_database) return _database;
@@ -92,6 +93,33 @@ async function queryDatabase(query, params = [], options = {}) {
     return ensureDatabase().query(query, params, options);
 }
 
+// Journals written from a message-lock transaction must survive rollback of
+// that transaction. Only use this for independent, separately keyed records.
+function ensureIntentDatabase() {
+    if (!_intentDatabase) {
+        if (!_mysql) _mysql = require('mysql');
+        _intentDatabase = createDatabasePool({
+            createPool: poolOptions => _mysql.createPool(poolOptions),
+            credentials: getDbCredentials(),
+            // A separate small pool prevents lock holders exhausting all main
+            // connections while waiting to commit their recovery journals.
+            env: { ...process.env, BOT_DB_CONNECTION_LIMIT: '2' },
+            onError: (error, errorOptions) => {
+                if (shouldLogDatabaseError(error, errorOptions)) console.error('[database]', databaseErrorDiagnostic(error));
+            },
+        });
+    }
+    return _intentDatabase;
+}
+
+async function queryDatabaseIndependent(query, params = [], options = {}) {
+    return transactionContext.exit(() => ensureIntentDatabase().query(query, params, options));
+}
+
+async function withIndependentTransaction(work) {
+    return transactionContext.exit(() => ensureIntentDatabase().withTransaction(work));
+}
+
 async function withDatabaseTransaction(work) {
     const transactionQuery = transactionContext.getStore();
     if (transactionQuery) return work(transactionQuery);
@@ -112,6 +140,9 @@ async function ensureUserExistsInDatabase(userId) {
 }
 
 async function closeDatabaseConnection() {
+    const intentDatabase = _intentDatabase;
+    _intentDatabase = null;
+    if (intentDatabase) await intentDatabase.close();
     if (!_database) return;
     const database = _database;
     _database = null;
@@ -121,6 +152,8 @@ async function closeDatabaseConnection() {
 module.exports = {
     connection,
     queryDatabase,
+    queryDatabaseIndependent,
+    withIndependentTransaction,
     withDatabaseTransaction,
     ensureUserExistsInDatabase,
     getDbCredentials,

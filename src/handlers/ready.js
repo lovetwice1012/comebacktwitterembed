@@ -39,6 +39,7 @@ async function initialize(readyClient, webhookClient, errorNotificationWebhookCl
     autoWatch.start(readyClient);
     priceWatch.start(readyClient);
     require('../personalLinks/runner').start(readyClient);
+    require('../twitterGridDeletedCleanup').start(readyClient);
 }
 
 function register(client, webhookClient, errorNotificationWebhookClient = webhookClient) {

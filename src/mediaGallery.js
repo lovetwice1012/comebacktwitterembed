@@ -84,8 +84,12 @@ function createStore(db = require('./db')) {
                 await db.queryDatabase('DELETE FROM bot_media_galleries WHERE expires_at_ms<? LIMIT 500', [Date.now()]);
             }
         },
-        async bind(id, messageId) {
-            await db.queryDatabase('UPDATE bot_media_galleries SET message_id=? WHERE gallery_id=?', [messageId, id]);
+        async bind(id, messageId, retainForPost = false) {
+            if (retainForPost) {
+                // Split-message locators remain useful for the lifetime of the
+                // post. Unbound/failed drafts retain their ordinary expiry.
+                await db.queryDatabase('UPDATE bot_media_galleries SET message_id=?,expires_at_ms=? WHERE gallery_id=?', [messageId, Number.MAX_SAFE_INTEGER, id]);
+            } else await db.queryDatabase('UPDATE bot_media_galleries SET message_id=? WHERE gallery_id=?', [messageId, id]);
         },
         async get(id, guildId, channelId) {
             const rows = await db.queryDatabase(`SELECT * FROM bot_media_galleries
@@ -128,4 +132,4 @@ function report(error) {
     require('./errorTracking').recordError(error, { source: 'mediaGallery', fallbackType: 'media_gallery_failed' });
 }
 
-module.exports = { pagesFor, settingsHash, controls, render, createStore, store, prepare, report };
+module.exports = { pagesFor, settingsHash, controls, render, createStore, store, prepare, report, RETENTION_MS };

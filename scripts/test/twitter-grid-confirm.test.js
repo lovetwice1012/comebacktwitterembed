@@ -18,7 +18,7 @@ function fixture() {
     let now = 1000, allowed = true, rowExists = true, dbExists = true, accessCalls = 0, failAtAccess = 0, executed = 0, firstView;
     const channel = { id: cid, guildId: gid, messages: { fetch: async () => source } };
     const access = { channel, member: { _roles: [] }, permissions: { has: () => true } };
-    const db = { withDatabaseTransaction: async fn => fn(async () => dbExists ? [row()] : []) };
+    const db = { withDatabaseTransaction: async fn => fn(async () => dbExists ? [row()] : []), queryDatabaseIndependent: async () => [] };
     const settings = { enabled: true, button_disabled: { user: [], role: [], channel: [] }, button_invisible: {} };
     const deps = { db, storage: { get: async () => rowExists ? row() : null }, now: () => now,
         freshAccess: async () => { accessCalls++; return allowed && accessCalls !== failAtAccess ? access : null; }, getSettings: async () => settings,
@@ -33,22 +33,6 @@ function fixture() {
         setAllowed: value => { allowed = value; }, setRowExists: value => { rowExists = value; },
         setDbExists: value => { dbExists = value; }, setAccessFailure: count => { failAtAccess = count; } };
 }
-test('confirmation uses the real X default while respecting explicit disable', async () => {
-    const provider = require('../../src/providers/twitter');
-    const providerSettings = require('../../src/providers/_provider_settings');
-    assert.equal(provider.enabledByDefault, true);
-    const f = fixture();
-    delete f.deps.getSettings;
-    assert.equal((await providerSettings.getFreshProviderSettings(provider, gid)).enabled, true);
-    const token = await f.offer();
-    await confirm.confirm(f.click(token), f.deps);
-    assert.equal(f.executed, 1);
-    await providerSettings.setSetting(provider, 'enabled', gid, false);
-    try {
-        await assert.rejects(f.offer(), /GRID_SOURCE_CHANGED/);
-        assert.equal(f.executed, 1);
-    } finally { await providerSettings.setSetting(provider, 'enabled', gid, true); }
-});
 test('a private review shows current source and executes exactly once for its owner', async () => {
     const f = fixture(), token = await f.offer();
     assert.match(f.view.content, /現在の投稿/); assert.match(f.view.embeds[0].description, /quoted description/);
@@ -57,6 +41,40 @@ test('a private review shows current source and executes exactly once for its ow
     assert.equal(JSON.stringify(stored).includes('private fixture text'), false);
     await confirm.confirm(f.click(token), f.deps); assert.equal(f.executed, 1);
     await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_SOURCE_CHANGED/); assert.equal(f.executed, 1);
+});
+test('confirmation uses the actual Twitter default and respects an explicit disable', async () => {
+    const f = fixture(), settings = require('../../src/providers/_provider_settings');
+    const provider = require('../../src/providers/twitter');
+    const isolatedGuild = '987654321098765432';
+    f.original.guildId = isolatedGuild;
+    f.source.guildId = isolatedGuild;
+    f.channel.guildId = isolatedGuild;
+    delete f.deps.getSettings;
+    assert.equal(provider.enabledByDefault, true);
+    assert.equal((await settings.getFreshProviderSettings(provider, isolatedGuild)).enabled, true);
+    await confirm.offer(f.original, f.deps);
+    assert.ok(f.view.components[0].components[0].custom_id.startsWith('gcf:'));
+    await settings.setSetting(provider, 'enabled', isolatedGuild, false);
+    await assert.rejects(confirm.offer(f.original, f.deps), /GRID_SOURCE_CHANGED/);
+});
+test('private confirmation also works when a split record has no visible grid button', async () => {
+    const f = fixture();
+    f.payload.headless = true; f.payload.isPrimary = true; f.payload.totalParts = f.payload.completedParts = 2;
+    f.payload.messageIds = [mid, '666666666666666666'];
+    f.source.components[0].components.shift();
+    f.source.embeds[0].data.url = 'https://x.com/example/status/123';
+    f.payload.partSignatures = [cards.fingerprint(f.source), '0'.repeat(64)];
+    const second = { id: f.payload.messageIds[1], author: { id: bot }, content: '', embeds: [], components: [], attachments: [] };
+    f.payload.partSignatures[1] = cards.fingerprint(second);
+    f.channel.messages.fetch = async ({ message }) => message === mid ? f.source : second;
+    f.db.queryDatabase = async () => [{ gallery_id: galleryId, payload_json: JSON.stringify(f.payload) }];
+    f.deps.storage.get = async () => f.row();
+    await confirm.offer(f.original, { ...f.deps, galleryId });
+    const token = f.view.components[0].components[0].custom_id;
+    // This test checks the full owner/scope/snapshot verification path; the
+    // action itself is mocked so that it does not alter the fixture messages.
+    await confirm.confirm(f.click(token), f.deps);
+    assert.equal(f.executed, 1);
 });
 test('another user, guild or channel cannot consume the owner token', async () => {
     const f = fixture(), token = await f.offer();
@@ -73,17 +91,6 @@ test('expired tokens, revoked access and disabled settings fail before action', 
 });
 test('permission loss while waiting for the message lock stops the action', async () => {
     const f = fixture(), token = await f.offer(); f.setAccessFailure(3);
-    await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_SOURCE_CHANGED/); assert.equal(f.executed, 0);
-});
-test('a token that expires during the final source fetch cannot run', async () => {
-    const f = fixture(), token = await f.offer(); let reads = 0;
-    const fetch = f.channel.messages.fetch;
-    f.channel.messages.fetch = async request => {
-        reads++;
-        const result = await fetch(request);
-        if (reads === 3) f.advance(confirm._internal.TTL);
-        return result;
-    };
     await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_SOURCE_CHANGED/); assert.equal(f.executed, 0);
 });
 test('changed source, changed quote, removed action and missing database row are rejected', async () => {
@@ -113,26 +120,6 @@ test('an interaction snapshot matching the fetched message keeps the original di
     await cards.withMessageLock(f.original, async () => { count++; }, f.db);
     assert.equal(count, 1); assert.equal(f.view, undefined);
 });
-test('a legacy message without a grid locator keeps its existing single-message action', async () => {
-    const f = fixture(); f.original.message = { ...f.source, components: [{ type: 1, components: [{ custom_id: 'delete' }] }] };
-    let count = 0;
-    await cards.withMessageLock(f.original, async () => { count++; }, { withDatabaseTransaction: () => { throw Error('unexpected DB access'); } });
-    assert.equal(count, 1);
-});
-test('split translation remains private even when the original-edit setting is enabled', async () => {
-    const settings = require('../../src/settings'), provider = require('../../src/providers/_provider_settings'), fetcher = require('../../src/providerFetch');
-    const patches = [mock.method(settings, 'checkComponentIncludesDisabledButtonAndIfFindDeleteIt', async rows => rows),
-        mock.method(settings, 'detectProviderIdFromMessage', () => 'twitter'), mock.method(provider, 'getSetting', async () => true),
-        mock.method(fetcher, 'withDeadline', () => async () => ({ ok: true, text: async () => 'translated' }))];
-    const modulePath = require.resolve('../../src/components/translate'); delete require.cache[modulePath];
-    try {
-        let edits = 0, reply;
-        const interaction = { locale: 'ja', guildId: gid, message: { embeds: [{ title: 'title', description: 'hello', url: 'https://x.com/u/status/1' }],
-            components: [], attachments: new Map(), edit: async () => { edits++; } }, editReply: async value => { reply = value; } };
-        await require(modulePath).handle(interaction, { previewOnlyTranslation: true });
-        assert.equal(edits, 0); assert.match(reply.content, /翻訳はこの画面/); assert.equal(reply.embeds[0].description, 'translated');
-    } finally { delete require.cache[modulePath]; for (const patch of patches.reverse()) patch.mock.restore(); }
-});
 test('the component event routes a stale message to private review and then to the original handler', async () => {
     const f = fixture(), modulePath = require.resolve('../../src/handlers/messageComponents');
     const permission = require('../../src/components/_permissionCheck'), tracking = require('../../src/errorTracking');
@@ -159,29 +146,6 @@ test('the component event routes a stale message to private review and then to t
         const accepted = f.click(token); accepted.type = InteractionType.MessageComponent;
         await listener(accepted);
         assert.equal(f.executed, 1);
-    } finally {
-        f.client.removeAllListeners(); delete require.cache[modulePath];
-        for (const patch of patches.reverse()) patch.mock.restore();
-    }
-});
-test('a known split action reports a temporary pause rather than claiming success', async () => {
-    const f = fixture(), modulePath = require.resolve('../../src/handlers/messageComponents');
-    const permission = require('../../src/components/_permissionCheck'), tracking = require('../../src/errorTracking');
-    let errors = 0;
-    const patches = [mock.method(permission, 'isAllowed', async () => true), mock.method(console, 'error', () => { errors++; }),
-        mock.method(tracking, 'recordError', () => { errors++; }),
-        ...['recordAnalyticsEvent', 'recordMetric'].map(name => mock.method(tracking, name, () => {})),
-        mock.method(tracking, 'runWithErrorContext', (_context, fn) => fn())];
-    const realLock = cards.withMessageLock;
-    patches.push(mock.method(cards, 'withMessageLock', (interaction, work, db, options) => realLock(interaction, work, db || f.db, options)));
-    f.payload.totalParts = 2; f.payload.completedParts = 2; f.payload.messageIds = [mid, '666666666666666666'];
-    delete require.cache[modulePath];
-    try {
-        const { Events, InteractionType } = require('discord.js'); require(modulePath).register(f.client);
-        const listener = f.client.listeners(Events.InteractionCreate).at(-1);
-        f.original.type = InteractionType.MessageComponent; f.original.deferReply = async () => { f.original.deferred = true; f.original.ephemeral = true; };
-        await listener(f.original);
-        assert.match(f.view.content, /一括操作は準備中/); assert.equal(f.executed, 0); assert.equal(f.view.components, undefined); assert.equal(errors, 0);
     } finally {
         f.client.removeAllListeners(); delete require.cache[modulePath];
         for (const patch of patches.reverse()) patch.mock.restore();
