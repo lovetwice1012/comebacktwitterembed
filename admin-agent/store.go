@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -247,14 +248,21 @@ func (s *Store) latestHeartbeat(ctx context.Context) (payload, occurred, persist
 	return
 }
 
-func (s *Store) stateBytes() int64 {
+func (s *Store) stateBytes() (int64, error) {
 	var total int64
-	for _, path := range []string{s.path, s.path + "-wal", s.path + "-shm"} {
-		if info, err := os.Stat(path); err == nil {
-			total += info.Size()
+	for index, path := range []string{s.path, s.path + "-wal", s.path + "-shm"} {
+		info, err := os.Stat(path)
+		if err != nil {
+			// WAL and shared-memory files can legitimately disappear during a
+			// checkpoint. The primary database must always be accounted for.
+			if index > 0 && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return 0, err
 		}
+		total += info.Size()
 	}
-	return total
+	return total, nil
 }
 func (s *Store) recoverActions() error {
 	_, e := s.db.Exec("UPDATE actions SET status='unknown',updated_at=?,error=? WHERE status='running'", now(), encode(Object{"code": "CORE_RESTART_DURING_EXECUTION", "message": "The previous process ended during execution. Side effects may have completed; this action will not be replayed."}))
@@ -272,7 +280,15 @@ func (s *Store) ingestContext(ctx context.Context, events []Object) (int64, int,
 	if e := ctx.Err(); e != nil {
 		return 0, 0, e
 	}
-	tx, e := s.db.BeginTx(ctx, nil)
+	// Reserve the writer connection until COMMIT has either succeeded or its
+	// failure has been rolled back. Some SQLite errors leave the transaction
+	// open even though database/sql has already marked its Tx as finished.
+	conn, e := s.db.Conn(ctx)
+	if e != nil {
+		return 0, 0, e
+	}
+	defer conn.Close()
+	tx, e := conn.BeginTx(ctx, nil)
 	if e != nil {
 		return 0, 0, e
 	}
@@ -330,6 +346,15 @@ func (s *Store) ingestContext(ctx context.Context, events []Object) (int64, int,
 		return 0, 0, e
 	}
 	if e = tx.Commit(); e != nil {
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, rollbackErr := conn.ExecContext(rollbackCtx, "ROLLBACK")
+		cancel()
+		if rollbackErr != nil {
+			// Never return a connection with an uncertain transaction to the
+			// shared writer pool. A possibly committed batch is deduplicated by
+			// event ID when its unchanged journal cursor is read again.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 		return 0, 0, e
 	}
 	return cursor, accepted, nil
