@@ -119,6 +119,8 @@ test('same action with different input conflicts and separate jobs cannot run co
 test('authenticated actor metadata survives the bridge and another administrator cannot reuse its action ID', async t => {
     const fixture = await setup(t);
     const original = await post(fixture.url, { actionId: 'actor-owned', type: 'echo', actorId: '796972193287503913', initiatedVia: 'dashboard', input: {} });
+    assert.equal(original.status, 200, JSON.stringify(original.data));
+    assert.equal(original.data.ok, true, JSON.stringify(original.data));
     assert.equal(original.data.data.actorId, '796972193287503913');
     const second = await post(fixture.url, { actionId: 'actor-second', type: 'echo', actorId: '933314562487386122', initiatedVia: 'standalone', input: { actorId: '796972193287503913' } });
     assert.equal(second.data.data.actorId, '933314562487386122');

@@ -61,37 +61,40 @@ function createRunner(db, queue, transport, options = {}) {
         let job = await queue.claim(clock());
         if (!job) return { state: 'idle' };
         let sending = false, confirmed = 0, prepared = null, attemptStarted = false;
+        const finish = async (state, code, dueAtMs, result) =>
+            await queue.transition(job, state, code, dueAtMs) === true ? result : { state: 'lease_lost' };
         try {
             if (queue.refreshFlowJob) {
                 const refreshed = await queue.refreshFlowJob(job, clock());
                 if (refreshed.state !== 'ready') {
-                    if (refreshed.state !== 'lease_lost') await queue.transition(job, refreshed.state, refreshed.code, refreshed.dueAtMs);
-                    return refreshed;
+                    if (refreshed.state === 'lease_lost') return refreshed;
+                    return await finish(refreshed.state, refreshed.code, refreshed.dueAtMs, refreshed);
                 }
                 job = refreshed.job;
             }
             if (!notificationAllowed('automation_delivery', { id: job.id, run_id: job.run_id, target_kind: job.target_kind, target_id: job.target_id }, Number(job.created_at_ms))) {
-                await queue.transition(job, 'cancelled', 'RECOVERY_QUARANTINED'); return { state: 'cancelled' };
+                return await finish('cancelled', 'RECOVERY_QUARANTINED', undefined, { state: 'cancelled' });
             }
             const checked = await queue.check(job, clock());
             if (checked.state !== 'ready') {
-                await queue.transition(job, checked.state, checked.code, checked.dueAtMs); return checked;
+                if (checked.state === 'lease_lost') return checked;
+                return await finish(checked.state, checked.code, checked.dueAtMs, checked);
             }
             if (transport.readiness && !transport.readiness()) throw new SafetyError('SAFETY_VERIFIER_UNAVAILABLE', 'error');
             const next = await reserve(job, clock());
             if (next > clock()) {
-                await queue.transition(job, 'pending', 'DISCORD_HEADROOM', next); return { state: 'paced' };
+                return await finish('pending', 'DISCORD_HEADROOM', next, { state: 'paced' });
             }
             prepared = await transport.prepare(job, checked.destination);
             // All physical parts fit the durable owner/recipient/guild budget
             // before changing the job to sending. Quota waits free the worker.
             if (transport.reserve) await transport.reserve(prepared, job);
-            if (isStopping()) { await queue.transition(job, 'pending', 'PROCESS_STOPPING', clock() + 30000); return { state: 'stopped' }; }
+            if (isStopping()) return await finish('pending', 'PROCESS_STOPPING', clock() + 30000, { state: 'stopped' });
             assertAllowed();
             const begin = await queue.beginSend(job, clock());
             if (begin.state !== 'sending') {
-                if (begin.state !== 'lease_lost') await queue.transition(job, begin.state, begin.code, begin.dueAtMs);
-                return begin;
+                if (begin.state === 'lease_lost') return begin;
+                return await finish(begin.state, begin.code, begin.dueAtMs, begin);
             }
             // beginSend durably counts this attempt. A known Discord rejection
             // must not count it a second time in the failure handler below.
@@ -102,8 +105,7 @@ function createRunner(db, queue, transport, options = {}) {
                 if (paced.state !== 'ready') {
                     if (paced.state === 'lease_lost') return paced;
                     const state = confirmed ? 'partial' : paced.state === 'stopped' ? 'pending' : paced.state;
-                    await queue.transition(job, state, paced.code, paced.dueAtMs);
-                    return { state: !confirmed && paced.state === 'stopped' ? 'stopped' : state };
+                    return await finish(state, paced.code, paced.dueAtMs, { state: !confirmed && paced.state === 'stopped' ? 'stopped' : state });
                 }
                 sending = true;
                 const id = await transport.sendStep(prepared, job, index);
@@ -113,6 +115,7 @@ function createRunner(db, queue, transport, options = {}) {
                 confirmed++; sending = false;
             }
             const savedSent = await queue.transition(job, 'sent');
+            if (savedSent !== true) return { state: 'lease_lost', steps: confirmed };
             // Only persisted, Discord-acknowledged deliveries contribute.
             // These process-local aggregates never retain the event or IDs.
             try {
@@ -131,23 +134,19 @@ function createRunner(db, queue, transport, options = {}) {
             if (error instanceof AutomationRateError) {
                 const retryable = error.status === 429 || error.status === 503;
                 const state = confirmed ? 'partial' : retryable ? 'pending' : 'failed';
-                await queue.transition(job, state, error.code, state === 'pending' ? clock() + Math.max(1000, error.retryAfterMs || 60000) : null);
-                return { state, code: error.code };
+                return await finish(state, error.code, state === 'pending' ? clock() + Math.max(1000, error.retryAfterMs || 60000) : null, { state, code: error.code });
             }
             if (error instanceof DeliveryGateError) {
                 if (error.state === 'lease_lost') return { state: 'lease_lost' };
                 const state = confirmed ? 'partial' : error.state === 'stopped' ? 'pending' : error.state;
-                await queue.transition(job, state, error.code, error.dueAtMs);
-                return { state, code: error.code };
+                return await finish(state, error.code, error.dueAtMs, { state, code: error.code });
             }
             if (error instanceof SafetyError) {
                 const state = confirmed ? 'partial' : error.decision === 'deny' ? 'excluded' : 'failed';
-                await queue.transition(job, state, error.code);
-                return { state, code: error.code };
+                return await finish(state, error.code, undefined, { state, code: error.code });
             }
             if (error.code === 'AUTOMATION_PROVIDER_PACED') {
-                await queue.transition(job, 'pending', 'PROVIDER_HEADROOM', clock() + error.retryAfterMs);
-                return { state: 'paced', code: 'PROVIDER_HEADROOM' };
+                return await finish('pending', 'PROVIDER_HEADROOM', clock() + error.retryAfterMs, { state: 'paced', code: 'PROVIDER_HEADROOM' });
             }
             const status = Number(error.status);
             const throttled = status === 429 || error.name === 'RateLimitError';
@@ -162,8 +161,7 @@ function createRunner(db, queue, transport, options = {}) {
             // Preparation can fail before beginSend. Count that one failure
             // under the live lease, while preserving bounded retries.
             if (!attemptStarted) await db.queryDatabase("UPDATE automation_jobs SET attempts=attempts+1 WHERE id=? AND lease_token=? AND state='leased'", [job.id, job.lease_token]);
-            await queue.transition(job, terminal, code, terminal === 'pending' ? clock() + retryMs : null);
-            return { state: terminal, code };
+            return await finish(terminal, code, terminal === 'pending' ? clock() + retryMs : null, { state: terminal, code });
         } finally {
             // Return held capacity for parts that never entered the wire.
             // Confirmed/unknown parts remain charged; SQL failure retains holds.

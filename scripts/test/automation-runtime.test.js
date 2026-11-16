@@ -41,7 +41,21 @@ test('delivery metrics count only acknowledged and persisted X sends without ret
     const lost = fixture({ prepare: async () => ({ payloads: [{}] }), sendStep: async () => M },
         { target_kind: 'x', due_at_ms: 1500, plan: { context: { userId: U }, schedules: [], event: { observedAtMs: 1000 } } });
     lost.queue.transition = async () => false;
-    await lost.run(); assert.equal(metrics.x.snapshot().count, beforeDue + 1);
+    assert.deepEqual(await lost.run(), { state: 'lease_lost', steps: 1 });
+    assert.equal(lost.acks.length, 1); assert.equal(metrics.x.snapshot().count, beforeDue + 1);
+});
+test('a lost lease is not reported as a persisted cancellation or retry', async () => {
+    let sends = 0;
+    const transport = { prepare: async () => ({ payloads: [{}] }), sendStep: async () => { sends++; throw Object.assign(new Error('limited'), { status: 429 }); } };
+    const cancelled = fixture(transport);
+    cancelled.queue.check = async () => ({ state: 'cancelled', code: 'MONITOR_CHANGED' });
+    cancelled.queue.transition = async () => false;
+    assert.deepEqual(await cancelled.run(), { state: 'lease_lost' });
+    assert.equal(sends, 0);
+    const limited = fixture(transport);
+    limited.queue.transition = async () => false;
+    assert.deepEqual(await limited.run(), { state: 'lease_lost' });
+    assert.equal(sends, 1);
 });
 test('timeout, HTTP 5xx and unpersistable ACK become unknown with no automatic resend', async () => {
     for (const failure of [Object.assign(new Error('secret'), { code: 'ETIMEDOUT' }), Object.assign(new Error('secret'), { status: 502 })]) {

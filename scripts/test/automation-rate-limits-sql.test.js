@@ -315,7 +315,7 @@ test('durable per-slot physical-message quotas and tier priority', { skip: !port
     });
     await t.test('runner releases preflight reservations on cancellation and frees workers for quota waits', async () => {
         const states = [], job = { ...record('queued', target), created_at_ms: now, attempts: 0 }; let begun = 0, released = 0;
-        const queue = { claim: async () => job, check: async () => ({ state: 'ready', destination: {} }), beginSend: async () => (begun++, { state: 'cancelled', code: 'MONITOR_CHANGED' }), transition: async (_job, state, code, due) => states.push({ state, code, due }) };
+        const queue = { claim: async () => job, check: async () => ({ state: 'ready', destination: {} }), beginSend: async () => (begun++, { state: 'cancelled', code: 'MONITOR_CHANGED' }), transition: async (_job, state, code, due) => { states.push({ state, code, due }); return true; } };
         const fakeDb = { withDatabaseTransaction: work => work(async sql => sql.startsWith('SELECT expires') ? [{ expires_at_ms: 0 }] : { affectedRows: 1 }) }, options = { clock: () => now, assertAllowed: () => {}, notificationAllowed: () => true };
         const transport = { prepare: async () => ({ payloads: [{}] }), reserve: async () => { throw new AutomationRateError('AUTOMATION_RATE_LIMITED', 'fixture', 429, { retryAfterMs: 60000 }); }, release: async () => { released++; } };
         assert.equal((await createRunner(fakeDb, queue, transport, options).tick()).state, 'pending'); assert.equal(begun, 0); assert.equal(released, 1);

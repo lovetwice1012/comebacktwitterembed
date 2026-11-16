@@ -43,7 +43,7 @@ test('a valid fixture verdict permits only prepared messages and is rechecked on
 test('checker errors terminate as failed, not held or unknown', async () => {
     const transitions = [], record = { ...job(), created_at_ms: 1 };
     record.plan.schedules = [];
-    const queue = { claim: async () => record, check: async () => ({ state: 'ready', destination: {} }), beginSend: async () => ({ state: 'sending' }), transition: async (_job, state, code) => transitions.push({ state, code }) };
+    const queue = { claim: async () => record, check: async () => ({ state: 'ready', destination: {} }), beginSend: async () => ({ state: 'sending' }), transition: async (_job, state, code) => { transitions.push({ state, code }); return true; } };
     const query = async sql => sql.startsWith('SELECT') ? [{ expires_at_ms: 0 }] : { affectedRows: 1 };
     const transport = { prepare: async () => ({ payloads: [{}] }), sendStep: async () => { throw new SafetyError('SAFETY_VERIFIER_UNAVAILABLE', 'error'); } };
     const runner = createRunner({ withDatabaseTransaction: work => work(query) }, queue, transport, { clock: () => 1000, assertAllowed: () => {}, notificationAllowed: () => true });
