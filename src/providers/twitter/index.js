@@ -261,26 +261,33 @@ function containsBannedWord(text, bannedWords) {
 async function fetchTweetData(url) {
     const telemetry = require('../../adminSupport/telemetry');
     const parsed = new URL(url);
-    const isOriginalTweet = /^(twitter\.com|x\.com)$/.test(parsed.hostname);
+    const isOriginalTweet = /^(?:www\.)?(twitter\.com|x\.com)$/.test(parsed.hostname);
+    if (isOriginalTweet) parsed.hostname = parsed.hostname.replace(/^www\./, '');
     const plan = isOriginalTweet ? await require('../../adminSupport/providerSources').resolvePlan('twitter') : null;
     // /i/web/status/<id> has an extra path segment compared with the normal
     // status URL. Normalize it before dropping trailing /photo or /video paths.
     const internal = isOriginalTweet && /^\/i\/web\/status\/(\d+)(?:\/|$)/i.exec(parsed.pathname);
-    const sourceUrl = internal ? `${parsed.origin}/i/status/${internal[1]}` : url;
+    const sourceUrl = internal ? `${parsed.origin}/i/status/${internal[1]}` : isOriginalTweet ? parsed.toString() : url;
     let api = plan ? sourceUrl.replace(/^https?:\/\/(twitter\.com|x\.com)/, plan.sources[0].origin) : sourceUrl;
     const parts = api.split('/');
     if (parts.length > 6 && !api.includes('twidata.sprink.cloud')) api = parts.slice(0, 6).join('/');
     const requestOptions = { timeout: 15000, size: 4 * 1024 * 1024 };
-    let text = await (await fetch(api, requestOptions)).text();
-    if (text.startsWith('T')) console.log('<<RATE LIMIT>>:' + text + new Date().toLocaleString());
-    if (text.trimStart().startsWith('<') && !looksLikeExpectedNonExpandable(text) && plan?.sources[1]) {
+    const expectedUrl = isOriginalTweet ? new URL(parsed.toString()) : null;
+    if (expectedUrl?.protocol === 'http:') expectedUrl.protocol = 'https:';
+    const read = async target => {
+        const res = await fetch(target, requestOptions), text = await res.text();
+        if (res.ok === false && (res.status === 429 || !looksLikeExpectedNonExpandable(text)))
+            throw Object.assign(new Error('Twitter source request failed.'), { status: res.status });
+        return parseTweetApiResponse(text, expectedUrl?.toString());
+    };
+    try { return await read(api); }
+    catch (error) {
+        telemetry.event('parse', 'failed', { url: api, expected: 'Twitter JSON payload', error: telemetry.errorData(error) });
+        if (isExpectedNonExpandableTweetError(error) || error?.status === 429 || !plan?.sources[1]) throw error;
         const nextApi = api.replace(plan.sources[0].origin, plan.sources[1].origin);
-        telemetry.event('source_policy', 'fallback', { from: api, to: nextApi, reason: 'unexpected_html_response', policy: plan });
-        api = nextApi;
-        text = await (await fetch(nextApi, requestOptions)).text();
+        telemetry.event('source_policy', 'fallback', { from: api, to: nextApi, reason: 'primary_unavailable_or_invalid', policy: plan });
+        return await read(nextApi);
     }
-    try { return parseTweetApiResponse(text, isOriginalTweet ? url : undefined); }
-    catch (error) { telemetry.event('parse', 'failed', { url: api, expected: 'Twitter JSON payload', error: telemetry.errorData(error) }); throw error; }
 }
 
 function notifyAlttwitter(tweetURL) {
@@ -940,8 +947,8 @@ async function extractQuotedWithEvidence(message, url, settings, depth) {
 const twitterProvider = {
     id: 'twitter',
     enabledByDefault: true,
-    urlPattern: /https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g,
-    cleanPattern: /<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|/g,
+    urlPattern: /https?:\/\/(?:www\.)?(twitter\.com|x\.com)\/[^\s<>|]*/gi,
+    cleanPattern: /<https?:\/\/(?:www\.)?(twitter\.com|x\.com)[^\s<>|]*>|\|\|https?:\/\/(?:www\.)?(twitter\.com|x\.com)[^\s<>|]*\|\|/gi,
     settings: [
         'bannedWords',
         'sendMediaAsAttachmentsAsDefault',

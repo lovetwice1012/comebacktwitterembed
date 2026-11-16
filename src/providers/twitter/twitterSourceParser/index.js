@@ -126,6 +126,27 @@ function parseTweetApiResponse(text, expectedUrl) {
     const expectedReason = getExpectedNonExpandableReason(payload);
     if (expectedReason) throw new ExpectedNonExpandableTweetError(expectedReason);
     if (!hasTweetData(payload)) throw new Error('Twitter API returned a payload without tweet data.');
+    if (expectedUrl !== undefined) {
+        let expected;
+        try { expected = new URL(expectedUrl); if (expected.protocol === 'http:') expected.protocol = 'https:'; } catch { /* Rejected below. */ }
+        const identity = require('./fxTwitter')._internal.statusIdentity;
+        const expectedId = expected && identity(expected.toString());
+        if (!expectedId) throw new Error('Twitter source post identity could not be verified.');
+        const ids = [];
+        if (payload.tweetID != null) {
+            const value = payload.tweetID;
+            if (!(typeof value === 'string' && /^\d{1,20}$/.test(value) || Number.isSafeInteger(value) && value >= 0))
+                throw new Error('Twitter API returned an invalid post identity.');
+            ids.push(String(value));
+        }
+        if (payload.tweetURL != null) {
+            const value = identity(payload.tweetURL);
+            if (!value) throw new Error('Twitter API returned an invalid post URL.');
+            ids.push(value);
+        }
+        if (!ids.length || ids.some(value => value !== expectedId)) throw new Error('Twitter API returned a different or unidentified post.');
+        if (!payload.tweetURL) payload.tweetURL = expected.toString();
+    }
     return payload;
 }
 

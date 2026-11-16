@@ -24,12 +24,15 @@ function unknownText(overrides = {}) {
     delete value.tweet.possibly_sensitive;
     return value;
 }
-function extractWithFallback(payload, inputUrl = sourceUrl) {
+function extractWithFallback(payload, inputUrl = sourceUrl, primaryBody = '<html>Cloudflare temporary error</html>', primaryStatus = 200) {
     const path = require.resolve('../../src/providers/twitter'), actualRequire = createRequire(path), mod = { exports: {} }, requests = [];
     const fakeFetch = async value => {
         const url = String(value); requests.push(url);
         if (url.includes('altterx.sprink.cloud')) return { text: async () => '' };
-        if (url.includes('api.vxtwitter.com')) return { text: async () => '<html>Cloudflare temporary error</html>' };
+        if (url.includes('api.vxtwitter.com')) {
+            if (primaryBody instanceof Error) throw primaryBody;
+            return { ok: primaryStatus >= 200 && primaryStatus < 300, status: primaryStatus, text: async () => primaryBody };
+        }
         assert.match(url, /^https:\/\/api\.fxtwitter\.com\//);
         return { text: async () => JSON.stringify(payload) };
     };
@@ -156,4 +159,52 @@ test('Vx responses and expected errors retain their existing parser behavior', (
     assert.deepEqual(parsed, vx);
     assert.notEqual(parsed[Symbol.for('cbte.twitter.fx.media')], true);
     assert.throws(() => parseTweetApiResponse(JSON.stringify({ error: 'This tweet is private' })), { expectedNonExpandable: true });
+});
+
+test('flat X responses must identify the requested post consistently', () => {
+    const expectedId = new URL(sourceUrl).pathname.split('/').at(-1);
+    for (const bad of [
+        { tweetURL: 'https://x.com/fixture/status/999', user_name: 'Wrong' },
+        { tweetURL: sourceUrl, tweetID: '999', user_name: 'Wrong' },
+        { tweetID: '999', user_name: 'Wrong' },
+        { user_name: 'Unidentified' },
+    ]) assert.throws(() => parseTweetApiResponse(JSON.stringify(bad), sourceUrl));
+    const restored = parseTweetApiResponse(JSON.stringify({ tweetID: expectedId, user_name: 'Fixture' }), sourceUrl);
+    assert.equal(restored.tweetURL, sourceUrl);
+});
+
+test('a mismatched primary X response falls back to the verified alternate source', async () => {
+    const bad = JSON.stringify({ tweetURL: 'https://x.com/fixture/status/999', user_name: 'Wrong' });
+    const { result, requests } = extractWithFallback(fx(), sourceUrl, bad);
+    const steps = await result;
+    assert.ok(steps?.length);
+    assert(requests.some(url => url.startsWith('https://api.fxtwitter.com/')));
+});
+
+test('X retries an unavailable primary but does not bypass restrictions or rate limits', async () => {
+    const network = extractWithFallback(fx(), sourceUrl, new Error('fixture network failure'));
+    assert.ok((await network.result)?.length);
+    assert(network.requests.some(url => url.startsWith('https://api.fxtwitter.com/')));
+    for (const [body, status] of [[JSON.stringify({ error: 'This tweet is private' }), 403], ['rate limited', 429]]) {
+        const outcome = extractWithFallback(fx(), sourceUrl, body, status);
+        assert.equal(await outcome.result, null);
+        assert.equal(outcome.requests.some(url => url.startsWith('https://api.fxtwitter.com/')), false);
+    }
+});
+
+test('X accepts case-insensitive scheme and www host without losing source identity', async () => {
+    const provider = require('../../src/providers/twitter');
+    const id = new URL(sourceUrl).pathname.split('/').at(-1);
+    const input = `HTTPS://WWW.X.COM/fixture/status/${id}`;
+    assert.equal(input.match(new RegExp(provider.urlPattern.source, provider.urlPattern.flags))?.[0], input);
+    const { result, requests } = extractWithFallback(fx(), input);
+    assert.ok((await result)?.length);
+    assert(requests.some(url => url.startsWith('https://api.vxtwitter.com/')));
+});
+
+test('X upgrades a legacy HTTP source before verifying fallback identity', async () => {
+    const input = sourceUrl.replace('https://x.com/', 'http://www.twitter.com/');
+    const { result, requests } = extractWithFallback(fx(), input);
+    assert.ok((await result)?.length);
+    assert(requests.some(url => url.startsWith('https://api.fxtwitter.com/')));
 });
