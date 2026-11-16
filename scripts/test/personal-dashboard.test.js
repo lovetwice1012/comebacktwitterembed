@@ -177,6 +177,23 @@ test('guild settings sync publishes invalidations for cached destination setting
     } finally { await f.close(); }
 });
 
+test('guild settings sync completes with a single real Prisma connection', { skip: !port, timeout: 30000 }, async () => {
+    const f = await createFixture(port);
+    const { PrismaClient } = require('../../dashboard/node_modules/@prisma/client');
+    const prisma = new PrismaClient({ datasources: { db: { url: `mysql://root@127.0.0.1:${port}/${f.db.schema}?connection_limit=1&pool_timeout=2` } } });
+    try {
+        const settings = load('lib/settings-db.ts', {
+            '@/lib/prisma': { prisma },
+            '@/lib/bot-require': { requireBotModule: file => require(require('node:path').resolve(__dirname, '../..', file)) },
+        });
+        await settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'gallery' } }, { id: user });
+        const target = '444444444444444444';
+        await settings.syncGuildSettings(guild, target, { id: user });
+        const result = await settings.getProviderSettingsState('pixiv', target);
+        assert.equal(result.find(row => row.key === 'gallery_display_mode').value, 'gallery');
+    } finally { await prisma.$disconnect(); await f.close(); }
+});
+
 for (const writer of ['dashboard', 'bot', 'admin']) test(`${writer} settings wait for an in-flight publication before allocating a revision`, { skip: !port }, async () => {
     const f = await createFixture(port), mysql = require('mysql');
     const connection = mysql.createConnection({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '' });

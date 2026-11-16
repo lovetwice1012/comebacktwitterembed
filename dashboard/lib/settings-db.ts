@@ -298,7 +298,7 @@ function rawValuesFromRows(
   return values;
 }
 
-async function readAllProviderRawValues(guildId: string) {
+async function readAllProviderRawValues(guildId: string, db: Tx = prisma) {
   const providers = getBotProviders();
   const specsByProvider = new Map(providers.map(provider => [provider.id, editableSpecs(provider.id)]));
   const ids = providers.map(provider => provider.id);
@@ -309,18 +309,18 @@ async function readAllProviderRawValues(guildId: string) {
   const targetKeys = [...new Set(allSpecs.filter(spec => spec.kind === "targets" && SPECIAL_TARGET_TABLES[spec.key]).map(spec => spec.key))];
   const targets = new Map<string, Map<string, TargetSetting>>();
   const [scalarRows, bannedRows, buttonRows] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`SELECT * FROM guild_provider_settings WHERE ${scope}`, ...params),
+    db.$queryRawUnsafe<Array<Record<string, unknown>>>(`SELECT * FROM guild_provider_settings WHERE ${scope}`, ...params),
     allSpecs.some(spec => spec.kind === "bannedWords")
-      ? prisma.$queryRawUnsafe<Array<{ provider_id: string; word: string }>>(`SELECT provider_id, word FROM guild_provider_banned_words WHERE ${scope} ORDER BY word`, ...params)
+      ? db.$queryRawUnsafe<Array<{ provider_id: string; word: string }>>(`SELECT provider_id, word FROM guild_provider_banned_words WHERE ${scope} ORDER BY word`, ...params)
       : Promise.resolve([]),
     allSpecs.some(spec => spec.kind === "buttonVisibility")
-      ? prisma.$queryRawUnsafe<Array<{ provider_id: string; button_key: string; hidden: boolean | number }>>(`SELECT provider_id, button_key, hidden FROM guild_provider_button_visibility WHERE ${scope}`, ...params)
+      ? db.$queryRawUnsafe<Array<{ provider_id: string; button_key: string; hidden: boolean | number }>>(`SELECT provider_id, button_key, hidden FROM guild_provider_button_visibility WHERE ${scope}`, ...params)
       : Promise.resolve([]),
     // Three reads run alongside a single target-table reader, bounding this
     // page to four queries even with every provider enabled.
     (async () => {
       for (const key of targetKeys) {
-        const rows = await prisma.$queryRawUnsafe<Array<{ provider_id: string; target_type: keyof TargetSetting; target_id: string }>>(
+        const rows = await db.$queryRawUnsafe<Array<{ provider_id: string; target_type: keyof TargetSetting; target_id: string }>>(
           `SELECT provider_id, target_type, target_id FROM ${SPECIAL_TARGET_TABLES[key]} WHERE ${scope}`, ...params,
         );
         const byProvider = new Map<string, TargetSetting>();
@@ -639,9 +639,10 @@ export async function syncGuildSettings(
     fence();
     await lockSettingsPublication(tx);
     fence();
+    const sourceValues = await readAllProviderRawValues(sourceGuildId, tx);
     for (const provider of getBotProviders()) {
       const specs = new Map(editableSpecs(provider.id).map((spec) => [spec.key, spec]));
-      const sourceStates = await getProviderSettingsState(provider.id, sourceGuildId, locale);
+      const sourceStates = await getProviderSettingsState(provider.id, sourceGuildId, locale, sourceValues.get(provider.id));
       for (const sourceState of sourceStates) {
         const spec = specs.get(sourceState.key);
         if (!spec) continue;
