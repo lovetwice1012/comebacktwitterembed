@@ -108,6 +108,62 @@ test('showAttachmentsAsEmbedsImage keeps audio attachments while embedding image
     });
 });
 
+test('image display conversion keeps subsequent quoted embeds', async () => {
+    await withoutTimers(async () => {
+        let edited;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [{ id: '1', url: imageUrl, name: 'image.jpg', contentType: 'image/jpeg' }],
+            embeds: [baseEmbed({ thumbnail: { url: imageUrl } }), { title: 'Quoted post', description: 'Quoted text', image: { url: imageUrl } }],
+            edit: async payload => { edited = payload; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+        assert.equal(edited.embeds[0].thumbnail.url, imageUrl);
+        assert.equal(edited.embeds[1].description, 'Quoted text');
+        assert.equal(edited.embeds[1].image.url, imageUrl);
+    });
+});
+
+test('image display conversion preserves PDF and other non-image attachments by identity', async () => {
+    await withoutTimers(async () => {
+        let edited;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [{ id: '111111111111111111', url: imageUrl, name: 'photo.jpg', contentType: 'image/jpeg' },
+                { id: '222222222222222222', url: 'https://cdn.example/document.pdf', name: 'document.pdf', contentType: 'application/pdf', description: 'Fixture document' },
+                { id: '333333333333333333', url: 'https://cdn.example/SPOILER_clip.mp4', name: 'SPOILER_clip.mp4', contentType: 'video/mp4', spoiler: true }],
+            embeds: [baseEmbed()], edit: async value => { edited = value; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+        assert.deepEqual(edited.attachments, [{ id: '222222222222222222', description: 'Fixture document' }, { id: '333333333333333333' }]);
+        assert.deepEqual(edited.files, [{ attachment: imageUrl, name: 'embed-image-1.jpg' }]);
+        assert.equal(edited.embeds[0].image.url, 'attachment://embed-image-1.jpg');
+    });
+});
+
+test('spoiler images never become uncovered embeds', async () => {
+    for (const spoiler of [{ name: 'SPOILER_photo.jpg' }, { name: 'photo.jpg', spoiler: true }, { name: 'photo.jpg', flags: 8 },
+        { name: 'photo.jpg', flags: { has: () => true } }]) {
+        let edits = 0;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [{ ...spoiler, url: imageUrl, contentType: 'image/jpeg' }], embeds: [baseEmbed()], edit: async () => { edits++; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await assert.rejects(showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() }), /GRID_SPOILER_DISPLAY_UNAVAILABLE/);
+        assert.equal(edits, 0);
+    }
+});
+
+test('non-image-only and incomplete attachments do not report a successful conversion', async () => {
+    for (const [attachments, expected] of [
+        [[{ id: '222222222222222222', name: 'file.pdf', contentType: 'application/pdf' }], /GRID_NO_DISPLAYABLE_IMAGES/],
+        [[{ id: '111111111111111111', name: 'photo.jpg', contentType: 'image/jpeg' }], /GRID_SOURCE_INCOMPLETE/],
+        [[{ url: imageUrl, name: 'photo.jpg', contentType: 'image/jpeg' }, {}], /GRID_SOURCE_INCOMPLETE/],
+    ]) {
+        let edits = 0;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: { attachments, embeds: [baseEmbed()], edit: async () => { edits++; } }, editReply: async () => {} };
+        await assert.rejects(showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() }), expected);
+        assert.equal(edits, 0);
+    }
+});
+
 test('showAttachmentsAsEmbedsImage rebuilds multi-image embed groups from attachments', async () => {
     await withoutTimers(async () => {
         let editedMessage = null;
@@ -251,6 +307,49 @@ test('showMediaAsAttachments preserves existing video attachments', async () => 
         assert.equal(editedMessage.embeds.length, 1);
         assert.equal(editedMessage.embeds[0].image, undefined);
     });
+});
+
+test('attachment display retains existing files and the text of subsequent quoted Embeds', async () => {
+    await withoutTimers(async () => {
+        let edited;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [{ id: '222222222222222222', name: 'SPOILER_clip.mp4', url: videoUrl, spoiler: true, contentType: 'video/mp4' },
+                { id: '333333333333333333', name: 'document.pdf', url: 'https://cdn.example/document.pdf', contentType: 'application/pdf' }],
+            embeds: [baseEmbed({ image: { url: imageUrl } }),
+                { title: 'Quoted post', description: 'Quoted text', url: 'https://example.test/quote', image: { url: 'https://img.example/quoted.png' } },
+                { url: 'https://example.test/group', image: { url: 'https://img.example/third.png' } }],
+            edit: async value => { edited = value; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
+        assert.deepEqual(edited.attachments, [{ id: '222222222222222222' }, { id: '333333333333333333' }]);
+        assert.deepEqual(edited.files, [imageUrl, 'https://img.example/quoted.png', 'https://img.example/third.png']);
+        assert.equal(edited.embeds.length, 2); assert.equal(edited.embeds[1].title, 'Quoted post');
+        assert.equal(edited.embeds[1].description, 'Quoted text'); assert.equal(edited.embeds[1].url, 'https://example.test/quote');
+    });
+});
+
+test('a retained Discord attachment is not reuploaded when its signed image URL changes', async () => {
+    await withoutTimers(async () => {
+        let edited;
+        const channelId = '444444444444444444', fileId = '555555555555555555';
+        const base = `https://cdn.discordapp.com/attachments/${channelId}/${fileId}/photo.png`;
+        const interaction = { guildId: 'guild-components', channelId, locale: 'en', message: {
+            channelId, attachments: [{ id: fileId, name: 'photo.png', contentType: 'image/png', url: `${base}?ex=1&is=2&hm=aa` }],
+            embeds: [baseEmbed({ image: { url: `${base}?ex=3&is=4&hm=bb` } })], edit: async value => { edited = value; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
+        assert.deepEqual(edited.attachments, [{ id: fileId }]); assert.deepEqual(edited.files, []);
+        assert.equal(edited.embeds[0].image, undefined);
+    });
+});
+
+test('a message without images does not report a successful attachment conversion', async () => {
+    let edits = 0;
+    const interaction = { guildId: 'guild-components', locale: 'en', message: {
+        attachments: [{ id: '222222222222222222', url: videoUrl, name: 'clip.mp4' }], embeds: [baseEmbed()], edit: async () => { edits++; },
+    }, editReply: async () => {} };
+    await assert.rejects(showMediaAsAttachments.handle(interaction, { buttons: buttons() }), /GRID_NO_DISPLAYABLE_IMAGES/);
+    assert.equal(edits, 0);
 });
 
 test('showMediaAsAttachments gives extensionless embed images a filename', async () => {

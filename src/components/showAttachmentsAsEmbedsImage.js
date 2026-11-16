@@ -3,30 +3,16 @@
 const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
-const { videoExtensions } = require('../utils');
+const { getAttachmentItems, isSpoiler, preserveAttachment } = require('./_attachmentPreservation');
 const {
     getImageExtensionFromContentType,
     getImageExtensionFromUrl,
     resolveImageExtension,
 } = require('./showMediaAsAttachments')._internal;
 
-const audioExtensions = ['mp3', 'm4a', 'ogg', 'wav', 'flac', 'aac'];
 const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
 const IMAGES_PER_GROUP = 4;
 const MAX_FILES_PER_MESSAGE = 10;
-
-function getAttachmentItems(attachments) {
-    if (!attachments) return [];
-    const normalize = (a) => ({
-        url: a?.url,
-        name: a?.name,
-        contentType: a?.contentType || a?.content_type,
-    });
-    if (typeof attachments.map === 'function') return attachments.map(a => normalize(a)).filter(a => a.url);
-    return Array.from(attachments)
-        .map(a => normalize(Array.isArray(a) ? a[1] : a))
-        .filter(a => a.url);
-}
 
 function getExtensionFromName(name) {
     if (typeof name !== 'string') return null;
@@ -53,11 +39,11 @@ function getAttachmentExtension(attachment) {
 
 function isNonImageMediaAttachment(attachment) {
     const contentType = String(attachment.contentType || '').toLowerCase();
-    if (contentType.startsWith('image/')) return false;
-    if (contentType.startsWith('video/') || contentType.startsWith('audio/')) return true;
+    if (contentType.startsWith('image/')) return !getImageExtensionFromContentType(contentType);
+    if (contentType && !contentType.startsWith('application/octet-stream')) return true;
 
     const extension = getAttachmentExtension(attachment);
-    return videoExtensions.includes(extension) || audioExtensions.includes(extension);
+    return !imageExtensions.includes(extension);
 }
 
 async function buildEmbedImageAttachment(attachment, index) {
@@ -93,13 +79,17 @@ async function handle(interaction, { buttons }) {
     }
     const attachments = getAttachmentItems(interaction.message.attachments);
     const imageAttachments = [];
-    const videoAttachments = [];
+    const otherAttachments = [];
     attachments.forEach(attachment => {
-        if (isNonImageMediaAttachment(attachment)) videoAttachments.push(attachment.url);
+        if (isNonImageMediaAttachment(attachment)) otherAttachments.push(attachment);
         else imageAttachments.push(attachment);
     });
 
-    const maxImageEmbeds = Math.max(0, MAX_FILES_PER_MESSAGE - videoAttachments.length);
+    if (!imageAttachments.length) throw new Error('GRID_NO_DISPLAYABLE_IMAGES');
+    if (imageAttachments.some(isSpoiler)) throw new Error('GRID_SPOILER_DISPLAY_UNAVAILABLE');
+    if (imageAttachments.some(attachment => !attachment.url)) throw new Error('GRID_SOURCE_INCOMPLETE');
+
+    const maxImageEmbeds = Math.max(0, MAX_FILES_PER_MESSAGE - otherAttachments.length);
     if (imageAttachments.length > maxImageEmbeds) {
         return interaction.editReply(`You can't show more than ${maxImageEmbeds} image attachments as embeds image while keeping non-image attachments.`);
     }
@@ -109,11 +99,14 @@ async function handle(interaction, { buttons }) {
             { type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] },
         ],
         embeds: [],
-        files: videoAttachments,
+        files: [],
     };
+    const retained = [];
+    for (const attachment of otherAttachments) preserveAttachment(attachment, retained, messageObject.files);
+    if (retained.length) messageObject.attachments = retained;
     messageObject.components.push({
         type: ComponentType.ActionRow,
-        components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton],
+        components: interaction.message.embeds[0]?.title ? [translateButton, deleteButton] : [deleteButton],
     });
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
@@ -136,6 +129,7 @@ async function handle(interaction, { buttons }) {
             if (src?.title !== undefined) embed.title = src.title;
             if (src?.footer !== undefined) embed.footer = src.footer;
             if (src?.fields !== undefined) embed.fields = src.fields;
+            if (src?.thumbnail !== undefined) embed.thumbnail = src.thumbnail;
             messageObject.embeds.push(embed);
             continue;
         }
@@ -145,6 +139,14 @@ async function handle(interaction, { buttons }) {
             image: { url: element.embedUrl },
         });
     }
+
+    // Keep quoted posts and other textual embeds when switching display modes.
+    for (const source of interaction.message.embeds.slice(1)) {
+        const copy = JSON.parse(JSON.stringify(source));
+        if (copy.title || copy.description || copy.fields?.length || copy.author?.name || copy.footer?.text || copy.thumbnail?.url || copy.image?.url || copy.video?.url)
+            messageObject.embeds.push(copy);
+    }
+    if (messageObject.embeds.length > 10) throw new Error('GRID_SOURCE_INCOMPLETE');
 
     if (messageObject.embeds.length === 0 && interaction.message.embeds[0]) {
         messageObject.embeds.push(JSON.parse(JSON.stringify(interaction.message.embeds[0])));

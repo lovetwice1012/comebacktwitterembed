@@ -4,6 +4,8 @@ const fetch = require('node-fetch');
 const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
+const { getAttachmentItems, preserveAttachment } = require('./_attachmentPreservation');
+const { matchesReference } = require('../discordAttachmentIdentity');
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']);
 const CONTENT_TYPE_EXTENSIONS = {
@@ -14,12 +16,6 @@ const CONTENT_TYPE_EXTENSIONS = {
     'image/webp': 'webp',
     'image/avif': 'avif',
 };
-
-function getAttachmentUrls(attachments) {
-    if (!attachments) return [];
-    if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
-    return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
-}
 
 function getImageExtensionFromUrl(rawUrl) {
     let u;
@@ -120,9 +116,13 @@ function addFile(files, seen, file) {
 async function handle(interaction, { buttons }) {
     const { showAttachmentsAsMediaButton, translateButton, deleteButton } = buttons;
 
-    const files = [];
+    const files = [], retained = [];
     const seenFiles = new Set();
-    getAttachmentUrls(interaction.message.attachments).forEach(url => addFile(files, seenFiles, url));
+    const existing = getAttachmentItems(interaction.message.attachments);
+    for (const attachment of existing) {
+        preserveAttachment(attachment, retained, files);
+        if (attachment.url) seenFiles.add(attachment.url);
+    }
     const messageObject = {
         components: [
             { type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] },
@@ -130,20 +130,31 @@ async function handle(interaction, { buttons }) {
         files: [],
         embeds: [],
     };
+    if (retained.length) messageObject.attachments = retained;
     messageObject.components.push({
         type: ComponentType.ActionRow,
-        components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton],
+        components: interaction.message.embeds[0]?.title ? [translateButton, deleteButton] : [deleteButton],
     });
 
+    let imageCount = 0;
     for (let index = 0; index < interaction.message.embeds.length; index++) {
         const element = interaction.message.embeds[index];
-        if (element.image) addFile(files, seenFiles, await buildImageFile(element.image.url, index + 1));
+        if (!element.image) continue;
+        imageCount++;
+        if (!element.image.url) throw new Error('GRID_SOURCE_INCOMPLETE');
+        const alreadyRetained = existing.some(file => /^\d{1,25}$/.test(String(file.id || ''))
+            && matchesReference(element.image.url, file, interaction.channelId || interaction.message.channelId, { allowAttachmentScheme: true }));
+        if (!alreadyRetained) addFile(files, seenFiles, await buildImageFile(element.image.url, index + 1));
     }
+    if (!imageCount) throw new Error('GRID_NO_DISPLAYABLE_IMAGES');
     messageObject.files = files;
 
-    const deepCopyEmbed0 = JSON.parse(JSON.stringify(interaction.message.embeds[0]));
-    delete deepCopyEmbed0.image;
-    messageObject.embeds.push(deepCopyEmbed0);
+    for (const element of interaction.message.embeds) {
+        const copy = JSON.parse(JSON.stringify(element));
+        delete copy.image;
+        if (copy.title || copy.description || copy.fields?.length || copy.author?.name || copy.footer?.text || copy.thumbnail?.url || copy.video?.url)
+            messageObject.embeds.push(copy);
+    }
 
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
