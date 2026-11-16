@@ -149,50 +149,57 @@ function safeContinuation(message, signature, expectedCount, evidence = null) {
         && Number.isInteger(expectedCount) && attachments.length === expectedCount && attachments.length > 0
         && attachments.every(file => String(file.contentType || '').startsWith('image/')) && cards.matchesFingerprint(message, signature);
 }
-async function sourcesRemainValid(interaction, row, access) {
+const verifiedSourceSnapshots = new WeakSet();
+async function verifiedSources(interaction, row, access) {
     const payload = row.payload;
     const channel = access?.channel || interaction.channel;
     if (!Array.isArray(payload.messageIds) || payload.messageIds.length !== payload.completedParts
         || payload.messageIds[0] !== sourceId(row) || !Array.isArray(payload.partSignatures)
-        || payload.partSignatures.length !== payload.completedParts) return false;
-    let first;
-    try { first = await channel.messages.fetch({ message: payload.messageIds[0], force: true }); }
-    catch { return false; }
-    if (!sourceIsExpected(first, interaction, payload.messageIds[0])) return false;
+        || payload.partSignatures.length !== payload.completedParts || payload.messageIds.length < 1 || payload.messageIds.length > 20) return null;
+    // Read independent messages concurrently, with a small bound to avoid
+    // creating a burst for groups that were split into many small posts.
+    const results = new Array(payload.messageIds.length); let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, results.length) }, async () => {
+        while (true) {
+            const index = next++; if (index >= results.length) return;
+            try { results[index] = { message: await channel.messages.fetch({ message: payload.messageIds[index], force: true }) }; }
+            catch (error) { results[index] = { error }; }
+        }
+    }));
+    const first = results[0]?.message;
+    if (!sourceIsExpected(first, interaction, payload.messageIds[0])) return null;
     const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
-    if (!replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) return false;
+    if (!replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) return null;
+    const messages = [first];
     for (let i = 1; i < payload.messageIds.length; i++) {
-        let message;
-        try { message = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); }
-        catch (error) {
+        const { message, error } = results[i];
+        if (error) {
             // A successful edit/delete may have been followed by a lost ACK or
             // a DB rollback. The unique Bot-authored marker proves that the
             // complete saved composite is already on the original message.
-            if (replaced && Number(error?.code) === 10008) continue;
-            return false;
+            if (replaced && Number(error?.code) === 10008) { messages.push(null); continue; }
+            return null;
         }
-        if (!sourceIsExpected(message, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(message, payload.partSignatures[i])) return false;
+        if (!sourceIsExpected(message, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(message, payload.partSignatures[i])) return null;
+        messages.push(message);
     }
-    return true;
+    const snapshot = { row, payload, channel, messages, replaced };
+    verifiedSourceSnapshots.add(snapshot);
+    return snapshot;
 }
-async function sourceImageUrls(interaction, row, access) {
-    if (!await sourcesRemainValid(interaction, row, access)) throw new Error('GRID_SOURCE_CHANGED');
-    const payload = row.payload, channel = access?.channel || interaction.channel;
+async function sourcesRemainValid(interaction, row, access) { return !!await verifiedSources(interaction, row, access); }
+async function sourceImageUrls(interaction, row, access, priorSnapshot) {
+    const channel = access?.channel || interaction.channel;
+    const snapshot = priorSnapshot && verifiedSourceSnapshots.has(priorSnapshot) && priorSnapshot.row === row
+        && priorSnapshot.payload === row.payload && priorSnapshot.channel === channel ? priorSnapshot : await verifiedSources(interaction, row, access);
+    if (!snapshot) throw new Error('GRID_SOURCE_CHANGED');
+    const payload = row.payload;
     if (payload.partsState && payload.partsState !== 'complete') throw new Error('GRID_SOURCE_INCOMPLETE');
     if (!Array.isArray(payload.partRefs)) return payload.imageUrls;
     if (payload.partRefs.length !== payload.totalParts || payload.completedParts !== payload.totalParts) throw new Error('GRID_SOURCE_INCOMPLETE');
-    const first = await channel.messages.fetch({ message: payload.messageIds[0], force: true });
-    const replaced = hasMarker(first, payload.id) && cards.matchesFingerprint(first, payload.firstStaticSignature, true);
-    if (!sourceIsExpected(first, interaction, payload.messageIds[0]) || !replaced && !cards.matchesFingerprint(first, payload.partSignatures[0])) throw new Error('GRID_SOURCE_CHANGED');
     const all = [];
     for (let i = 0; i < payload.partRefs.length; i++) {
-        let message = first;
-        if (i > 0) {
-            try { message = await channel.messages.fetch({ message: payload.messageIds[i], force: true }); }
-            catch (error) { if (!replaced || Number(error?.code) !== 10008) throw error; message = null; }
-            if (message && (!sourceIsExpected(message, interaction, payload.messageIds[i]) || !cards.matchesFingerprint(message, payload.partSignatures[i]))) throw new Error('GRID_SOURCE_CHANGED');
-        }
-        all.push(...cards.resolveReferences(payload.partRefs[i], message, replaced));
+        all.push(...cards.resolveReferences(payload.partRefs[i], snapshot.messages[i], snapshot.replaced));
     }
     if (all.length !== payload.imageUrls.length) throw new Error('GRID_SOURCE_CHANGED');
     if (Object.hasOwn(payload, 'imagePartOrder')) {
@@ -308,20 +315,27 @@ function mayReplace(interaction, payload, settings, permissions = interaction.me
 }
 async function freshAccess(interaction) {
     try {
-        const guild = await interaction.client.guilds.fetch({ guild: interaction.guildId, force: true });
-        const channel = await interaction.client.channels.fetch(interaction.channelId, { force: true });
-        if (!guild || guild.id !== interaction.guildId || !channel || channel.id !== interaction.channelId || channel.guildId !== interaction.guildId) return null;
         if (!interaction.client.rest?.get) return null;
-        const raw = await interaction.client.rest.get(Routes.guildMember(interaction.guildId, interaction.user.id));
+        // The raw membership lookup does not depend on the guild object.
+        // Keep both authoritative reads, but avoid serial network round trips.
+        const [guild, raw] = await Promise.all([
+            interaction.client.guilds.fetch({ guild: interaction.guildId, force: true }),
+            interaction.client.rest.get(Routes.guildMember(interaction.guildId, interaction.user.id)),
+        ]);
+        if (!guild || guild.id !== interaction.guildId) return null;
         if (String(raw?.user?.id || '') !== String(interaction.user.id) || !Array.isArray(raw.roles)
             || raw.roles.some(id => typeof id !== 'string' || !id) || new Set(raw.roles).size !== raw.roles.length
             || raw.guild_id != null && String(raw.guild_id) !== String(interaction.guildId)
             || raw.guild?.id != null && String(raw.guild.id) !== String(interaction.guildId)) return null;
-        const member = await guild.members.fetch({ user: interaction.user.id, force: true });
         // GuildMember.roles.cache drops role IDs not yet in the guild cache.
         // Fetch the authoritative role list and verify every ID before using
         // it for channel permissions or prohibited-role checks.
-        const roleList = await guild.roles.fetch();
+        const [channel, member, roleList] = await Promise.all([
+            interaction.client.channels.fetch(interaction.channelId, { force: true }),
+            guild.members.fetch({ user: interaction.user.id, force: true }),
+            guild.roles.fetch(),
+        ]);
+        if (!channel || channel.id !== interaction.channelId || channel.guildId !== interaction.guildId) return null;
         if (String(member?.id || member?.user?.id || '') !== String(interaction.user.id)
             || member?.guild?.id != null && String(member.guild.id) !== String(interaction.guildId)
             || member?.partial === true || !roleList?.has?.(guild.id) || !Array.isArray(member?._roles)
@@ -731,7 +745,8 @@ async function handle(interaction, deps = {}) {
     if (!await (deps.isAllowed || isAllowed)(interaction, { providerId: 'twitter' })) return;
     const initialAccess = await (deps.freshAccess || freshAccess)(interaction);
     if (!initialAccess || row.payload.nsfw && !currentNsfw(initialAccess, interaction) || !currentButtonAccess(interaction, settings, initialAccess.member)) return fail();
-    if (!await sourcesRemainValid(interaction, row, initialAccess)) {
+    let sourceSnapshot = await verifiedSources(interaction, row, initialAccess);
+    if (!sourceSnapshot) {
         let recovered = false;
         if (action === 'open' && row.payload.replacePhase === 'done') {
             try {
@@ -740,7 +755,8 @@ async function handle(interaction, deps = {}) {
             } catch { /* An uncertain recovery must never be guessed or retried. */ }
         }
         row = recovered ? await storage.get(id, interaction.guildId, interaction.channelId) : await reconcileSibling(interaction, row, deps).catch(() => null);
-        if (!row || !await sourcesRemainValid(interaction, row, initialAccess))
+        sourceSnapshot = row ? await verifiedSources(interaction, row, initialAccess) : null;
+        if (!row || !sourceSnapshot)
             return fail(ja ? '現在の投稿を確認できませんでした。時間をおいて再試行するか、元のリンクをもう一度展開してください。'
                 : 'Could not verify the current post. Try again later, or expand the original link again.');
     }
@@ -835,7 +851,7 @@ async function handle(interaction, deps = {}) {
     if (action !== 'preview' && action !== 'confirm' && action !== 'run') { const viewOwner = owner === '0' ? interaction.user.id : owner; return interaction.editReply({ ...addRestore(view(id, viewOwner, state, settings, interaction.locale, undefined, canReplace, incomplete), viewOwner), embeds: [], attachments: [] }); }
     if (action === 'confirm' && !canReplace) return fail(ja ? '公開画像の置換は投稿者・管理者が利用できます。' : 'Only the requester or an administrator can replace the public images.');
     try {
-        const imageUrls = await sourceImageUrls(interaction, row, initialAccess);
+        const imageUrls = await sourceImageUrls(interaction, row, initialAccess, sourceSnapshot);
         const composed = await (deps.compose || require('./twitter-image-grid').composeTwitterImageGrid)(imageUrls, { columns: state.columns, cellWidth: state.width, cellHeight: state.height,
             gap: state.gap, fit: state.fit === 'c' ? 'cover' : 'contain', background: `#${state.background}`, format: {j:'jpeg',p:'png',w:'webp'}[state.format], quality: state.quality });
         if (action === 'confirm') {

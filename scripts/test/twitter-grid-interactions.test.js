@@ -121,6 +121,44 @@ test('private preview combines only persisted media and rechecks access', async 
     f.calls.length = 0; f.deps.freshAccess = async () => null; await grid.handle(f.interaction, f.deps);
     assert.deepEqual(f.calls.at(-1)[1].components, []); assert.deepEqual(f.calls.at(-1)[1].attachments, []);
 });
+
+test('private preview reuses the verified source and verifies it again before showing the result', async () => {
+    const f = fixture(), state = grid._internal.defaults(settings, 13); let reads = 0, readsAtCompose;
+    const fetch = f.interaction.channel.messages.fetch;
+    f.interaction.channel.messages.fetch = async request => { reads++; return fetch(request); };
+    f.deps.compose = async () => { readsAtCompose = reads; return { data: Buffer.from('preview'), filename: 'twitter-grid.jpg' }; };
+    f.interaction.customId = grid._internal.custom(id, user, 'preview', state);
+    f.interaction.message.flags.has = n => n === 64;
+    await grid.handle(f.interaction, f.deps);
+    assert.equal(readsAtCompose, 2);
+    assert.equal(reads, 4);
+    assert.equal(f.calls.at(-1)[1].files[0].name, 'twitter-grid.jpg');
+});
+
+test('source verification overlaps at most three independent message reads', async () => {
+    const f = fixture(), extra = ['777777777777777777', '888888888888888888'].map(id => ({ id, channelId,
+        author: { id: bot }, content: '', embeds: [], components: [], attachments: new Map() }));
+    const messages = [f.first, f.second, ...extra], byId = new Map(messages.map(message => [message.id, message]));
+    f.patchPayload({ totalParts: 4, completedParts: 4, messageIds: messages.map(message => message.id),
+        partSignatures: messages.map(message => cards.fingerprint(message)) });
+    let active = 0, maximum = 0, release, started;
+    const gate = new Promise(resolve => { release = resolve; });
+    const threeStarted = new Promise(resolve => { started = resolve; });
+    f.interaction.channel.messages.fetch = async ({ message }) => {
+        active++; maximum = Math.max(maximum, active); if (active === 3) started();
+        await gate; active--; return byId.get(message);
+    };
+    const work = grid._internal.sourcesRemainValid(f.interaction, f.row());
+    await threeStarted; assert.equal(maximum, 3); release();
+    assert.equal(await work, true); assert.equal(maximum, 3);
+});
+
+test('an unverified caller-supplied snapshot cannot bypass changed-message checks', async () => {
+    const f = fixture(), row = f.row();
+    const forged = { row, payload: row.payload, channel: f.interaction.channel, messages: [f.first, f.second], replaced: false };
+    f.second.content = 'changed';
+    await assert.rejects(grid._internal.sourceImageUrls(f.interaction, row, undefined, forged), /GRID_SOURCE_CHANGED/);
+});
 test('private image errors display fixed actionable reasons without exposing exception content', async () => {
     const cases = [
         ['IMAGE_GRID_INPUT_SIZE', /元の画像が大きすぎ/], ['IMAGE_GRID_OUTPUT_SIZE', /画像のサイズを小さく/],
@@ -294,6 +332,26 @@ test('fresh grid access requires a matching raw member with an explicit complete
     const access = await grid._internal.freshAccess(f.interaction); assert.ok(access);
     assert.equal(grid._internal.currentButtonAccess(f.interaction, { button_disabled: { role: [blocked] } }, access.member), false);
     assert.equal(grid._internal.currentButtonAccess(f.interaction, { button_disabled: { role: [guildId] } }, access.member), false);
+});
+
+test('fresh grid access overlaps independent authoritative reads without weakening validation', async () => {
+    const f = fixture(), started = [], releases = {};
+    const gate = name => new Promise(resolve => { releases[name] = resolve; started.push(name); });
+    const member = { id: user, _roles: [], partial: false };
+    const guild = { id: guildId, members: { fetch: async () => { await gate('member'); return member; } },
+        roles: { fetch: async () => { await gate('roles'); return new Map([[guildId, {}]]); } } };
+    const channel = { id: channelId, guildId, permissionsFor: () => ({ has: () => true }) };
+    f.interaction.client.guilds = { fetch: async () => { await gate('guild'); return guild; } };
+    f.interaction.client.rest = { get: async () => { await gate('raw'); return { user: { id: user }, roles: [] }; } };
+    f.interaction.client.channels = { fetch: async () => { await gate('channel'); return channel; } };
+    const work = grid._internal.freshAccess(f.interaction);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(new Set(started), new Set(['guild', 'raw']));
+    releases.guild(); releases.raw();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(new Set(started), new Set(['guild', 'raw', 'channel', 'member', 'roles']));
+    releases.channel(); releases.member(); releases.roles();
+    assert.ok(await work);
 });
 test('another user, disabled provider and missing original cannot use the private editor', async () => {
     const f = fixture(); const state = grid._internal.defaults(settings, 13); f.interaction.message.flags.has = n => n === 64;

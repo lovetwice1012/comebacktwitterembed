@@ -21,7 +21,7 @@ test('20 images are kept in order in an actual PNG grid', async () => {
     const result = await composeTwitterImageGrid(urls(20), { columns: 5, cellWidth: 128, cellHeight: 128, format: 'png' }, {
         fetch: async url => { const index = Number(new URL(url).pathname.match(/item(\d+)/)[1]); seen.push(index); return response(200, samples[index % 3]); },
     });
-    assert.equal(seen.length, 40);
+    assert.equal(seen.length, 20);
     assert.equal(result.columns, 5); assert.equal(result.rows, 4); assert.equal(result.width, 640); assert.equal(result.height, 512);
     assert.equal(result.contentType, 'image/png'); assert.equal(result.filename, 'twitter-grid.png');
     const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
@@ -36,7 +36,7 @@ test('20 actual static AVIF photos are combined in their original order', async 
         fetch: async url => { downloaded++; const index = Number(new URL(url).pathname.match(/item(\d+)/)[1]); return response(200, samples[index % 3]); },
     });
     const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
-    assert.equal(downloaded, 40);
+    assert.equal(downloaded, 20);
     for (let i = 0; i < 20; i++) {
         const color = pixel(raw, result.width, (i % 5) * 128 + 64, Math.floor(i / 5) * 128 + 64);
         assert(color[i % 3] > 220, `image ${i} retained its dominant channel`);
@@ -146,21 +146,32 @@ test('panoramas round row heights correctly and use actual proportions for canva
     assert(twenty.width > 1600); assert(twenty.height <= 8192);
 });
 
-test('changed input between passes aborts without producing an image', async () => {
+test('cached sources use one consistent snapshot without a second download', async () => {
     const a = await solid(255, 0, 0), b = await solid(0, 0, 255); let calls = 0;
-    await assert.rejects(composeTwitterImageGrid(urls(1), { cellWidth: 128 }, {
+    const result = await composeTwitterImageGrid(urls(1), { cellWidth: 128, format: 'png' }, {
         fetch: async () => response(200, ++calls === 1 ? a : b),
-    }), { code: 'IMAGE_GRID_DOWNLOAD' });
-    assert.equal(calls, 2);
+    });
+    assert.equal(calls, 1);
+    const raw = await sharp(result.data).removeAlpha().raw().toBuffer();
+    assert.deepEqual(pixel(raw, result.width, 0, 0), [255, 0, 0]);
 });
 
-test('expired second fetch fails without a partial result, while cover downloads once', async () => {
+test('overflow sources are re-fetched and reject changed or expired data', async () => {
+    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: 'red' } }).jpeg().toBuffer();
+    const large = Buffer.concat([jpeg, Buffer.alloc(17 * 1024 * 1024)]), changed = Buffer.from(large);
+    changed[changed.length - 1] = 1;
+    for (const expired of [false, true]) {
+        const seen = new Map();
+        await assert.rejects(composeTwitterImageGrid(urls(2), { cellWidth: 128 }, { fetch: async url => {
+            const count = (seen.get(url) || 0) + 1; seen.set(url, count);
+            return count === 1 ? response(200, large) : expired ? response(403, null) : response(200, changed);
+        } }), { code: 'IMAGE_GRID_DOWNLOAD' });
+        assert.equal([...seen.values()].reduce((a, b) => a + b, 0), 3);
+    }
+});
+
+test('cover downloads each source once', async () => {
     const image = await solid(10, 20, 30); let calls = 0;
-    await assert.rejects(composeTwitterImageGrid(urls(1), { cellWidth: 128 }, {
-        fetch: async () => ++calls === 1 ? response(200, image) : response(403, null),
-    }), { code: 'IMAGE_GRID_DOWNLOAD' });
-    assert.equal(calls, 2);
-    calls = 0;
     await composeTwitterImageGrid(urls(1), { cellWidth: 128, fit: 'cover' }, {
         fetch: async () => { calls++; return response(200, image); },
     });
@@ -223,7 +234,7 @@ test('redirects are validated again and may not escape approved image hosts', as
     const image = await solid(1, 2, 3); requests = 0;
     const output = await composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128 }, { fetch: async () => ++requests === 1
         ? response(302, null, { location: 'https://pbs.twimg.com/media/valid?format=jpg' }) : response(200, image) });
-    assert.equal(requests, 3); assert.equal(output.contentType, 'image/jpeg');
+    assert.equal(requests, 2); assert.equal(output.contentType, 'image/jpeg');
     requests = 0;
     await assert.rejects(composeTwitterImageGrid(urls(1), {}, { fetch: async () => { requests++; return response(302, null, { location: 'https://pbs.twimg.com/media/valid' }); } }), { code: 'IMAGE_GRID_DOWNLOAD' });
     assert.equal(requests, 4);
@@ -330,7 +341,7 @@ test('at most two image compositions can download concurrently', async () => {
     const fetch = async () => { if (++entered === 2) bothStarted(); await blocked; return response(200, image); };
     const jobs = Array.from({ length: 3 }, () => composeTwitterImageGrid(urls(1), { cellWidth: 128, cellHeight: 128 }, { fetch }));
     await started; await new Promise(resolve => setImmediate(resolve)); assert.equal(entered, 2);
-    unblock(); await Promise.all(jobs); assert.equal(entered, 6);
+    unblock(); await Promise.all(jobs); assert.equal(entered, 3);
 });
 
 test('WebP output is a real decodable image, and pbs requests pin validated DNS to their socket', async () => {
@@ -360,7 +371,7 @@ test('twenty real 9 MiB JPEGs are resized as a bounded pipeline rather than reta
             })()) };
         } });
         const last = rss(); if (peak !== null && last !== null) peak = Math.max(peak, last);
-        assert.equal(fetched, 40); assert(maximumReading <= 2);
+        assert.equal(fetched, 40 - Math.floor((32 * 1024 * 1024) / jpeg.length)); assert(maximumReading <= 2);
         assert.equal(result.columns, 5); assert.equal(result.rows, 4);
         assert.equal((await sharp(result.data).metadata()).width, 640);
         // Include JPEG decode, image-library cache and V8/Buffer allocation;
@@ -380,5 +391,5 @@ test('output byte budget is enforced without omitting any source images', async 
     const result = await composeTwitterImageGrid(urls(20), { columns: 5, cellWidth: 128, cellHeight: 128, quality: 95, maxOutputBytes: 256 * 1024 }, {
         fetch: async () => { downloaded++; return response(200, image); },
     });
-    assert.equal(downloaded, 40); assert(result.data.length <= 256 * 1024); assert.equal(result.adapted, true);
+    assert.equal(downloaded, 20); assert(result.data.length <= 256 * 1024); assert.equal(result.adapted, true);
 });

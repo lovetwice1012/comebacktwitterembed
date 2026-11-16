@@ -318,15 +318,15 @@ for (const stage of ['first', 'continuation', 'combined', 'before delete root', 
 }
 
 for (const target of ['root', 'continuation']) for (const invalid of ['wrong id', 'missing id', 'wrong channel', 'missing channel', 'wrong author']) {
-    test(`image source resolution rejects ${invalid} in a later ${target} fetch`, { timeout: 60000 }, async () => {
+    test(`image source resolution rejects ${invalid} in both initial and post-composition ${target} fetches`, { timeout: 60000 }, async () => {
         const f = await fixture({ hideEmbeddedAttachments: true });
         try {
-            const fetch = f.interaction.channel.messages.fetch, counts = new Map();
+            const fetch = f.interaction.channel.messages.fetch, counts = new Map(); let tamperAt = 1;
             f.interaction.channel.messages.fetch = async request => {
                 const message = await fetch(request), count = (counts.get(request.message) || 0) + 1;
                 counts.set(request.message, count);
                 const targetId = target === 'root' ? f.first.id : f.second.id;
-                if (request.message !== targetId || count !== 2) return message;
+                if (request.message !== targetId || count !== tamperAt) return message;
                 return new Proxy(message, { get(actual, name, receiver) {
                     if (name === 'id' && invalid === 'wrong id') return '987654321098765432';
                     if (name === 'id' && invalid === 'missing id') return undefined;
@@ -338,6 +338,12 @@ for (const target of ['root', 'continuation']) for (const invalid of ['wrong id'
             };
             const row = await f.deps.storage.get(f.item.id, guildId, channelId);
             await assert.rejects(grid._internal.sourceImageUrls(f.interaction, row, await f.deps.freshAccess()), /GRID_SOURCE_CHANGED/);
+            counts.clear(); tamperAt = 2;
+            const state = grid._internal.defaults(settings, 13, true);
+            f.interaction.customId = grid._internal.custom(f.item.id, user, 'preview', state);
+            f.interaction.message = f.ephemeral();
+            await grid.handle(f.interaction, f.deps);
+            assert.equal(f.calls.at(-1)?.files, undefined, 'a changed source must never be displayed');
             assert.equal(f.editEvents.length, 0); assert.deepEqual(f.deleted, []);
         } finally { await f.db.close(); }
     });

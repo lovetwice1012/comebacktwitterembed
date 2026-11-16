@@ -11,6 +11,9 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 // Twenty legitimate large attachments must remain usable; memory is bounded
 // separately by the number of concurrently downloaded/decoded inputs.
 const MAX_TOTAL_INPUT_BYTES = MAX_IMAGES * MAX_IMAGE_BYTES;
+// Reuse a bounded amount of compressed source data during one composition.
+// Larger groups still re-fetch overflow items and verify their original hash.
+const MAX_CACHED_SOURCE_BYTES = 32 * 1024 * 1024;
 const MAX_INPUT_PIXELS = 40_000_000;
 const MAX_OUTPUT_PIXELS = 16_000_000;
 const MAX_DIMENSION = 8192;
@@ -224,7 +227,8 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
     timeout.unref?.();
     try {
         const fetchImpl = deps.fetch || require('node-fetch');
-        const total = { bytes: 0 };
+        const total = { bytes: 0 }, cachedSources = new Array(urls.length);
+        let cachedBytes = 0;
         // Do not retain all source files while decoding: fetch and resize one
         // source within each bounded worker, retaining only a tile or metadata.
         const tiles = await mapConcurrent(urls, INPUT_CONCURRENCY, async (url, i) => {
@@ -242,8 +246,13 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
                 }
                 const rotated = [5, 6, 7, 8].includes(metadata.orientation);
                 const width = rotated ? metadata.height : metadata.width, height = rotated ? metadata.width : metadata.height;
-                // Retain only metadata and a digest until final sizes are known.
+                // Keep only bounded compressed input; uncached sources are
+                // fetched again and checked against this digest below.
                 const hash = createHash('sha256').update(data).digest('hex');
+                if (data.length <= MAX_CACHED_SOURCE_BYTES - cachedBytes) {
+                    cachedSources[i] = data;
+                    cachedBytes += data.length;
+                }
                 return { hash, width, height };
             } catch { throw failure('IMAGE_GRID_FORMAT', '画像を読み込めませんでした。'); }
             finally { data = null; }
@@ -254,7 +263,10 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
             layout = autoGeometry(tiles, layout);
             const secondPass = { bytes: 0 };
             overlays = await mapConcurrent(tiles, INPUT_CONCURRENCY, async (tile, i) => {
-                let data = await fetchImage(urls[i], fetchImpl, controller.signal, secondPass);
+                let data = cachedSources[i];
+                cachedSources[i] = undefined;
+                if (data) cachedBytes -= data.length;
+                else data = await fetchImage(urls[i], fetchImpl, controller.signal, secondPass);
                 try {
                     if (createHash('sha256').update(data).digest('hex') !== tile.hash)
                         throw failure('IMAGE_GRID_DOWNLOAD', '画像が変更されたため、もう一度お試しください。');
