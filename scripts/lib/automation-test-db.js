@@ -9,11 +9,11 @@ async function createTestDatabase(port) {
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 8, supportBigNumbers: true, bigNumberStrings: true });
     const intentPool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
     const context = new AsyncLocalStorage();
-    const acquire = async () => {
+    const acquire = async (source = pool) => {
         for (let attempt = 1; ; attempt++) {
             let suppliedConnection = false;
             try {
-                return await new Promise((resolve, reject) => pool.getConnection((error, connection) => {
+                return await new Promise((resolve, reject) => source.getConnection((error, connection) => {
                     suppliedConnection = connection != null;
                     if (error) reject(error); else resolve(connection);
                 }));
@@ -49,11 +49,11 @@ async function createTestDatabase(port) {
             try { await queryOn(c)(`USE ${mysql.escapeId(schema)}`); return await queryOn(c)(sql, params); } finally { c.release(); }
         },
         queryDatabaseIndependent: (sql, params = []) => context.exit(async () => {
-            const c = await new Promise((resolve, reject) => intentPool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+            const c = await acquire(intentPool);
             try { await queryOn(c)(`USE ${mysql.escapeId(schema)}`); return await queryOn(c)(sql, params); } finally { c.release(); }
         }),
         withIndependentTransaction: work => context.exit(async () => {
-            const c = await new Promise((resolve, reject) => intentPool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+            const c = await acquire(intentPool);
             const query = queryOn(c);
             try { await query(`USE ${mysql.escapeId(schema)}`); await query('START TRANSACTION'); const result = await work(query); await query('COMMIT'); return result; }
             catch (error) { await query('ROLLBACK'); throw error; } finally { c.release(); }

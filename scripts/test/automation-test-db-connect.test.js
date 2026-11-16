@@ -113,3 +113,29 @@ test('successful transaction work and its commit run once and release their conn
     } finally { await db.close(); }
     assert.equal(fixture.counts().endCount, 2);
 });
+
+for (const operation of ['query', 'transaction']) test(`independent ${operation} retries only a pre-admission loopback connect timeout`, async () => {
+    const failures = [], fixture = transport(failures), db = await fixture.create();
+    const before = fixture.counts().acquireCount;
+    let workCalls = 0;
+    try {
+        failures.push(timeout());
+        if (operation === 'query') await db.queryDatabaseIndependent('TEST INDEPENDENT');
+        else await db.withIndependentTransaction(async query => { workCalls++; await query('TEST INDEPENDENT'); });
+        assert.equal(fixture.counts().acquireCount, before + 2);
+        assert.equal(fixture.sql.filter(sql => sql === 'TEST INDEPENDENT').length, 1);
+        assert.equal(workCalls, operation === 'transaction' ? 1 : 0);
+        assert.equal(fixture.connections.at(-1).releases, 1);
+    } finally { await db.close(); }
+});
+
+test('independent query never retries an error after SQL admission', async () => {
+    const fixture = transport(), db = await fixture.create(), error = timeout();
+    const before = fixture.counts().acquireCount;
+    try {
+        fixture.failStatement(statement => statement === 'TEST INDEPENDENT' ? error : null);
+        await assert.rejects(db.queryDatabaseIndependent('TEST INDEPENDENT'), actual => actual === error);
+        assert.equal(fixture.counts().acquireCount, before + 1);
+        assert.equal(fixture.sql.filter(sql => sql === 'TEST INDEPENDENT').length, 1);
+    } finally { fixture.failStatement(null); await db.close(); }
+});
