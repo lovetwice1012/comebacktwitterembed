@@ -148,6 +148,15 @@ test('pixiv preserves requested page positions and rejects only missing requeste
     assert.equal(metadata[0].embeds[0].image, undefined);
 });
 
+test('pixiv source deletion setting still matches an uppercase URL with its default port', async () => {
+    const provider = loadPixivProviderWithFetch(createPixivFetch(1));
+    const url = 'HTTPS://WWW.PIXIV.NET:443/artworks/123456';
+    const match = require('../../src/providers/_loader').extractAllUrls(url).find(item => item.provider.id === 'pixiv');
+    assert.equal(match.url, url);
+    const result = await provider.extract(createMessage({ content: url }), match.url, { deletemessageifonlypostedtweetlink: true });
+    assert.equal(result[0].deleteSource, true);
+});
+
 test('pixiv rejects invalid or contradictory page counts', async () => {
     const url = 'https://www.pixiv.net/artworks/123456';
     for (const pageCount of ['invalid', true, 0, 1]) {

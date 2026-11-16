@@ -8,8 +8,8 @@ function urlIdentity(providerId, value) {
         for (const key of [...url.searchParams.keys()]) {
             if (/^utm_/i.test(key) || ['fbclid', 'igsh', 'igshid'].includes(key)) url.searchParams.delete(key);
         }
-        if (providerId === 'twitter' && ['twitter.com', 'x.com'].includes(url.hostname)) {
-            const status = /^\/[^/]+\/status\/(\d+)(\/.*)?$/.exec(url.pathname);
+        if (providerId === 'twitter' && ['twitter.com', 'x.com'].includes(url.hostname.replace(/^www\./, ''))) {
+            const status = /^\/(?:i\/web|[^/]+)\/status\/(\d+)(\/.*)?$/.exec(url.pathname);
             if (status) {
                 url.protocol = 'https:';
                 url.hostname = 'x.com';

@@ -365,7 +365,7 @@ test('Fx rejects an untrusted host without sending it or deleting the source', a
     const sent = [], media = mockMedia(async () => assert.fail('unsafe media must not be fetched'));
     const f = fixture(async payload => { sent.push(payload); return { id: '1' }; }, { prepare: async step => ({ step }) }, media);
     const out = await f.run([{ files: ['https://127.0.0.1/private'], embeds: [{ title: 'Post' }], safeTwitterMedia: true, deleteSource: true }]);
-    assert.equal(sent.length, 1); assert.equal(sent[0].content, undefined); assert.deepEqual(f.post, []); assert.equal(out.outcome, 'D');
+    assert.equal(sent.length, 1); assert.equal(sent[0].content, undefined); assert.deepEqual(f.post, []); assert.equal(out.outcome, 'P');
 });
 test('after an uncertain Discord submission prepared Fx files are never automatically resubmitted', async () => {
     let attempts = 0; const media = mockMedia(async url => ({ data: Buffer.from(url), kind: 'photo' }));
@@ -394,7 +394,7 @@ test('Fx invalid image format is rejected before fetching and never exposed thro
     const media = { ...safe, fetchTwitterMedia: async () => assert.fail('invalid format must not be fetched') };
     const f = fixture(async payload => { sent.push(payload); return { id: '1' }; }, noGrid, media);
     const result = await f.run([{ files: ['https://pbs.twimg.com/media/a?format=exe'], embeds: [{ title: 'Post' }], safeTwitterMedia: true, deleteSource: true }]);
-    assert.equal(sent.length, 1); assert.equal(sent[0].content, undefined); assert.deepEqual(f.post, []); assert.equal(result.outcome, 'D');
+    assert.equal(sent.length, 1); assert.equal(sent[0].content, undefined); assert.deepEqual(f.post, []); assert.equal(result.outcome, 'P');
 });
 test('Fx names use detected bytes rather than an absent or misleading URL extension', async () => {
     const sent = [], noGrid = { prepare: async step => ({ step }) };

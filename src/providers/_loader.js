@@ -79,12 +79,49 @@ function patterns() {
     return _patterns;
 }
 
+// URL schemes and authorities are case-insensitive, but paths and identifiers
+// may not be. Map the normalized shadow back to the exact original text.
+function normalizeUrlAuthorities(text) {
+    const matches = [...text.matchAll(/https?:\/\/[^\s<>"'|/?#]+/gi)];
+    if (!matches.some(match => /[A-Z]/.test(match[0]) || /:(?:0*443|0*80)$/.test(match[0]))) {
+        return { shadow: text, positions: null };
+    }
+    let shadow = '', previous = 0;
+    const positions = [];
+    const append = (start, end, lower = false) => {
+        for (let index = start; index < end; index++) {
+            const code = text.charCodeAt(index);
+            shadow += lower && code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : text[index];
+            positions.push(index);
+        }
+    };
+    for (const match of matches) {
+        const start = match.index, end = start + match[0].length;
+        append(previous, start);
+        const authority = match[0], schemeEnd = authority.indexOf('://') + 3;
+        const host = authority.slice(schemeEnd), scheme = authority.slice(0, schemeEnd).toLowerCase();
+        const port = !host.includes('@') && /:(\d+)$/.exec(host);
+        const defaultPort = port && (scheme === 'https://' && Number(port[1]) === 443
+            || scheme === 'http://' && Number(port[1]) === 80) ? port[0].length : 0;
+        append(start, end - defaultPort, true);
+        previous = end;
+    }
+    append(previous, text.length);
+    positions.push(text.length);
+    return { shadow, positions };
+}
+
 function extractAllUrls(content) {
+    const original = String(content ?? ''), { shadow, positions } = normalizeUrlAuthorities(original);
     const out = [];
     for (const { provider: p, url: re } of patterns()) {
         re.lastIndex = 0;
-        for (const match of String(content ?? '').matchAll(re)) {
-            if (match[0]) out.push({ provider: p, url: match[0], index: match.index });
+        for (const match of shadow.matchAll(re)) {
+            if (match[0]) {
+                const start = positions ? positions[match.index] : match.index;
+                const end = positions ? positions[match.index + match[0].length] : match.index + match[0].length;
+                out.push({ provider: p, url: original.slice(start, end), index: start });
+            }
         }
     }
     out.sort((a, b) => a.index - b.index);
@@ -98,10 +135,19 @@ function extractAllUrls(content) {
 }
 
 function cleanContent(content) {
-    let out = content;
+    let out = String(content ?? '');
+    let normalized = normalizeUrlAuthorities(out);
     for (const { clean: cleanRe } of patterns()) {
         cleanRe.lastIndex = 0;
-        out = out.replace(cleanRe, '');
+        const ranges = [];
+        const { shadow, positions } = normalized;
+        shadow.replace(cleanRe, (...args) => {
+            const offset = typeof args.at(-1) === 'object' ? args.at(-3) : args.at(-2);
+            ranges.push(positions ? [positions[offset], positions[offset + args[0].length]] : [offset, offset + args[0].length]);
+            return args[0];
+        });
+        for (const [start, end] of ranges.reverse()) out = out.slice(0, start) + out.slice(end);
+        if (ranges.length) normalized = normalizeUrlAuthorities(out);
     }
     return out;
 }

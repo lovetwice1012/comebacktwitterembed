@@ -752,7 +752,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
     }
     const failedPostprocess = result.postprocess.some(item => item.success === false);
     result.outcome = deliveryUnknown ? 'U'
-        : result.sent.length === sendable && !failedPostprocess ? result.fallback ? 'D' : 'F'
+        : result.sent.length === sendable && !failedPostprocess ? !completeFallback ? 'P' : result.fallback ? 'D' : 'F'
             : result.sent.length ? 'P' : 'E';
     return result;
     } finally {

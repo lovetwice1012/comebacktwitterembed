@@ -83,6 +83,28 @@ function source(send) {
         suppressEmbeds: async () => postprocess.push('suppress'), delete: async () => postprocess.push('delete') };
 }
 
+test('unavailable Instagram multipart controls are reported as partial and preserve the source', async () => {
+    const message = source(async () => ({ id: 'sent' }));
+    const result = await dispatcher({
+        '../instagramMultipart': { prepare: async step => ({ step, unavailable: true }) },
+    }).runSendSteps(message, [{ content: 'image post', deleteSource: true }], 'instagram');
+    assert.equal(result.sent.length, 1);
+    assert.equal(result.outcome, 'P');
+    assert.deepEqual(message.postprocess, []);
+});
+
+test('an Instagram multipart receipt failure is partial after delivery and never retries or deletes the source', async () => {
+    let sends = 0;
+    const message = source(async () => { sends++; return { id: 'sent' }; });
+    const result = await dispatcher({
+        '../instagramMultipart': { prepare: async step => ({ step, group: {} }), record: async () => false },
+        './twitter/singleAttemptSender': { forMessage: () => ({ send: message.reply }) },
+    }).runSendSteps(message, [{ content: 'image post', deleteSource: true }], 'instagram');
+    assert.equal(sends, 1);
+    assert.equal(result.outcome, 'P');
+    assert.deepEqual(message.postprocess, []);
+});
+
 test('silent expansion applies to channel sends, source replies, subsequent replies and file fallback when enabled', async () => {
     const payloads = [];
     let failedFile = false;
@@ -234,7 +256,7 @@ test('metadata-only fallback keeps the source when an attachment has no public r
         suppressSourceEmbeds: true, deleteSource: true,
     }]);
     assert.equal(payloads.length, 2);
-    assert.equal(result.outcome, 'D');
+    assert.equal(result.outcome, 'P');
     assert.deepEqual(message.postprocess, []);
     assert.doesNotMatch(JSON.stringify(payloads[1]), /hidden.jpg/);
 });
