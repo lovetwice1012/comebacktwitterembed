@@ -34,6 +34,12 @@ test('community posts keep Unicode text and canonical post URL while excluding o
     assert.equal(items[0].publishedAtMs, null, 'Relative times must not invent exact publication dates');
 });
 
+test('a community post with missing ownership cannot be silently discarded', () => {
+    const incomplete = f.post('UgkxIncompleteOwner12345');
+    delete incomplete.backstagePostThreadRenderer.post.backstagePostRenderer.authorEndpoint;
+    assert.throws(() => parseTab(f.page('community', [f.post(), incomplete]), f.channel, 'community'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+});
+
 test('wrong channels, redirected tabs, consent, malformed JSON and unsafe IDs fail without baselining', () => {
     for (const html of [f.page('releases', [f.release()], { owner: 'UC_wrong_channel' }), '<html>consent</html>', '<script>ytInitialData={bad}</script>',
         f.page('releases', [f.release()]).replace('"selected":true', '"selected":false'), f.page('releases', [f.release(f.video, '../unsafe')])]) {

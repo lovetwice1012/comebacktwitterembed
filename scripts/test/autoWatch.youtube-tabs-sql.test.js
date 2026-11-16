@@ -89,6 +89,17 @@ test('YouTube SQL settings, atomic baseline/admission, shared-source isolation, 
                 assert.equal(listed.intervalMinutes, 30);
             }
         });
+        await t.test('a community card without ownership cannot commit partial state or deliveries', async () => {
+            const before = (await db.queryDatabase('SELECT cursor_json,state_json,etag,last_modified FROM auto_watch_sources'))[0];
+            const incomplete = f.post('UgkxIncompleteOwner12345');
+            delete incomplete.backstagePostThreadRenderer.post.backstagePostRenderer.authorEndpoint;
+            now += 1800000;
+            const result = await run({ releases: [f.release()], posts: [f.post(), incomplete] });
+            assert.equal(result.status, 'failed');
+            assert.equal(result.errorCode, 'AUTO_WATCH_INVALID_RESPONSE');
+            assert.deepEqual((await db.queryDatabase('SELECT cursor_json,state_json,etag,last_modified FROM auto_watch_sources'))[0], before);
+            assert.deepEqual(await deliveries(), []);
+        });
         await t.test('later new releases and posts route only to eligible targets, then survive restart without duplicate admission', async () => {
             now += 1800000;
             const scenario = { releases: [f.release('newVideo123'), f.release()], posts: [f.post('UgkxNextPost123456789'), f.post()] };

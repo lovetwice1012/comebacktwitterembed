@@ -44,7 +44,11 @@ function parseTab(html, channelId, lane) {
             const post = node.backstagePostRenderer;
             recognized = true;
             if (!/^Ug[A-Za-z0-9_-]{10,200}$/.test(post.postId || '')) throw invalid();
-            if (post.authorEndpoint?.browseEndpoint?.browseId !== channelId) return;
+            const authorId = post.authorEndpoint?.browseEndpoint?.browseId;
+            // A known different author is excluded; a missing author is an
+            // incomplete observation and must not be committed as an empty tab.
+            if (typeof authorId !== 'string' || !authorId.trim()) throw invalid();
+            if (authorId !== channelId) return;
             const body = textOf(post.contentText).slice(0, 65536);
             items.push({ contentId: `post:${post.postId}`, url: `https://www.youtube.com/post/${post.postId}`,
                 title: body.slice(0, 1024) || 'コミュニティ投稿', body, publishedAtMs: null, youtubeContentKind: 'community' });
