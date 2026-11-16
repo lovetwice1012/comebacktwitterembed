@@ -73,7 +73,9 @@ function normalizeFxTwitter(payload, expectedUrl) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !Object.hasOwn(payload, 'tweet')) return null;
     if (payload.code !== 200 || !payload.tweet || typeof payload.tweet !== 'object' || Array.isArray(payload.tweet)) return invalid();
     const tweet = payload.tweet, id = typeof tweet.id === 'string' ? tweet.id : '', fromUrl = statusIdentity(tweet.url);
-    if (!/^\d{1,22}$/.test(id) || fromUrl !== id || expectedUrl && statusIdentity(expectedUrl) !== id) return invalid();
+    if (!/^\d{1,22}$/.test(id) || !fromUrl || expectedUrl && !statusIdentity(expectedUrl)) return invalid();
+    if (fromUrl !== id || expectedUrl && statusIdentity(expectedUrl) !== id)
+        throw Object.assign(new Error('Twitter fallback returned a different post.'), { code: 'TWITTER_IDENTITY_MISMATCH' });
     if (!tweet.author || typeof tweet.author !== 'object' || Array.isArray(tweet.author)
         || typeof tweet.author.name !== 'string' || typeof tweet.author.screen_name !== 'string'
         || !/^[A-Za-z0-9_]{1,15}$/.test(tweet.author.screen_name) || typeof tweet.text !== 'string') return invalid();

@@ -136,15 +136,16 @@ function parseTweetApiResponse(text, expectedUrl) {
         if (payload.tweetID != null) {
             const value = payload.tweetID;
             if (!(typeof value === 'string' && /^\d{1,20}$/.test(value) || Number.isSafeInteger(value) && value >= 0))
-                throw new Error('Twitter API returned an invalid post identity.');
+                throw Object.assign(new Error('Twitter API returned an invalid post identity.'), { code: 'TWITTER_IDENTITY_MISMATCH' });
             ids.push(String(value));
         }
         if (payload.tweetURL != null) {
             const value = identity(payload.tweetURL);
-            if (!value) throw new Error('Twitter API returned an invalid post URL.');
+            if (!value) throw Object.assign(new Error('Twitter API returned an invalid post URL.'), { code: 'TWITTER_IDENTITY_MISMATCH' });
             ids.push(value);
         }
-        if (!ids.length || ids.some(value => value !== expectedId)) throw new Error('Twitter API returned a different or unidentified post.');
+        if (!ids.length) throw new Error('Twitter API returned an unidentified post.');
+        if (ids.some(value => value !== expectedId)) throw Object.assign(new Error('Twitter API returned a different post.'), { code: 'TWITTER_IDENTITY_MISMATCH' });
         if (!payload.tweetURL) payload.tweetURL = expected.toString();
     }
     return payload;

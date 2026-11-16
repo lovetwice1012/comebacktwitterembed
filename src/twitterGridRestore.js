@@ -140,7 +140,7 @@ async function fetchVerifiedSource(status, payload, dependencies = {}) {
             // An upstream denial is not permission to try a less restrictive
             // source. A transient error or absent metadata may try the next
             // endpoint selected by the existing policy.
-            if (error?.code === 'GRID_RESTORE_DENIED' || parser.isExpectedNonExpandableTweetError(error)) throw new Error('GRID_RESTORE_SOURCE');
+            if (['GRID_RESTORE_DENIED', 'TWITTER_IDENTITY_MISMATCH'].includes(error?.code) || parser.isExpectedNonExpandableTweetError(error)) throw new Error('GRID_RESTORE_SOURCE');
         } finally { response?.body?.destroy?.(); }
     }
     throw new Error('GRID_RESTORE_SOURCE');

@@ -32,7 +32,7 @@ const examples = {
         assert.equal(data.medias[0].url, 'https://example.com/image.jpg');
     },
     spotify(parser) {
-        const source = { props: { pageProps: { state: { data: { entity: { name: 'Portable track' } } } } } };
+        const source = { props: { pageProps: { state: { data: { entity: { id: 'abc', type: 'track', name: 'Portable track' } } } } } };
         const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(source)}</script>`;
         assert.equal(parser.parseSpotifyPage(html, 'track', 'abc').name, 'Portable track');
     },

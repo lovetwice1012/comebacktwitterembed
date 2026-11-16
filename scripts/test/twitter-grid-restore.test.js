@@ -110,12 +110,18 @@ test('live verification uses only registered sources and stops on an explicit de
     deps.fetch = async url => { attempts.push([url]); return { ok: false, status: 403 }; };
     await assert.rejects(restore.fetchVerifiedSource(status, f.payload, deps), /GRID_RESTORE_SOURCE/);
     assert.equal(attempts.length, 1, 'an access denial must not be bypassed');
-    for (const change of [{ possibly_sensitive: true }, { author: { protected: true } }, { tweetID: '111' }]) {
+    for (const change of [{ possibly_sensitive: true }, { author: { protected: true } }, { tweetID: '111' }, { tweetURL: 'https://x.com/other/status/111' }]) {
         attempts.length = 0;
         deps.fetch = async url => { attempts.push([url]); return { ok: true, text: async () => JSON.stringify({ ...f.tweet, ...change }) }; };
         await assert.rejects(restore.fetchVerifiedSource(status, f.payload, deps), /GRID_RESTORE_SOURCE/);
         assert.equal(attempts.length, 1, 'a known restriction or wrong post must not be bypassed');
     }
+    attempts.length = 0;
+    deps.fetch = async url => { attempts.push([url]); return { ok: true, text: async () => JSON.stringify({ code: 200, tweet: {
+        id: '111', url: 'https://x.com/other/status/111', text: 'fixture', author: { name: 'Other', screen_name: 'other', protected: false }, possibly_sensitive: false,
+    } }) }; };
+    await assert.rejects(restore.fetchVerifiedSource(status, f.payload, deps), /GRID_RESTORE_SOURCE/);
+    assert.equal(attempts.length, 1, 'an explicitly mismatched alternate post must not be bypassed');
 });
 
 test('existing parser accepts an Fx fallback after Vx omits protected status', async () => {
