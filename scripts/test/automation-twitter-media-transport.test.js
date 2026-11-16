@@ -47,7 +47,7 @@ async function prepare(destinationKind, legacyMode, options = {}) {
         '../providers/_loader': { loadProviders: () => [{ ...provider, id: options.providerId || 'twitter', ...(options.steps ? { extract: async () => options.steps } : {}) }] },
         '../providers/_provider_settings': {
             PROVIDER_DEFAULTS: { legacy_mode: undefined },
-            getProviderSettings: async () => ({ enabled: true, legacy_mode: legacyMode }),
+            getProviderSettings: async () => ({ enabled: true, legacy_mode: legacyMode, twitter_grid_details_position: options.detailsPosition }),
         },
     });
     const db = options.db || { queryDatabase: async () => [{ webhook_url: `https://discord.com/api/webhooks/${WEBHOOK}/${'a'.repeat(60)}` }] };
@@ -93,8 +93,8 @@ test('expanded X automatic notifications prepare all 20 images in order for DM a
             images.map(url => `fixture-${new URL(url).pathname.split('/').pop()}`));
         assert.match(prepared.payloads[0].body.content, /notification fixture/);
         assert.ok(!prepared.payloads[1].body.content);
-        assert.equal(prepared.payloads[0].body.embeds.length, 1);
-        assert.ok(!prepared.payloads[1].body.embeds?.length);
+        assert.ok(!prepared.payloads[0].body.embeds?.length);
+        assert.equal(prepared.payloads[1].body.embeds.length, 1);
     }
 });
 
@@ -108,11 +108,19 @@ test('large expanded X images split by request bytes in order for DM and webhook
         assert(prepared.payloads.every(part => part.files.reduce((n, file) => n + file.data.length, 0) <= 24 * 1024 * 1024));
         assert(prepared.payloads.every(part => part.files.reduce((n, file) => n + file.data.length, 0) + Buffer.byteLength(JSON.stringify(part.body)) + 64 * 1024 <= 25 * 1024 * 1024));
         assert.match(prepared.payloads[0].body.content, /notification fixture/);
-        assert.equal(prepared.payloads[0].body.embeds.length, 1);
-        assert(prepared.payloads.slice(1).every(part => !part.body.content && !part.body.embeds?.length && !part.body.components?.length));
+        assert.equal(prepared.payloads.at(-1).body.embeds.length, 1);
+        assert(prepared.payloads.slice(0, -1).every(part => !part.body.embeds?.length && !part.body.components?.length));
+        assert(prepared.payloads.slice(1).every(part => !part.body.content));
         await transport.reserve(prepared, job);
         assert.deepEqual(rateEvents, [['reserve', 4]], 'reserve actual Discord message count before sending');
     }
+});
+
+test('explicit first-details setting survives byte-based splits', async () => {
+    const { prepared } = await prepare('webhook', undefined, { detailsPosition: 'first', sizes: Array(20).fill(3 * 1024 * 1024) });
+    assert.deepEqual(prepared.payloads.map(part => part.files.length), [8, 2, 8, 2]);
+    assert.equal(prepared.payloads[0].body.embeds.length, 1);
+    assert(prepared.payloads.slice(1).every(part => !part.body.embeds?.length));
 });
 
 test('single images too large for the safe multipart budget and non-X totals fail before posting', async () => {

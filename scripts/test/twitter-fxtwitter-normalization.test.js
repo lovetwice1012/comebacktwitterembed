@@ -48,8 +48,9 @@ test('Fx fallback preserves all 11 ordered photos and emits two valid steps', as
     assert.deepEqual(steps.map(step => step.files.length), [10, 1]);
     assert.ok(steps.every(step => step.safeTwitterMedia === true));
     assert.deepEqual(steps.flatMap(step => step.files), photos.map(photo => photo.url));
-    assert.equal(steps[0].embeds[0].title, 'Fixture');
-    assert.match(steps[0].embeds[0].description, /fixture post/);
+    assert.ok(!steps[0].embeds?.length);
+    assert.equal(steps[1].embeds[0].title, 'Fixture');
+    assert.match(steps[1].embeds[0].description, /fixture post/);
     assert.ok(requests.some(url => url.startsWith('https://api.fxtwitter.com/')));
 });
 

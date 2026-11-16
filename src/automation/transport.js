@@ -227,7 +227,8 @@ function createTransport(db, destinations, client, options = {}) {
             // the output. Do not bypass that decision with a raw-URL fallback.
             if (!Array.isArray(extracted) || !extracted.length) throw failure('PROVIDER_NO_OUTPUT', 403);
             splitTwitterExpanded = provider.id === 'twitter';
-            steps = extracted.map(step => ({ content: step.content, embeds: step.embeds, components: step.components, files: step.files }));
+            steps = extracted.map(step => ({ content: step.content, embeds: step.embeds, components: step.components, files: step.files,
+                detailsOnLastPart: Boolean(step.twitterGridLastRoot) }));
             if (steps[0]) steps[0].content = [plan.text, steps[0].content].filter(Boolean).join('\n').slice(0, 1900);
         }
         if (!steps?.length || steps.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
@@ -253,11 +254,12 @@ function createTransport(db, destinations, client, options = {}) {
                 files.push({ attachment: buffer, name: typeof file === 'object' && file.name ? String(file.name).replace(/[\\/\r\n]/g, '_').slice(0, 120) : `attachment-${fileIndex}.bin` });
             }
             const target = /** @type {any} */ ({ client });
-            const { normalExpansion, ...discordStep } = step;
+            const { normalExpansion, detailsOnLastPart, ...discordStep } = step;
             for (const [groupIndex, files] of groups.entries()) {
-                // Continuations carry only media and the original flags. Text,
-                // embeds and components belong to this post's first message.
-                const bodyStep = groupIndex === 0 ? discordStep : { flags: discordStep.flags };
+                // Preserve the provider's last-details layout even if an
+                // individual image batch needs further splitting by bytes.
+                const detailsIndex = detailsOnLastPart ? groups.length - 1 : 0;
+                const bodyStep = groupIndex === detailsIndex ? discordStep : { flags: discordStep.flags };
                 const payload = MessagePayload.create(target, { ...bodyStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
                 payload.resolveBody(); await payload.resolveFiles();
                 const body = /** @type {any} */ (payload.body);
