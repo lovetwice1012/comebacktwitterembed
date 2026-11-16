@@ -167,14 +167,16 @@ test('an uncertain link continuation is not retried and later parts stay unsent'
 
 test('a long configured notification does not truncate provider-supplied text', async () => {
     const text = 'configured '.repeat(172), providerText = 'provider continuation';
-    const { prepared, transport, job, posts, rateEvents } = await prepare('webhook', undefined,
-        { steps: [{ content: providerText, embeds: [{ title: 'provider detail' }] }], media: 'inherit', text });
-    assert.deepEqual(prepared.payloads.map(part => part.body.content), [text, providerText]);
-    assert.equal(prepared.payloads[1].body.embeds[0].title, 'provider detail');
-    await transport.reserve(prepared, job);
-    for (let index = 0; index < prepared.payloads.length; index++) await transport.sendStep(prepared, job, index);
-    assert.deepEqual(posts.map(post => post.payload.body.content), [text, providerText]);
-    assert.equal(rateEvents.filter(event => event[0] === 'commit').length, 2);
+    for (const providerId of ['twitter', 'other']) {
+        const { prepared, transport, job, posts, rateEvents } = await prepare('webhook', undefined,
+            { providerId, steps: [{ content: providerText, embeds: [{ title: 'provider detail' }] }], media: 'inherit', text });
+        assert.deepEqual(prepared.payloads.map(part => part.body.content), [text, providerText]);
+        assert.equal(prepared.payloads[1].body.embeds[0].title, 'provider detail');
+        await transport.reserve(prepared, job);
+        for (let index = 0; index < prepared.payloads.length; index++) await transport.sendStep(prepared, job, index);
+        assert.deepEqual(posts.map(post => post.payload.body.content), [text, providerText]);
+        assert.equal(rateEvents.filter(event => event[0] === 'commit').length, 2);
+    }
 });
 
 test('long configured text and long media links are both preserved in link mode', async () => {
