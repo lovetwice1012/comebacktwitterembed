@@ -169,9 +169,10 @@ function createXEventRouter(db, queue, options = {}) {
         reportedInvalid.set(id, now);
         try {
             if (typeof options.onInvalidMonitor === 'function') options.onInvalidMonitor(id);
-            else require('../errorTracking').recordError(Object.assign(new Error('X monitor settings cannot be read.'), { code: 'X_MONITOR_SETTINGS_UNREADABLE' }),
+            else require('../adminSupport/telemetry').run({ url: null }, () => require('../errorTracking').recordError(
+                Object.assign(new Error('X monitor settings cannot be read.'), { code: 'X_MONITOR_SETTINGS_UNREADABLE' }),
                 { errorType: 'x_monitor_settings_unreadable', source: 'xEventRouter.boundTargets', providerId: 'twitter',
-                    message: null, interaction: null, url: '', rawUrl: '', normalizedUrl: '', input: '', details: { monitorId: id } });
+                    message: null, interaction: null, commandOptions: null, url: '', rawUrl: '', normalizedUrl: '', input: '', details: { monitorId: id } }));
         } catch { /* Diagnostics must never change delivery state. */ }
     }
     const inspect = (row) => require('./x-processing-settings').inspectXMonitorProcessing(db.queryDatabase, row, clock(), {

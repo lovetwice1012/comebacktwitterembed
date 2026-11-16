@@ -269,9 +269,10 @@ test('corrupt monitor diagnostics stay bounded across repeated scans', async () 
 
 test('corrupt monitor diagnostics explicitly suppress inherited notification input and URLs', async () => {
     const filename = require.resolve('../../src/automation/x-event-router');
-    const actual = require('node:module').createRequire(filename), mod = { exports: {} }, reports = [];
+    const actual = require('node:module').createRequire(filename), mod = { exports: {} }, reports = [], telemetryContexts = [];
     require('node:vm').compileFunction(require('node:fs').readFileSync(filename, 'utf8'), ['require', 'module', 'exports'], { filename })(
-        name => name === '../errorTracking' ? { recordError: (error, context) => reports.push({ error, context }) } : actual(name), mod, mod.exports);
+        name => name === '../errorTracking' ? { recordError: (error, context) => reports.push({ error, context }) }
+            : name === '../adminSupport/telemetry' ? { run: (context, fn) => { telemetryContexts.push(context); return fn(); } } : actual(name), mod, mod.exports);
     const ownerUserId = '222222222222222222', subscriptionId = randomUUID();
     const rows = [{ id: '7', owner_user_id: ownerUserId, account_handle: 'example', state: 'ready', notification_settings_json: '{private sentinel' }];
     const router = mod.exports.createXEventRouter({ queryDatabase: async () => rows }, { routeX: async () => assert.fail('must not route') });
@@ -282,5 +283,7 @@ test('corrupt monitor diagnostics explicitly suppress inherited notification inp
     for (const key of ['url', 'rawUrl', 'normalizedUrl', 'input']) assert.equal(reports[0].context[key], '');
     assert.equal(reports[0].context.message, null);
     assert.equal(reports[0].context.interaction, null);
+    assert.equal(reports[0].context.commandOptions, null);
+    assert.deepEqual(telemetryContexts, [{ url: null }]);
     assert.equal(JSON.stringify(reports[0].context).includes('private sentinel'), false);
 });
