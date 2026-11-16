@@ -61,7 +61,12 @@ async function extract(message, url, s, opts) {
     opts = opts || {};
     const lang = toApiLocaleFamily(s.defaultLanguage);
 
-    const parsed = await resolveParsedUrl(parseInstagramUrl(url));
+    let parsed;
+    try { parsed = await resolveParsedUrl(parseInstagramUrl(url)); }
+    catch (err) {
+        recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/share' });
+        return buildFailureResponse('instagram', url, s, err);
+    }
     if (!parsed || (parsed.kind !== 'media' && parsed.kind !== 'profile')) return null;
 
     const requesterName = requesterNameFor(message, s, lang);

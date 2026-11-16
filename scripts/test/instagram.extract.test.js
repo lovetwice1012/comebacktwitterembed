@@ -602,6 +602,37 @@ test('instagram extract: share URLs are resolved before scraping', async () => {
     assert.equal(result[0].files[0].attachment.endsWith('/v/t50/video.mp4'), true);
 });
 
+test('instagram extract: follows an intermediate share redirect before scraping', async () => {
+    const requests = [];
+    const provider = loadInstagramProviderWithFetch(async (url, options = {}) => {
+        requests.push(String(url));
+        if (options.method === 'HEAD') return { status: 302, headers: { get: () => requests.length === 1
+            ? 'https://www.instagram.com/share/SECOND/' : 'https://www.instagram.com/reel/REALCODE/' } };
+        return { ok: true, text: async () => embedHtml(mediaNode({ __typename: 'GraphVideo', video_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/video.mp4' })) };
+    });
+    const url = 'https://www.instagram.com/share/reel/SHARECODE/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.deepEqual(requests.slice(0, 3), [url, 'https://www.instagram.com/share/SECOND/', 'https://www.instagram.com/reel/REALCODE/']);
+    assert.equal(result[0].embeds[0].url, 'https://www.instagram.com/reel/REALCODE/');
+});
+
+for (const [name, status, location, expectedCalls] of [
+    ['missing destination', 200, null, 2], ['rate limited', 429, null, 1],
+    ['foreign destination', 302, 'https://example.com/reel/CODE/', 2],
+    ['redirect cycle', 302, 'https://www.instagram.com/share/reel/SHARECODE/', 3],
+]) test(`instagram extract: ${name} follows the configured failure policy`, async () => {
+    let calls = 0;
+    const provider = loadInstagramProviderWithFetch(async url => {
+        calls++;
+        return { status, url: String(url), headers: { get: key => key === 'location' ? location : null } };
+    });
+    const url = 'https://www.instagram.com/share/reel/SHARECODE/';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(calls, expectedCalls);
+    assert.equal(result[0].outputRole, 'failure_notice');
+    assert.equal(result[0].components[0].components[0].toJSON().url, url);
+});
+
 test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no media payload', async () => {
     const requestedUrls = [];
     const provider = loadInstagramProviderWithFetch(async (url) => {

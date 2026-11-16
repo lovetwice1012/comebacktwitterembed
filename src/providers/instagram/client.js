@@ -100,26 +100,36 @@ function createInstagramClient(fetch) {
             `https://www.instagram.com/share/${parsed.shareCode}/`
         );
 
+        let lastError;
         for (const candidate of [...new Set(candidates)]) {
             try {
-                const res = await fetch(candidate, {
-                    method: 'HEAD',
-                    redirect: 'manual',
-                    headers: REQUEST_HEADERS,
-                });
-                const location = res.headers?.get?.('location');
-                const target = location ? new URL(location, candidate).toString() : res.url;
-                const resolved = parseInstagramUrl(target);
-                if (resolved && resolved.kind === 'media') {
-                    resolved.mediaIndex = parsed.mediaIndex;
-                    return resolved;
+                let current = candidate;
+                const visited = new Set();
+                for (let hops = 0; hops < 5; hops++) {
+                    if (visited.has(current)) throw new Error('instagram share link redirected in a cycle');
+                    visited.add(current);
+                    const res = await fetch(current, { method: 'HEAD', redirect: 'manual', headers: REQUEST_HEADERS });
+                    if (res.status === 429) throw mediaRateLimited(res);
+                    if (res.status >= 400) throw Object.assign(new Error('instagram share lookup failed'), { status: res.status });
+                    const location = res.headers?.get?.('location');
+                    const target = new URL(location || res.url || current, current);
+                    if (target.protocol !== 'https:' || target.username || target.password || target.port
+                        || !['instagram.com', 'www.instagram.com'].includes(target.hostname)) throw new Error('instagram share link redirected to an unsafe destination');
+                    const resolved = parseInstagramUrl(target.href);
+                    if (resolved && resolved.kind === 'media') {
+                        resolved.mediaIndex = parsed.mediaIndex;
+                        return resolved;
+                    }
+                    if (!location || !resolved || resolved.kind !== 'share') throw new Error('instagram share link did not provide a media destination');
+                    current = target.href;
                 }
-            } catch {
-                // Try the next share URL shape.
+                throw new Error('instagram share link redirected too many times');
+            } catch (error) {
+                if (error?.status === 429) throw error;
+                lastError = error;
             }
         }
-
-        return null;
+        throw lastError || new Error('instagram share link could not be resolved');
     }
 
     async function resolveParsedUrl(parsed) {
