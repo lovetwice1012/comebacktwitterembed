@@ -68,7 +68,18 @@ function filterMedia(payload, mode) {
         const url = typeof file === 'string' ? file : file.fallbackUrl || (typeof file.attachment === 'string' ? file.attachment : '');
         if (mode === 'links' && /^https:\/\//.test(url)) links.push(url);
     }
-    return { ...payload, embeds, files: [], content: [payload.content, ...links].filter(Boolean).join('\n').slice(0, 1900) };
+    if (mode !== 'links') {
+        const chunks = splitText(payload.content);
+        return { ...payload, embeds, files: [], content: chunks[0] || '', ...(chunks.length > 1 ? { contentContinuations: chunks.slice(1) } : {}) };
+    }
+    const chunks = splitText(payload.content), append = value => {
+        if (value.length > 2000) throw new SafetyError('SAFETY_INPUT_LIMIT', 'error');
+        const last = chunks.at(-1);
+        if (last && last.length + 1 + value.length <= 1900) chunks[chunks.length - 1] = `${last}\n${value}`;
+        else chunks.push(value);
+    };
+    for (const link of links) append(link);
+    return { ...payload, embeds, files: [], content: chunks[0] || '', ...(chunks.length > 1 ? { contentContinuations: chunks.slice(1) } : {}) };
 }
 
 // Direct aggregate summaries use admitted observations without refetching each
@@ -184,7 +195,13 @@ function createTransport(db, destinations, client, options = {}) {
                 const memberPlan = { ...plan, ...entry, display: entry.display || plan.display };
                 const slotIds = principals.filter(principal => principal.memberIndices?.includes(memberIndex)).map(principal => principal.slotId);
                 if (!slotIds.length) throw new AutomationRateError('AUTOMATION_AGGREGATE_MEMBERSHIP_INVALID', 'まとめ通知の登録元を確認できませんでした。', 400);
-                for (const step of snapshotSteps(memberPlan, entry.targetKind || job.target_kind, true)) { rawSteps.push(filterMedia(step, memberPlan.display.media)); rawSlots.push(slotIds); }
+                for (const step of snapshotSteps(memberPlan, entry.targetKind || job.target_kind, true)) {
+                    const { contentContinuations, ...primary } = filterMedia(step, memberPlan.display.media);
+                    rawSteps.push(primary); rawSlots.push(slotIds);
+                    for (const content of contentContinuations || []) {
+                        rawSteps.push({ content, flags: primary.flags, normalExpansion: primary.normalExpansion }); rawSlots.push(slotIds);
+                    }
+                }
             }
             attributedSlots = [];
             // Attribution travels beside the packed payload, never in the
@@ -227,14 +244,31 @@ function createTransport(db, destinations, client, options = {}) {
             // the output. Do not bypass that decision with a raw-URL fallback.
             if (!Array.isArray(extracted) || !extracted.length) throw failure('PROVIDER_NO_OUTPUT', 403);
             splitTwitterExpanded = provider.id === 'twitter';
-            steps = extracted.map(step => ({ content: step.content, embeds: step.embeds, components: step.components, files: step.files,
-                detailsOnLastPart: Boolean(step.twitterGridLastRoot) }));
-            if (steps[0]) steps[0].content = [plan.text, steps[0].content].filter(Boolean).join('\n').slice(0, 1900);
+            steps = /** @type {any[]} */ (extracted.map(step => ({ content: step.content, embeds: step.embeds, components: step.components, files: step.files,
+                detailsOnLastPart: Boolean(step.twitterGridLastRoot) })));
+            if (steps[0]) {
+                const prefix = String(plan.text || ''), original = String(steps[0].content || '');
+                const combined = [prefix, original].filter(Boolean).join('\n');
+                if (combined.length <= 1900) steps[0].content = combined;
+                else if (prefix && original) {
+                    // Keep the configured notification text and provider text
+                    // in separate messages rather than truncating either.
+                    const originalChunks = splitText(original);
+                    steps[0].content = originalChunks.shift() || '';
+                    steps.splice(1, 0, ...originalChunks.map(content => ({ content })));
+                    steps.unshift(...splitText(prefix).map(content => ({ content })));
+                } else {
+                    const chunks = splitText(combined);
+                    steps[0].content = chunks.shift() || '';
+                    steps.splice(1, 0, ...chunks.map(content => ({ content })));
+                }
+            }
         }
         if (!steps?.length || steps.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
         const payloads = [], payloadSlots = [], normalExpansions = [];
         for (const [stepIndex, rawStep] of steps.entries()) {
-            const step = snapshotAggregate ? rawStep : filterMedia(rawStep, plan.display.media);
+            const filtered = snapshotAggregate ? rawStep : filterMedia(rawStep, plan.display.media);
+            const { contentContinuations = [], ...step } = filtered;
             const groups = [[]];
             let total = 0;
             for (const file of step.files || []) {
@@ -255,17 +289,29 @@ function createTransport(db, destinations, client, options = {}) {
             }
             const target = /** @type {any} */ ({ client });
             const { normalExpansion, detailsOnLastPart, ...discordStep } = step;
+            const moveDetailsToLastContinuation = detailsOnLastPart && contentContinuations.length > 0;
             for (const [groupIndex, files] of groups.entries()) {
                 // Preserve the provider's last-details layout even if an
                 // individual image batch needs further splitting by bytes.
                 const detailsIndex = detailsOnLastPart ? groups.length - 1 : 0;
-                const bodyStep = groupIndex === detailsIndex ? discordStep : { flags: discordStep.flags };
+                const bodyStep = moveDetailsToLastContinuation ? { content: discordStep.content, flags: discordStep.flags }
+                    : groupIndex === detailsIndex ? discordStep : { flags: discordStep.flags };
                 const payload = MessagePayload.create(target, { ...bodyStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
                 payload.resolveBody(); await payload.resolveFiles();
                 const body = /** @type {any} */ (payload.body);
                 if (!body.content && !body.embeds?.length && !payload.files?.length) continue;
                 if (splitTwitterExpanded && Buffer.byteLength(JSON.stringify(body)) > TWITTER_MULTIPART_RESERVE - TWITTER_MULTIPART_HEADER_RESERVE) throw failure('ATTACHMENT_LIMIT');
                 payloads.push({ body, files: payload.files });
+                if (payloads.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
+                payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
+                normalExpansions.push(normalExpansion === true);
+            }
+            for (const [index, content] of contentContinuations.entries()) {
+                const bodyStep = moveDetailsToLastContinuation && index === contentContinuations.length - 1
+                    ? { ...discordStep, content } : { content, flags: discordStep.flags };
+                const payload = MessagePayload.create(target, { ...bodyStep, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
+                payload.resolveBody(); await payload.resolveFiles();
+                payloads.push({ body: payload.body, files: payload.files });
                 if (payloads.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
                 payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
                 normalExpansions.push(normalExpansion === true);

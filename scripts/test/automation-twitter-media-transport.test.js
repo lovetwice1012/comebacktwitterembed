@@ -34,7 +34,7 @@ async function prepare(destinationKind, legacyMode, options = {}) {
         if (url.hostname === 'altterx.sprink.cloud') return { text: async () => 'ok' };
         assert.equal(url.hostname, 'api.vxtwitter.com', 'unexpected network destination');
         return { text: async () => JSON.stringify({ tweetURL: POST_URL, text: 'fixture post', user_name: 'fixture',
-            user_screen_name: 'fixture', date: '2026-01-01T00:00:00Z', mediaURLs: images }) };
+            user_screen_name: 'fixture', date: '2026-01-01T00:00:00Z', mediaURLs: options.imageUrls || images }) };
     };
     const provider = isolated(require.resolve('../../src/providers/twitter'), {
         '../../providerFetch': { withDeadline: () => fakeFetch },
@@ -76,7 +76,7 @@ async function prepare(destinationKind, legacyMode, options = {}) {
     });
     const job = { id: 'fixture', owner_user_id: OWNER, target_kind: 'x', target_id: '1', plan: {
         context: { locale: 'ja' }, event: { providerId: options.providerId || 'twitter', url: POST_URL }, schedules: [],
-        display: { format: 'expanded', media: 'inherit' }, text: 'notification fixture',
+        display: { format: 'expanded', media: options.media || 'inherit' }, text: options.text ?? 'notification fixture',
     } };
     const destination = destinationKind === 'dm' ? { kind: 'dm', dm_user_id: OWNER }
         : { kind: 'webhook', guild_id: GUILD, webhook_endpoint_id: '1' };
@@ -96,6 +96,107 @@ test('expanded X automatic notifications prepare all 20 images in order for DM a
         assert.ok(!prepared.payloads[0].body.embeds?.length);
         assert.equal(prepared.payloads[1].body.embeds.length, 1);
     }
+});
+
+test('link display preserves all long media links and reserves every resulting message', async () => {
+    const links = Array.from({ length: 20 }, (_, index) => `https://pbs.twimg.com/media/photo-${index + 1}.jpg?fixture=${'x'.repeat(210)}`);
+    const steps = [{ files: links.slice(0, 10) }, { files: links.slice(10), embeds: [{ title: 'post details' }], twitterGridLastRoot: { groupId: 'a'.repeat(32) } }];
+    for (const kind of ['dm', 'webhook']) {
+        const { prepared, transport, job, rateEvents, posts } = await prepare(kind, undefined, { steps, media: 'links' });
+        const messages = prepared.payloads.map(part => part.body.content || '');
+        assert(prepared.payloads.length > 2);
+        assert(messages.every(content => content.length <= 1900));
+        assert.deepEqual(messages.flatMap(content => content.split('\n')).filter(line => line.startsWith('https://')), links);
+        assert.equal(prepared.payloads.at(-1).body.embeds[0].title, 'post details');
+        assert(prepared.payloads.slice(0, -1).every(part => !part.body.embeds?.length));
+        await transport.reserve(prepared, job);
+        assert.deepEqual(rateEvents, [['reserve', prepared.payloads.length]]);
+        for (let index = 0; index < prepared.payloads.length; index++) await transport.sendStep(prepared, job, index);
+        assert.equal(posts.length, prepared.payloads.length);
+        assert.deepEqual(posts.flatMap(post => String(post.payload.body.content || '').split('\n')).filter(line => line.startsWith('https://')), links);
+        assert.equal(rateEvents.filter(event => event[0] === 'commit').length, prepared.payloads.length);
+    }
+});
+
+test('real X extraction with twenty long image URLs keeps every link in order', async () => {
+    const links = Array.from({ length: 20 }, (_, index) => `https://pbs.twimg.com/media/${'x'.repeat(210)}-${index + 1}.jpg`);
+    const { prepared } = await prepare('webhook', undefined, { media: 'links', imageUrls: links });
+    const contents = prepared.payloads.map(part => part.body.content || '');
+    assert(prepared.payloads.length > 2);
+    assert.deepEqual(contents.flatMap(content => content.split('\n')).filter(line => line.startsWith('https://')), links);
+    assert(prepared.payloads.at(-1).body.embeds?.length > 0);
+});
+
+test('link splitting also preserves non-X provider media', async () => {
+    const links = Array.from({ length: 12 }, (_, index) => `https://media.example.test/photo-${index + 1}?fixture=${'x'.repeat(210)}`);
+    const { prepared } = await prepare('webhook', undefined, { providerId: 'other', media: 'links', steps: [{ files: links }] });
+    assert(prepared.payloads.length > 1);
+    assert.deepEqual(prepared.payloads.flatMap(part => String(part.body.content || '').split('\n')).filter(line => line.startsWith('https://')), links);
+});
+
+test('a media link longer than Discord can carry fails before any message is sent', async () => {
+    const prefix = 'https://example.test/';
+    const longest = prefix + 'a'.repeat(2000 - prefix.length);
+    const { prepared } = await prepare('webhook', undefined, { steps: [{ files: [longest] }], media: 'links' });
+    assert(prepared.payloads.some(part => part.body.content === longest));
+    const steps = [{ files: [`${longest}x`] }];
+    await assert.rejects(prepare('webhook', undefined, { steps, media: 'links' }), { code: 'SAFETY_INPUT_LIMIT', decision: 'error' });
+});
+
+test('link continuations remain unsent when the full message reservation fails', async () => {
+    const files = Array.from({ length: 12 }, (_, index) => `https://example.test/${index}?fixture=${'x'.repeat(210)}`);
+    const { prepared, transport, job, posts } = await prepare('webhook', undefined,
+        { steps: [{ files }], media: 'links', failReserve: true });
+    assert(prepared.payloads.length > 1);
+    await assert.rejects(transport.reserve(prepared, job), /synthetic DB failure/);
+    assert.equal(posts.length, 0);
+});
+
+test('an uncertain link continuation is not retried and later parts stay unsent', async () => {
+    const files = Array.from({ length: 20 }, (_, index) => `https://example.test/${index}?fixture=${'x'.repeat(210)}`);
+    const { prepared, transport, job, posts, rateEvents } = await prepare('webhook', undefined,
+        { steps: [{ files }], media: 'links', failPost: 2 });
+    assert(prepared.payloads.length > 2);
+    await transport.reserve(prepared, job); await transport.sendStep(prepared, job, 0);
+    await assert.rejects(transport.sendStep(prepared, job, 1), { code: 'ETIMEDOUT' });
+    assert(rateEvents.some(event => event[0] === 'unknown' && event[1] === 1));
+    await assert.rejects(transport.sendStep(prepared, job, 1), { name: 'SafetyError' });
+    await assert.rejects(transport.sendStep(prepared, job, 2), { name: 'SafetyError' });
+    assert.equal(posts.length, 2);
+});
+
+test('a long configured notification does not truncate provider-supplied text', async () => {
+    const text = 'configured '.repeat(172), providerText = 'provider continuation';
+    const { prepared, transport, job, posts, rateEvents } = await prepare('webhook', undefined,
+        { steps: [{ content: providerText, embeds: [{ title: 'provider detail' }] }], media: 'inherit', text });
+    assert.deepEqual(prepared.payloads.map(part => part.body.content), [text, providerText]);
+    assert.equal(prepared.payloads[1].body.embeds[0].title, 'provider detail');
+    await transport.reserve(prepared, job);
+    for (let index = 0; index < prepared.payloads.length; index++) await transport.sendStep(prepared, job, index);
+    assert.deepEqual(posts.map(post => post.payload.body.content), [text, providerText]);
+    assert.equal(rateEvents.filter(event => event[0] === 'commit').length, 2);
+});
+
+test('long configured text and long media links are both preserved in link mode', async () => {
+    const text = 'configured '.repeat(172), providerText = 'provider continuation';
+    const links = Array.from({ length: 10 }, (_, index) => `https://media.example.test/${index}?fixture=${'x'.repeat(210)}`);
+    const { prepared } = await prepare('webhook', undefined,
+        { steps: [{ content: providerText, embeds: [{ title: 'details' }], files: links }], media: 'links', text });
+    const contents = prepared.payloads.map(part => part.body.content || '');
+    assert.equal(contents[0], text); assert.match(contents[1], /^provider continuation/);
+    assert.deepEqual(contents.flatMap(content => content.split('\n')).filter(line => line.startsWith('https://')), links);
+    assert.equal(prepared.payloads.flatMap(part => part.body.embeds || []).filter(embed => embed.title === 'details').length, 1);
+});
+
+test('hiding media does not truncate a later provider message', async () => {
+    const text = '後続本文'.repeat(600);
+    const { prepared } = await prepare('webhook', undefined, { media: 'hide', steps: [
+        { content: 'first' }, { content: text, embeds: [{ title: 'details', image: { url: 'https://example.test/image.png' } }] },
+    ] });
+    const contents = prepared.payloads.map(part => part.body.content || '');
+    assert.equal(contents.slice(1).join(''), text);
+    assert(prepared.payloads.every(part => part.body.content?.length <= 1900));
+    assert.equal(prepared.payloads.flatMap(part => part.body.embeds || []).some(embed => embed.image), false);
 });
 
 test('large expanded X images split by request bytes in order for DM and webhook without duplicating post details', async () => {
