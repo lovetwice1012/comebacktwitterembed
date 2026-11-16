@@ -7,9 +7,41 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const http = require('node:http');
-const { createAnalysisServer, canonicalJSON } = require('../../admin-agent/analysis-server.cjs');
+const { createAnalysisServer, canonicalJSON, renameReceipt } = require('../../admin-agent/analysis-server.cjs');
 
 const TOKEN = 'fixture-analysis-token-0123456789';
+
+test('receipt replacement retries only bounded Windows sharing errors', async () => {
+    for (const code of ['EPERM', 'EBUSY']) {
+        let attempts = 0; const waits = [];
+        await renameReceipt('source', 'target', { platform: 'win32',
+            rename: async (source, target) => { assert.equal(source, 'source'); assert.equal(target, 'target'); if (++attempts < 3) throw Object.assign(new Error('busy'), { code }); },
+            sleep: async ms => { waits.push(ms); } });
+        assert.equal(attempts, 3); assert.deepEqual(waits, [25, 50]);
+    }
+    for (const [platform, code, expected] of [['linux', 'EPERM', 1], ['win32', 'EACCES', 1], ['win32', 'EPERM', 10]]) {
+        let attempts = 0;
+        const error = Object.assign(new Error('denied'), { code });
+        await assert.rejects(renameReceipt('source', 'target', { platform, rename: async () => { attempts++; throw error; }, sleep: async () => {} }), actual => actual === error);
+        assert.equal(attempts, expected);
+    }
+});
+
+test('a transient Windows receipt replacement failure never repeats the worker', { skip: process.platform !== 'win32' }, async t => {
+    const fixture = await setup(t), original = fs.rename;
+    let receiptRenames = 0;
+    fs.rename = async (...args) => {
+        if (++receiptRenames === 2) throw Object.assign(new Error('sharing violation'), { code: 'EPERM' });
+        return await original(...args);
+    };
+    try {
+        const result = await post(fixture.url, { actionId: 'retry-rename', type: 'echo', input: {} });
+        assert.equal(result.data.ok, true);
+        assert.equal(receiptRenames, 3);
+        assert.deepEqual(await fixture.count(), ['retry-rename']);
+        assert.equal((await receipt(fixture.url, 'retry-rename')).data.state, 'completed');
+    } finally { fs.rename = original; }
+});
 const fakeCLI = `
 'use strict';
 const fs = require('node:fs');

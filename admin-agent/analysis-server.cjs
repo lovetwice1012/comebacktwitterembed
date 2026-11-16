@@ -33,6 +33,21 @@ function unknownResult(causeCode, message, details = {}) {
         ...details }, events: [] };
 }
 
+// Windows may temporarily deny replacing a receipt while another process
+// holds it open. Retry only the rename, never the completed worker action.
+async function renameReceipt(source, destination, options = {}) {
+    const platform = options.platform || process.platform;
+    const rename = options.rename || ((...args) => fs.rename(...args));
+    const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    for (let attempt = 0; ; attempt++) {
+        try { await rename(source, destination); return; }
+        catch (error) {
+            if (platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error?.code) || attempt >= 9) throw error;
+            await sleep(25 * (attempt + 1));
+        }
+    }
+}
+
 async function atomicWrite(filename, value) {
     const temporary = `${filename}.${crypto.randomUUID()}.tmp`;
     const handle = await fs.open(temporary, 'wx', 0o600);
@@ -41,7 +56,7 @@ async function atomicWrite(filename, value) {
         await handle.sync();
     } finally { await handle.close(); }
     try {
-        await fs.rename(temporary, filename);
+        await renameReceipt(temporary, filename);
         // Persist the directory entry as well as its contents on Linux.
         if (process.platform !== 'win32') {
             const directory = await fs.open(path.dirname(filename), 'r');
@@ -315,4 +330,4 @@ if (require.main === module) {
     }).catch(error => { console.error(`Analysis service startup failed: ${error.message}`); process.exitCode = 1; });
 }
 
-module.exports = { createAnalysisServer, authorized, canonicalJSON };
+module.exports = { createAnalysisServer, authorized, canonicalJSON, renameReceipt };
