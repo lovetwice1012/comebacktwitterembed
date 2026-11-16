@@ -6,7 +6,12 @@ const { spawn } = require('node:child_process');
 
 const MAX_GID = 2147483647;
 const CONTROL_LIMIT = 64 * 1024;
-const identity = stat => `${stat.dev}:${stat.ino}`;
+// File IDs can exceed Number's exact integer range, especially on Windows.
+const identity = stat => {
+    if (typeof stat.dev !== 'bigint' || typeof stat.ino !== 'bigint' || stat.ino === 0n)
+        throw failure('SAVE_CONTROL_UNTRUSTED', 'Save-control file identity is unavailable.');
+    return `${stat.dev}:${stat.ino}`;
+};
 function failure(code, message, cause) { return Object.assign(new Error(message, cause ? { cause } : undefined), { code }); }
 function configuredGid(env = process.env) {
     const value = env.ADMIN_SAVE_CONTROL_GID;
@@ -65,12 +70,12 @@ function directoryAclPlan(raw) {
 }
 async function verifyHandle(handle, file, expected = null) {
     const rules = policy();
-    const stat = await handle.stat();
-    const named = await fsp.lstat(file);
-    if (!stat.isFile() || stat.nlink !== 1 || named.isSymbolicLink() || identity(stat) !== identity(named) || expected && identity(stat) !== expected) {
+    const stat = await handle.stat({ bigint: true });
+    const named = await fsp.lstat(file, { bigint: true });
+    if (!stat.isFile() || stat.nlink !== 1n || named.isSymbolicLink() || identity(stat) !== identity(named) || expected && identity(stat) !== expected) {
         throw failure('SAVE_CONTROL_UNTRUSTED', 'Save-control file identity changed or is not a plain owned file.');
     }
-    if (rules.uid !== null && (rules.gid === null ? stat.uid !== rules.uid : stat.gid !== rules.gid) || process.platform !== 'win32' && (stat.mode & 0o7777) !== rules.mode) {
+    if (rules.uid !== null && (rules.gid === null ? stat.uid !== BigInt(rules.uid) : stat.gid !== BigInt(rules.gid)) || process.platform !== 'win32' && (stat.mode & 0o7777n) !== BigInt(rules.mode)) {
         throw failure('SAVE_CONTROL_PERMISSION', 'Save-control file owner, group, or mode does not match the configured policy. Administrator repair is required.');
     }
     if (rules.gid !== null) {
@@ -82,9 +87,9 @@ async function verifyHandle(handle, file, expected = null) {
     return stat;
 }
 async function removeOwned(file, expected) {
-    const stat = await fsp.lstat(file).catch(error => { if (error.code === 'ENOENT') return null; throw permissionFailure(error); });
+    const stat = await fsp.lstat(file, { bigint: true }).catch(error => { if (error.code === 'ENOENT') return null; throw permissionFailure(error); });
     if (!stat) return;
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || identity(stat) !== expected) throw failure('SAVE_CONTROL_CHANGED', 'Save-control file changed; it was not removed.');
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n || identity(stat) !== expected) throw failure('SAVE_CONTROL_CHANGED', 'Save-control file changed; it was not removed.');
     await fsp.unlink(file).catch(error => { throw permissionFailure(error); });
 }
 async function create(file) {
@@ -92,8 +97,8 @@ async function create(file) {
     let handle, owned;
     try {
         handle = await fsp.open(file, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0), 0o600);
-        const stat = await handle.stat(); owned = identity(stat);
-        if (!stat.isFile() || stat.nlink !== 1 || rules.uid !== null && stat.uid !== rules.uid) throw failure('SAVE_CONTROL_UNTRUSTED', 'New save-control file ownership could not be verified.');
+        const stat = await handle.stat({ bigint: true }); owned = identity(stat);
+        if (!stat.isFile() || stat.nlink !== 1n || rules.uid !== null && stat.uid !== BigInt(rules.uid)) throw failure('SAVE_CONTROL_UNTRUSTED', 'New save-control file ownership could not be verified.');
         if (rules.gid !== null) {
             await handle.chown(rules.uid, rules.gid);
             // Do not unmask inherited named ACLs when granting group rw.
@@ -110,7 +115,7 @@ async function create(file) {
 async function read(file, kind) {
     let handle;
     try {
-        const before = await fsp.lstat(file);
+        const before = await fsp.lstat(file, { bigint: true });
         if (before.isSymbolicLink() || !before.isFile()) throw failure('SAVE_CONTROL_UNTRUSTED', 'Save-control files must not be symbolic links or special files.');
         handle = await fsp.open(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
         const stat = await verifyHandle(handle, file, identity(before));
@@ -134,16 +139,16 @@ async function prepareCreatedDirectory(directory) {
     if (rules.gid === null) return;
     const handle = await fsp.open(directory, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
     try {
-        const before = await handle.stat();
-        if (!before.isDirectory() || before.uid !== rules.uid) throw failure('SAVE_CONTROL_UNTRUSTED', 'New shared-save directory ownership could not be verified.');
+        const before = await handle.stat({ bigint: true });
+        if (!before.isDirectory() || before.uid !== BigInt(rules.uid)) throw failure('SAVE_CONTROL_UNTRUSTED', 'New shared-save directory ownership could not be verified.');
         const plan = directoryAclPlan(await acl(handle, 'read'));
         await handle.chown(rules.uid, rules.gid);
         // Growing the ACL mask alone could grant inherited named principals
         // new write access. Pin those entries to their previous effective rights.
         await acl(handle, 'modify', plan.entries);
-        await handle.chmod((before.mode & 0o777) | 0o2070);
-        const after = await handle.stat(), named = await fsp.lstat(directory);
-        if (named.isSymbolicLink() || identity(named) !== identity(after) || after.gid !== rules.gid || (after.mode & 0o2070) !== 0o2070) throw failure('SAVE_CONTROL_UNTRUSTED', 'New shared-save directory verification failed.');
+        await handle.chmod(Number((before.mode & 0o777n) | 0o2070n));
+        const after = await handle.stat({ bigint: true }), named = await fsp.lstat(directory, { bigint: true });
+        if (named.isSymbolicLink() || identity(named) !== identity(after) || after.gid !== BigInt(rules.gid) || (after.mode & 0o2070n) !== 0o2070n) throw failure('SAVE_CONTROL_UNTRUSTED', 'New shared-save directory verification failed.');
         const finalLines = String(await acl(handle, 'read')).split(/\r?\n/).map(line => line.split('#')[0].trim()).filter(Boolean);
         if (JSON.stringify(finalLines.filter(line => !line.startsWith('default:')).sort()) !== JSON.stringify(plan.access) || JSON.stringify(finalLines.filter(line => line.startsWith('default:')).sort()) !== JSON.stringify(plan.defaults)) throw failure('SAVE_CONTROL_UNTRUSTED', 'New shared-save directory ACL verification failed.');
     } catch (error) { throw permissionFailure(error); }

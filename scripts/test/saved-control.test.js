@@ -51,6 +51,8 @@ test('default private control files retain0600 and round-trip through verified h
     await fixture(async directory => {
         const file = path.join(directory, '.admin-save.lock');
         const created = await createJson(file, { pid: process.pid, tweetId: '123' });
+        const exact = await fsp.stat(file, { bigint: true });
+        assert.equal(created.identity, `${exact.dev}:${exact.ino}`, 'file identity must retain all inode bits');
         const record = await controls.read(file, 'lock');
         assert.equal(record.identity, created.identity);
         assert.equal(record.value.pid, process.pid);
@@ -58,6 +60,31 @@ test('default private control files retain0600 and round-trip through verified h
         await controls.removeOwned(file, record.identity);
         assert.equal(fs.existsSync(file), false);
     });
+});
+
+test('distinct large file identities cannot collapse to the same rounded number', async () => {
+    const older = 9007199254740992n, replacement = older + 1n;
+    assert.equal(Number(older), Number(replacement), 'fixture must reproduce number rounding');
+    let unlinks = 0;
+    const stat = mock.method(fsp, 'lstat', async (_path, options) => ({
+        dev: options?.bigint ? 1n : 1, ino: options?.bigint ? replacement : Number(replacement),
+        nlink: options?.bigint ? 1n : 1, isFile: () => true, isSymbolicLink: () => false,
+    }));
+    const unlink = mock.method(fsp, 'unlink', async () => { unlinks++; });
+    try {
+        await assert.rejects(controls.removeOwned('synthetic-path', `1:${older}`), { code: 'SAVE_CONTROL_CHANGED' });
+        assert.equal(unlinks, 0);
+    } finally { unlink.mock.restore(); stat.mock.restore(); }
+});
+
+test('an unavailable file identity never authorizes removing a lock', async () => {
+    let unlinks = 0;
+    const stat = mock.method(fsp, 'lstat', async () => ({ dev: 1n, ino: 0n, nlink: 1n, isFile: () => true, isSymbolicLink: () => false }));
+    const unlink = mock.method(fsp, 'unlink', async () => { unlinks++; });
+    try {
+        await assert.rejects(controls.removeOwned('synthetic-path', '1:0'), { code: 'SAVE_CONTROL_UNTRUSTED' });
+        assert.equal(unlinks, 0);
+    } finally { unlink.mock.restore(); stat.mock.restore(); }
 });
 
 test('malformed, initializing, and non-object records are preserved as busy or unknown', async () => {
