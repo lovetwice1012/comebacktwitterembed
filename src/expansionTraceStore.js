@@ -123,13 +123,18 @@ async function insertExpansionTrace(query, { traceId, bootId, providerId, url, m
 async function readMessageTraces(query, message, locked = false) {
     const { guildId, channelId, messageId } = messageFields(message);
     if (!guildId || !channelId || !messageId) throw new Error('A guild message is required.');
-    return query(`SELECT trace_id, provider_id, raw_url, state, outcome, reason_code,
+    const rows = await query(`SELECT trace_id, provider_id, raw_url, state, outcome, reason_code,
         created_at_ms, updated_at_ms, (output_json IS NOT NULL) AS has_output,
         (delivery_json IS NOT NULL) AS has_delivery, error_json
         FROM ${TABLES.botProviderExpansionTraces}
         WHERE guild_id=? AND channel_id=? AND message_id=?
         ORDER BY created_at_ms DESC, trace_id DESC LIMIT 101${locked ? ' FOR UPDATE' : ''}`,
     [guildId, channelId, messageId], { timeoutMs: 5000, logErrors: false });
+    // MySQL's bigNumberStrings option returns computed boolean expressions as
+    // strings. Only normalize the two proven boolean representations; an
+    // unfamiliar value must still fail the retry policy closed.
+    const booleanValue = value => value === '0' ? 0 : value === '1' ? 1 : value;
+    return rows.map(row => ({ ...row, has_output: booleanValue(row.has_output), has_delivery: booleanValue(row.has_delivery) }));
 }
 
 async function getMessageExpansionTraces(message) {
