@@ -21,6 +21,21 @@ function getAttachmentUrls(attachments) {
     return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
 }
 
+function splitTwitterDescription(description, sourceUrl) {
+    const stats = /^:speech_balloon:[^\n]* • :recycle:[^\n]* • :heart:[^\n]*$/;
+    for (const label of ['Twitter で見る', 'View on Twitter']) {
+        const link = `[${label}](${sourceUrl})`, index = description.lastIndexOf(link);
+        if (index < 0 || index > 0 && description.slice(index - 2, index) !== '\n\n') continue;
+        const after = description.slice(index + link.length);
+        if (after && !(after.startsWith('\n\n') && stats.test(after.slice(2)))) continue;
+        const start = index > 0 ? index - 2 : 0;
+        return { text: description.slice(0, start), suffix: description.slice(start) };
+    }
+    // Compact X embeds can contain only the Bot's statistics line.
+    if (stats.test(description)) return { text: '', suffix: description };
+    return { text: description, suffix: '' };
+}
+
 async function handle(interaction, context = {}) {
     const messageObject = { components: [], embeds: [] };
 
@@ -54,17 +69,14 @@ async function handle(interaction, context = {}) {
     const looksTwitterLike = /twitter\.com|x\.com|vxtwitter\.com|fxtwitter\.com/.test(sourceEmbed.url || '');
 
     if (looksTwitterLike) {
-        const lines = originalDescription.split('\n');
-        if (lines.length > 4) {
-            trailingTail = lines.slice(lines.length - 4).join('\n');
-            translatable = lines.slice(0, lines.length - 4).join('\n');
-        }
+        ({ text: translatable, suffix: trailingTail } = splitTwitterDescription(originalDescription, sourceEmbed.url));
     }
 
     if (translatable.trim().length > 0) {
         const translated = await translateText(translatable, target);
-        messageObject.embeds[0].description = trailingTail ? `${translated}\n${trailingTail}` : translated;
-    }
+        if (!translated.trim()) throw new Error('TRANSLATION_EMPTY_RESPONSE');
+        messageObject.embeds[0].description = translated + trailingTail;
+    } else if (originalDescription) messageObject.embeds[0].description = originalDescription;
 
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
