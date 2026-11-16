@@ -208,32 +208,43 @@ function decodePng(buffer) {
     let transparency = null;
     const idat = [];
     let pos = 8;
+    let sawHeader = false, sawEnd = false, endedIdat = false;
 
     while (pos + 12 <= buffer.length) {
         const length = buffer.readUInt32BE(pos);
         if (length > buffer.length - pos - 12) return null;
         if (crc32(buffer.subarray(pos + 4, pos + 8 + length)) !== buffer.readUInt32BE(pos + 8 + length)) return null;
         const type = buffer.slice(pos + 4, pos + 8).toString('ascii');
+        if (!/^[A-Za-z]{4}$/.test(type)) return null;
         const data = buffer.slice(pos + 8, pos + 8 + length);
         if (type === 'IHDR') {
+            if (sawHeader || pos !== 8 || length !== 13) return null;
+            sawHeader = true;
             width = data.readUInt32BE(0);
             height = data.readUInt32BE(4);
             bitDepth = data[8];
             colorType = data[9];
             interlace = data[12];
         } else if (type === 'IDAT') {
+            if (!sawHeader || endedIdat) return null;
             idat.push(data);
         } else if (type === 'tRNS') {
-            if (transparency) return null;
+            if (!sawHeader || transparency || idat.length) return null;
             transparency = data;
         } else if (type === 'IEND') {
+            if (!sawHeader || !idat.length || length !== 0) return null;
+            sawEnd = true;
+            pos += length + 12;
             break;
+        } else {
+            if (!sawHeader || /^[A-Z]/.test(type) && type !== 'PLTE') return null;
+            if (idat.length) endedIdat = true;
         }
         pos += length + 12;
     }
 
     const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 0 ? 1 : 0;
-    if (!width || !height || width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION || width * height > MAX_RASTER_PIXELS
+    if (!sawEnd || pos !== buffer.length || !width || !height || width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION || width * height > MAX_RASTER_PIXELS
         || bitDepth !== 8 || interlace !== 0 || channels === 0 || idat.length === 0) return null;
     let transparentKey = null;
     if (transparency) {

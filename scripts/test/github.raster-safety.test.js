@@ -44,6 +44,9 @@ test('invalid, oversized and overinflated PNG data cannot crash the avatar decod
     assert.equal(decodeRasterImage(hugeDimensions), null);
     assert.equal(decodeRasterImage(pngWithInflatedBytes(Buffer.alloc(1024 * 1024))), null);
     assert.equal(decodeRasterImage(pngWithInflatedBytes(Buffer.from([5, 1, 2, 3, 255]))), null, 'unknown PNG filters are not decoded as unfiltered pixels');
+    const valid = encodePng(1, 1, Buffer.from([1, 2, 3, 255]));
+    assert.equal(decodeRasterImage(valid.subarray(0, valid.length - 12)), null, 'a missing IEND is not a complete image');
+    assert.equal(decodeRasterImage(Buffer.concat([valid, Buffer.from([1])])), null, 'data after IEND is not silently ignored');
     assert.ok(decodeRasterImage(encodePng(1, 1, Buffer.from([1, 2, 3, 255]))));
 });
 
