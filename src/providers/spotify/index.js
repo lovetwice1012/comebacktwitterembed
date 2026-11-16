@@ -70,13 +70,13 @@ const parseSpotifyTrackUrl = parseSpotifyUrl;
 
 async function fetchText(url, headers) {
     const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`spotify fetch ${res.status} for ${url}`);
+    if (!res.ok) throw Object.assign(new Error(`spotify fetch ${res.status} for ${url}`), { status: res.status });
     return await res.text();
 }
 
 async function fetchJson(url, headers) {
     const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`spotify fetch ${res.status} for ${url}`);
+    if (!res.ok) throw Object.assign(new Error(`spotify fetch ${res.status} for ${url}`), { status: res.status });
     return await res.json();
 }
 
@@ -93,16 +93,41 @@ function artistIdFromUri(uri) {
     return parts[0] === 'spotify' && parts[1] === 'artist' ? parts[2] : null;
 }
 
+function oembedIdentityMatches(fallback, type, id) {
+    if (fallback.html == null) return true;
+    if (typeof fallback.html !== 'string') return false;
+    const src = fallback.html.match(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i)?.[1];
+    try {
+        const url = new URL(src);
+        return url.protocol === 'https:' && url.hostname === 'open.spotify.com' && !url.port && !url.username && !url.password
+            && url.pathname.replace(/\/+$/, '') === `/embed/${type}/${id}`;
+    } catch { return false; }
+}
+
 async function fetchSpotifyInfo(type, id) {
     const headers = spotifyHeaders();
     const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=comebacktwitterembed`;
-    const html = await fetchText(embedUrl, headers);
-    const item = parseSpotifyPage(html, type, id);
-    if (item) return item;
+    let firstError;
+    try {
+        const html = await fetchText(embedUrl, headers);
+        const item = parseSpotifyPage(html, type, id);
+        if (item) return item;
+    } catch (error) {
+        if (error?.status === 429) throw error;
+        firstError = error;
+    }
 
     const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/${type}/${id}`)}`;
-    const fallback = await fetchJson(oembedUrl, { 'User-Agent': headers['User-Agent'] });
-    return normalizeSpotifyInfo(type, id, null, fallback);
+    try {
+        const fallback = await fetchJson(oembedUrl, { 'User-Agent': headers['User-Agent'] });
+        if (!fallback || typeof fallback !== 'object' || Array.isArray(fallback)
+            || typeof fallback.title !== 'string' || !fallback.title.trim() || !oembedIdentityMatches(fallback, type, id))
+            throw new Error('Spotify oEmbed returned incomplete or mismatched metadata');
+        return normalizeSpotifyInfo(type, id, null, fallback);
+    } catch (error) {
+        if (error?.status === 429) throw error;
+        throw firstError || error;
+    }
 }
 
 function truncate(s, max) {

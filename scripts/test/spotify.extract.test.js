@@ -150,6 +150,69 @@ test('spotify extract: builds a Discord embed from Spotify embed page data', asy
     assert.ok(step.analytics.facets.some(facet => facet.key === 'artist' && facet.value === 'Rick Astley'));
 });
 
+test('spotify skips a mismatched entity and uses the requested resource fallback', async () => {
+    for (const wrong of [{ id: '0eGsygTp906u18L0Oimnem' }, { type: 'album' }, { uri: 'spotify:track:0eGsygTp906u18L0Oimnem' }]) {
+        const requests = [];
+        const provider = loadSpotifyProviderWithFetch(async apiUrl => {
+            requests.push(String(apiUrl));
+            if (String(apiUrl).includes('/oembed?')) return { ok: true, json: async () => ({ title: 'Correct fallback' }) };
+            return { ok: true, text: async () => nextDataHtml(createTrackEntity({ name: 'Wrong entity', ...wrong })) };
+        });
+        const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+        const result = await provider.extract(createMessage(url), url, {});
+        assert.equal(result[0].embeds[0].title, 'Correct fallback');
+        assert.equal(requests.length, 2);
+        assert(requests[1].includes('/oembed?'));
+    }
+});
+
+test('spotify uses oEmbed when the embed page fails or contains malformed JSON', async () => {
+    for (const failure of ['http', 'json']) {
+        const requests = [];
+        const provider = loadSpotifyProviderWithFetch(async apiUrl => {
+            requests.push(String(apiUrl));
+            if (String(apiUrl).includes('/oembed?')) return { ok: true, json: async () => ({ title: 'Recovered' }) };
+            return failure === 'http' ? { ok: false, status: 503 } : { ok: true, text: async () => '<script id="__NEXT_DATA__" type="application/json">broken</script>' };
+        });
+        const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+        const result = await provider.extract(createMessage(url), url, {});
+        assert.equal(result[0].embeds[0].title, 'Recovered');
+        assert.equal(requests.length, 2);
+    }
+});
+
+test('spotify respects rate limits and never presents empty fallback data as an expansion', async () => {
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    let calls = 0;
+    const limited = loadSpotifyProviderWithFetch(async () => { calls++; return { ok: false, status: 429 }; });
+    const rejected = await limited.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(calls, 1);
+    assert.equal(rejected[0].content, 'Please check the original link.');
+    const empty = loadSpotifyProviderWithFetch(async apiUrl => String(apiUrl).includes('/oembed?')
+        ? { ok: true, json: async () => ({}) }
+        : { ok: true, text: async () => '<html></html>' });
+    const result = await empty.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(result[0].content, 'Please check the original link.');
+    assert.equal(result[0].embeds, undefined);
+    const limitedFallback = loadSpotifyProviderWithFetch(async apiUrl => String(apiUrl).includes('/oembed?')
+        ? { ok: false, status: 429 }
+        : { ok: true, text: async () => '<script id="__NEXT_DATA__" type="application/json">broken</script>' });
+    const limitedResult = await limitedFallback.extract(createMessage(url), url, { failure_display_policy: 'error_summary' });
+    assert.match(limitedResult[0].content, /rate limited/i);
+});
+
+test('spotify rejects a fallback iframe for another resource and accepts the matching one', async () => {
+    const id = '4cOdK2wGLETKBW3PvgPWqT', url = `https://open.spotify.com/track/${id}`;
+    for (const [frameId, accepted] of [['0eGsygTp906u18L0Oimnem', false], [id, true]]) {
+        const provider = loadSpotifyProviderWithFetch(async apiUrl => String(apiUrl).includes('/oembed?')
+            ? { ok: true, json: async () => ({ title: 'Fallback', html: `<iframe src="https://open.spotify.com/embed/track/${frameId}?utm_source=oembed"></iframe>` }) }
+            : { ok: true, text: async () => '<html></html>' });
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        if (accepted) assert.equal(result[0].embeds[0].title, 'Fallback');
+        else { assert.equal(result[0].content, 'Please check the original link.'); assert.equal(result[0].embeds, undefined); }
+    }
+});
+
 test('spotify extract: preview attachment filename is based on sanitized track title', async () => {
     const provider = loadSpotifyProviderWithFetch(async () => ({
         ok: true,

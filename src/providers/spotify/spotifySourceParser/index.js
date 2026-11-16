@@ -81,7 +81,15 @@ function parseSpotifyPage(html, type, id) {
         throw new Error(`spotify ${type} not found: ${id}`);
     }
     const entity = pageProps.state?.data?.entity;
-    return entity ? normalizeSpotifyInfo(type, id, entity) : null;
+    if (!entity || typeof entity !== 'object' || Array.isArray(entity)) return null;
+    const hasId = typeof entity.id === 'string' && entity.id.length > 0;
+    const hasUri = typeof entity.uri === 'string' && entity.uri.length > 0;
+    // Embedded data may be stale or belong to another resource. Let oEmbed
+    // handle missing or conflicting identity rather than labeling it as this URL.
+    if ((!hasId && !hasUri) || entity.id != null && (!hasId || entity.id !== id)
+        || entity.uri != null && (!hasUri || entity.uri !== `spotify:${type}:${id}`)
+        || entity.type != null && entity.type !== type) return null;
+    return normalizeSpotifyInfo(type, id, entity);
 }
 
 function extractArtistAlbumIds(html) {

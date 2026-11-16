@@ -17,17 +17,18 @@ test('Spotify source parser normalizes embedded track metadata', () => {
         track_number: '3', contentRating: { label: 'explicit' },
         trackList: [{ uri: 'spotify:track:track2', title: 'Another', duration: 90000 }, {}],
     } } } });
-    const item = parseSpotifyPage(html, 'track', 'requested');
+    const item = parseSpotifyPage(html, 'track', 'track1');
     assert.equal(item.id, 'track1');
     assert.equal(item.name, 'Track title');
     assert.deepEqual(item.artists, [{ name: 'Artist', uri: 'spotify:artist:artist1' }]);
     assert.equal(item.image.url, 'large.jpg');
     assert.equal(item.previewUrl, 'preview.mp3');
+    assert.equal(parseSpotifyPage(html, 'track', 'different'), null);
     assert.equal(item.albumName, 'Album');
     assert.equal(item.trackNumber, 3);
     assert.equal(item.explicit, true);
     assert.deepEqual(item.trackList, [{ id: 'track2', title: 'Another', subtitle: undefined, durationMs: 90000 }]);
-    assert.equal(item.canonicalUrl, 'https://open.spotify.com/track/requested');
+    assert.equal(item.canonicalUrl, 'https://open.spotify.com/track/track1');
 });
 
 test('Spotify source parser preserves page errors and lets callers supply oEmbed fallback', () => {
