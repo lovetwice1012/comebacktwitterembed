@@ -40,23 +40,28 @@ function parseUploadsPlaylist(html, channelId) {
     const tabs = data.contents?.twoColumnBrowseResultsRenderer?.tabs;
     const content = tabs?.find(tab => tab.tabRenderer?.selected)?.tabRenderer?.content;
     if (!content) return null;
-    const items = []; visits = 0;
+    const items = []; let invalidVideo = false; visits = 0;
     function collect(value, depth = 0) {
         if (!value || typeof value !== 'object' || depth > 50 || ++visits > 50000) return;
         const legacy = value.playlistVideoRenderer;
         const modern = value.lockupViewModel;
         const id = legacy?.videoId || (modern?.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO' ? modern.contentId : null);
+        const videoRenderer = Boolean(legacy || modern?.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO');
         if (/^[A-Za-z0-9_-]{11}$/.test(id || '')) {
             const title = legacy?.title?.simpleText || legacy?.title?.runs?.map(run => run.text || '').join('')
                 || modern?.metadata?.lockupMetadataViewModel?.title?.content || '';
             items.push({ videoId: id, title });
             return;
         }
+        // Keep handling entries with IDs as before; an explicitly unavailable
+        // placeholder without an ID cannot represent an identifiable upload.
+        if (legacy?.isPlayable === false) return;
+        if (videoRenderer) { invalidVideo = true; return; }
         for (const child of Object.values(value)) collect(child, depth + 1);
     }
     collect(content);
     // Do not treat a consent/error page or unknown renderer as an empty baseline.
-    return items.length && visits <= 50000 ? items : null;
+    return items.length && !invalidVideo && visits <= 50000 ? items : null;
 }
 
 module.exports.parseUploadsPlaylist = parseUploadsPlaylist;

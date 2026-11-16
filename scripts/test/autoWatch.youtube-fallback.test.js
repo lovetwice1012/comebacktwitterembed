@@ -137,8 +137,40 @@ test('streaming RSS rejects incomplete documents and cannot seed a partial basel
     for (const xml of ['<feed><entry><yt:videoId>newVideo123</yt:videoId></entry>', '<feed><entry><title>unfinished</entry></feed>', '<html><feed><entry></entry></feed></html>']) {
         await assert.rejects(readFeedProjection(response(xml)), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
     }
-    const projected = await readFeedProjection(response('<feed><entry><yt:channelId>UCwrong_channel_identifier1</yt:channelId></entry></feed>'));
+    const projected = await readFeedProjection(response('<feed><entry><yt:channelId>UCwrong_channel_identifier1</yt:channelId><yt:videoId>newVideo123</yt:videoId></entry></feed>'));
     assert.equal(require('../../src/providers/youtube/autoWatch')._internal.xmlValue(projected, 'yt:channelId'), 'UCwrong_channel_identifier1');
+});
+
+test('a partial RSS entry uses verified uploads instead of silently losing the new video', async () => {
+    for (const bad of ['<title>missing id</title>', '<yt:videoId>bad/id</yt:videoId>']) {
+        const xml = `<feed><yt:channelId>${channel}</yt:channelId><entry><yt:videoId>${old}</yt:videoId></entry><entry>${bad}</entry></feed>`;
+        const result = await fetchSource(source(), { fetch: async url => String(url).includes('/feeds/') ? response(xml) : response(page([newer, old])) });
+        assert.equal(result.state.fetchMode, 'uploads');
+        assert.deepEqual(result.items.map(item => item.contentId), [newer, old]);
+        assert.equal(result.etag, null);
+    }
+});
+
+test('a partial RSS entry does not advance when the uploads fallback is disabled', async () => {
+    const xml = `<feed><yt:channelId>${channel}</yt:channelId><entry><title>missing id</title></entry></feed>`;
+    let calls = 0;
+    await assert.rejects(fetchSource(source(), { config: { enableGuestCrawls: false }, fetch: async () => { calls++; return response(xml); } }),
+        { code: 'AUTO_WATCH_GUEST_CRAWL_DISABLED' });
+    assert.equal(calls, 1);
+});
+
+test('a partial uploads fallback cannot hide one malformed video among valid ones', async () => {
+    const xml = `<feed><yt:channelId>${channel}</yt:channelId><entry><title>missing id</title></entry></feed>`;
+    const fetch = async url => String(url).includes('/feeds/') ? response(xml) : response(page([newer, 'bad/id', old]));
+    await assert.rejects(fetchSource(source(), { fetch }), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+    const restored = await fetchSource(source(), { fetch: async url => String(url).includes('/feeds/') ? response(xml) : response(page([newer, old])) });
+    assert.deepEqual(restored.items.map(item => item.contentId), [newer, old]);
+});
+
+test('an explicitly unavailable uploads entry does not hide playable new videos', async () => {
+    const html = page([newer, 'bad/id', old], channel, false).replace('"videoId":"bad/id"', '"isPlayable":false');
+    const result = await fetchSource(source(), { fetch: fallback(html) });
+    assert.deepEqual(result.items.map(item => item.contentId), [newer, old]);
 });
 
 test('handle streaming resolution uses the verified primary channel metadata', async () => {

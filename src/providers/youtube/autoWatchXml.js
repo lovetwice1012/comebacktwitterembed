@@ -40,6 +40,9 @@ async function readFeedProjection(response) {
             entry = {};
         } else if (/^<\/entry\s*>$/i.test(value) && entry) {
             if (field) throw invalid();
+            // A partial entry must not be silently discarded while its feed
+            // validator is committed. Let the caller use verified uploads.
+            if (!/^[A-Za-z0-9_-]{11}$/.test(entry['yt:videoId'] || '')) throw invalid();
             entries.push(`<entry>${['yt:videoId', 'title', 'published'].map(name => entry[name] == null ? '' : `<${name}>${escapeXml(entry[name])}</${name}>`).join('')}</entry>`);
             entry = null;
         } else {

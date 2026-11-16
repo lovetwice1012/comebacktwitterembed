@@ -19,7 +19,7 @@ const UPLOAD_CONTENT = ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', '*
 const UPLOAD_PATHS = [
     ['**', 'playlistHeaderRenderer', 'ownerText', 'runs', '*', 'navigationEndpoint', 'browseEndpoint', 'browseId'],
     ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', '*', 'tabRenderer', 'selected'],
-    ...[['videoId'], ['title', 'simpleText'], ['title', 'runs', '*', 'text']].map(path => [...UPLOAD_CONTENT, 'playlistVideoRenderer', ...path]),
+    ...[['videoId'], ['isPlayable'], ['title', 'simpleText'], ['title', 'runs', '*', 'text']].map(path => [...UPLOAD_CONTENT, 'playlistVideoRenderer', ...path]),
     ...[['contentId'], ['contentType'], ['metadata', 'lockupMetadataViewModel', 'title', 'content']].map(path => [...UPLOAD_CONTENT, 'lockupViewModel', ...path]),
 ];
 
