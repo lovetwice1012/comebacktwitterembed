@@ -234,9 +234,9 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 		}
 	}
 	readErr := scanner.Err()
+	waitErr := cmd.Wait()
 	endedByDeadline := child.Err() != nil
 	cancel()
-	_ = cmd.Wait()
 	stateBytes, sizeErr = a.store.stateBytes()
 	if sizeErr != nil {
 		a.reportJournalPause(ctx, source, "storage_size_unavailable", cursor != "", false)
@@ -267,6 +267,15 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 	if len(events) == 0 && stderr.b.Len() > 0 {
 		state["available"] = false
 		state["error"] = stderr.b.String()
+	}
+	if waitErr != nil && !endedByDeadline {
+		state["available"] = false
+		state["reason"] = "journalctl_failed"
+		if stderr.b.Len() > 0 {
+			state["error"] = stderr.b.String()
+		} else {
+			state["error"] = "journalctl exited unsuccessfully"
+		}
 	}
 	if malformed {
 		state["state"] = "paused"

@@ -63,7 +63,30 @@ func TestJournalCursorHelperProcess(t *testing.T) {
 	for _, entry := range entries[start:] {
 		fmt.Println(encode(entry))
 	}
+	if os.Getenv("CBTE_TEST_JOURNAL_FAIL") == "1" {
+		fmt.Fprintln(os.Stderr, "fixture journal read failed")
+		os.Exit(3)
+	}
 	os.Exit(0)
+}
+
+func TestJournalFailureAfterValidEntriesReportsFailure(t *testing.T) {
+	a := testApp(t)
+	a.cfg.JournalStateMaxBytes = 1 << 40
+	entries := []Object{{"__CURSOR": "confirmed", "MESSAGE": "fixture"}}
+	command := func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=^TestJournalCursorHelperProcess$", "--"}, args...)...)
+		cmd.Env = append(os.Environ(), "CBTE_TEST_JOURNAL_HELPER=1", "CBTE_TEST_JOURNAL_ENTRIES="+encode(entries), "CBTE_TEST_JOURNAL_FAIL=1")
+		return cmd
+	}
+	a.collectJournalBatchWith(context.Background(), "bot", command)
+	if journalCursor(t, a) != "confirmed" || journalCount(t, a) != 1 {
+		t.Fatal("confirmed entry was not retained")
+	}
+	var health Object
+	if err := a.store.getSetting("journal_health_bot", &health); err != nil || health["available"] != false || health["reason"] != "journalctl_failed" {
+		t.Fatalf("missing failure report: %#v %v", health, err)
+	}
 }
 
 func TestJournalMalformedEntriesDoNotAdvancePastUnverifiedData(t *testing.T) {
