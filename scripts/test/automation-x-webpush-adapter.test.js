@@ -228,3 +228,59 @@ test('a real-envelope post routes only matching active monitors of the inbox own
     assert.equal(calls.length, 1);
     rows = []; assert.deepEqual(await router.routeReceived(input), { state: 'unmatched', results: [] });
 });
+
+test('unreadable settings of a matching monitor keep its receipt pending without blocking unrelated authors', async () => {
+    const ownerUserId = '222222222222222222', subscriptionId = randomUUID(), calls = [], warnings = [];
+    const valid = { id: '1', owner_user_id: ownerUserId, account_handle: 'someone_else', account_id: '54321', enabled: 1,
+        state: 'ready', notification_settings_json: JSON.stringify({ subscriptionId }) };
+    let rows = [];
+    const router = createXEventRouter({ queryDatabase: async () => rows }, { routeX: async input => { calls.push(input); return { state: 'routed' }; } },
+        { onInvalidMonitor: id => warnings.push(id) });
+    const input = { lease: { ownerUserId, subscriptionId }, inbox: { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 }, payload: observedEnvelope() };
+    for (const broken of ['{broken', 'null', '[]', JSON.stringify({ subscriptionId: 'not-a-uuid' })]) {
+        rows = [valid, { ...valid, id: '2', account_handle: 'example', account_id: '12345', notification_settings_json: broken }];
+        assert.equal((await router.routeReceived(input)).state, 'pending');
+        assert.equal(calls.length, 0);
+    }
+    assert.deepEqual(warnings, ['2'], 'repeated malformed rows produce one bounded diagnostic');
+    rows = [{ ...valid, account_handle: 'example', account_id: '12345' },
+        { ...valid, id: '2', account_handle: 'example', account_id: '12345', notification_settings_json: '{broken' }];
+    assert.equal((await router.routeReceived(input)).state, 'pending');
+    assert.equal(calls.length, 1, 'a verified matching monitor still routes while the uncertain one remains pending');
+    rows = [{ ...valid, id: '2', notification_settings_json: '{broken' }];
+    assert.equal((await router.routeReceived(input)).state, 'unmatched', 'a different account cannot block this receipt');
+    rows = [{ ...valid, id: '2', account_handle: 'example', notification_settings_json: '{}' }];
+    assert.equal((await router.routeReceived(input)).state, 'unmatched', 'an intentionally unbound monitor is not corrupt');
+    rows = [{ ...valid, id: '2', owner_user_id: '333333333333333333', account_handle: 'example', notification_settings_json: '{broken' }];
+    assert.equal((await router.routeReceived(input)).state, 'unmatched', 'another owner cannot affect this inbox');
+});
+
+test('corrupt monitor diagnostics stay bounded across repeated scans', async () => {
+    const ownerUserId = '222222222222222222', subscriptionId = randomUUID(), warnings = [];
+    const rows = Array.from({ length: 1100 }, (_, index) => ({ id: String(index + 1), owner_user_id: ownerUserId,
+        account_handle: 'other', state: 'ready', notification_settings_json: '{broken' }));
+    const router = createXEventRouter({ queryDatabase: async () => rows }, { routeX: async () => assert.fail('must not route') },
+        { clock: () => 1000, onInvalidMonitor: id => warnings.push(id) });
+    const input = { lease: { ownerUserId, subscriptionId }, inbox: { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 }, payload: observedEnvelope() };
+    assert.equal((await router.routeReceived(input)).state, 'unmatched');
+    assert.equal((await router.routeReceived(input)).state, 'unmatched');
+    assert.equal(warnings.length, 1024);
+});
+
+test('corrupt monitor diagnostics explicitly suppress inherited notification input and URLs', async () => {
+    const filename = require.resolve('../../src/automation/x-event-router');
+    const actual = require('node:module').createRequire(filename), mod = { exports: {} }, reports = [];
+    require('node:vm').compileFunction(require('node:fs').readFileSync(filename, 'utf8'), ['require', 'module', 'exports'], { filename })(
+        name => name === '../errorTracking' ? { recordError: (error, context) => reports.push({ error, context }) } : actual(name), mod, mod.exports);
+    const ownerUserId = '222222222222222222', subscriptionId = randomUUID();
+    const rows = [{ id: '7', owner_user_id: ownerUserId, account_handle: 'example', state: 'ready', notification_settings_json: '{private sentinel' }];
+    const router = mod.exports.createXEventRouter({ queryDatabase: async () => rows }, { routeX: async () => assert.fail('must not route') });
+    await router.routeReceived({ lease: { ownerUserId, subscriptionId }, inbox: { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 }, payload: observedEnvelope() });
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].error.code, 'X_MONITOR_SETTINGS_UNREADABLE');
+    assert.deepEqual(reports[0].context.details, { monitorId: '7' });
+    for (const key of ['url', 'rawUrl', 'normalizedUrl', 'input']) assert.equal(reports[0].context[key], '');
+    assert.equal(reports[0].context.message, null);
+    assert.equal(reports[0].context.interaction, null);
+    assert.equal(JSON.stringify(reports[0].context).includes('private sentinel'), false);
+});

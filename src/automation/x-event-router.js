@@ -155,6 +155,25 @@ function matchesXMonitor(row, notification) {
 
 function createXEventRouter(db, queue, options = {}) {
     const clock = options.clock || Date.now;
+    const reportedInvalid = new Map();
+    function reportInvalidMonitor(row) {
+        const id = /^[1-9]\d{0,19}$/.test(String(row.id || '')) ? String(row.id) : 'unknown';
+        const now = clock(), previous = reportedInvalid.get(id);
+        if (previous !== undefined && now >= previous && now - previous < 3600000) return;
+        if (previous !== undefined) reportedInvalid.delete(id);
+        while (reportedInvalid.size >= 1024) {
+            const [oldestId, oldestAt] = reportedInvalid.entries().next().value;
+            if (now < oldestAt || now - oldestAt < 3600000) return;
+            reportedInvalid.delete(oldestId);
+        }
+        reportedInvalid.set(id, now);
+        try {
+            if (typeof options.onInvalidMonitor === 'function') options.onInvalidMonitor(id);
+            else require('../errorTracking').recordError(Object.assign(new Error('X monitor settings cannot be read.'), { code: 'X_MONITOR_SETTINGS_UNREADABLE' }),
+                { errorType: 'x_monitor_settings_unreadable', source: 'xEventRouter.boundTargets', providerId: 'twitter',
+                    message: null, interaction: null, url: '', rawUrl: '', normalizedUrl: '', input: '', details: { monitorId: id } });
+        } catch { /* Diagnostics must never change delivery state. */ }
+    }
     const inspect = (row) => require('./x-processing-settings').inspectXMonitorProcessing(db.queryDatabase, row, clock(), {
         useLegacyUserInterval: options.useLegacyUserInterval === true,
         modeOnly: true,
@@ -163,20 +182,25 @@ function createXEventRouter(db, queue, options = {}) {
         if (!lease || !UUID.test(String(lease.subscriptionId || '')) || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')))
             fail('X_NOTIFICATION_INBOX_INVALID');
         const rows = await db.queryDatabase("SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' ORDER BY id", [lease.ownerUserId]);
-        return rows.filter(row => {
+        const bound = [], unresolved = [];
+        for (const row of rows) {
+            if (row.owner_user_id !== lease.ownerUserId || row.state === 'deleted') continue;
             let settings;
-            try { settings = JSON.parse(row.notification_settings_json); } catch { return false; }
-            return row.owner_user_id === lease.ownerUserId && settings?.subscriptionId === lease.subscriptionId && row.state !== 'deleted';
-        });
+            try { settings = JSON.parse(row.notification_settings_json); } catch { unresolved.push(row); continue; }
+            if (!object(settings) || settings.subscriptionId != null && !UUID.test(String(settings.subscriptionId))) { unresolved.push(row); continue; }
+            if (settings.subscriptionId === lease.subscriptionId) bound.push(row);
+        }
+        for (const row of unresolved) reportInvalidMonitor(row);
+        return { bound, unresolved };
     }
     const active = row => (row.enabled === undefined || Number(row.enabled) === 1) && (row.state === undefined || row.state === 'ready');
     async function hasTargets(lease, mode) {
-        for (const row of await boundTargets(lease)) if (active(row) && (await inspect(row)).effectiveMode === mode) return true;
+        for (const row of (await boundTargets(lease)).bound) if (active(row) && (await inspect(row)).effectiveMode === mode) return true;
         return false;
     }
     async function targetModes(lease) {
         const modes = { realtime: false, batch: false };
-        for (const row of await boundTargets(lease)) {
+        for (const row of (await boundTargets(lease)).bound) {
             if (!active(row)) continue;
             const mode = (await inspect(row)).effectiveMode;
             if (mode === 'realtime' || mode === 'batch') modes[mode] = true;
@@ -192,9 +216,10 @@ function createXEventRouter(db, queue, options = {}) {
         const notification = normalizeXNotification(payload, { receivedAtMs: inbox.receivedAtMs });
         // Subscription ownership comes from the authenticated encrypted inbox,
         // never from a notification's author or a client-selected owner.
-        const rows = await boundTargets(lease), results = [];
-        let matched = 0, pending = false;
-        for (const row of rows) {
+        const { bound, unresolved } = await boundTargets(lease), results = [];
+        const uncertainMatches = unresolved.filter(row => matchesXMonitor(row, notification));
+        let matched = 0, pending = uncertainMatches.length > 0;
+        for (const row of bound) {
             if (!matchesXMonitor(row, notification)) continue;
             matched++;
             // Pausing a matching monitor or deferring its batch delivery must
@@ -206,7 +231,7 @@ function createXEventRouter(db, queue, options = {}) {
                 inboxEventId: inbox.id, payload, receivedAtMs: inbox.receivedAtMs,
                 ...(processingMode === undefined ? {} : { processingMode }) }, clock()));
         }
-        return { state: !matched ? 'unmatched' : pending || results.some(result => result.state === 'pending') ? 'pending' : 'routed', results };
+        return { state: pending || results.some(result => result.state === 'pending') ? 'pending' : !matched ? 'unmatched' : 'routed', results };
     }
     return { routeReceived, targetModes, hasRealtimeTargets: lease => hasTargets(lease, 'realtime'), hasBatchTargets: lease => hasTargets(lease, 'batch') };
 }
