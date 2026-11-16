@@ -285,6 +285,97 @@ test('youtube extract: invalid successful video responses use the next instance'
     }
 });
 
+test('youtube extract: explicitly mismatched instance identities use another instance', async () => {
+    let videoCalls = 0;
+    const video = loadYouTubeProviderWithFetch(async () => okJson({ ...videoInfo(), videoId: ++videoCalls === 1 ? 'W7G8NAhG6l8' : 'dQw4w9WgXcQ' }));
+    const videoUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    assert.equal((await video.extract(createMessage(videoUrl), videoUrl, {}))[0].embeds[0].title, 'Example Video');
+    assert.equal(videoCalls, 2);
+    let playlistCalls = 0;
+    const playlist = loadYouTubeProviderWithFetch(async () => okJson({ ...playlistInfo(), playlistId: ++playlistCalls === 1 ? 'PLdifferent' : 'PL123456789012345678' }));
+    const playlistUrl = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    assert.equal((await playlist.extract(createMessage(playlistUrl), playlistUrl, {}))[0].embeds[0].title, 'Example Playlist');
+    assert.equal(playlistCalls, 2);
+    let channelCalls = 0;
+    const channel = loadYouTubeProviderWithFetch(async url => String(url).includes('/resolveurl?') ? okJson({ ucid: 'UCexample' })
+        : okJson({ ...channelInfo(), authorId: ++channelCalls === 1 ? 'UCother' : 'UCexample' }));
+    const channelUrl = 'https://www.youtube.com/@example';
+    assert.match((await channel.extract(createMessage(channelUrl), channelUrl, {}))[0].embeds[0].title, /Example Channel/);
+    assert.equal(channelCalls, 2);
+});
+
+test('youtube extract: a page for another video falls through to oEmbed', async () => {
+    const requests = [];
+    const provider = loadYouTubeProviderWithFetch(async url => {
+        requests.push(String(url));
+        if (String(url).includes('/api/v1/videos/')) return { ok: false, status: 503 };
+        if (String(url).startsWith('https://www.youtube.com/watch?')) return { ok: true, text: async () => playerResponseHtml() };
+        if (String(url).startsWith('https://www.youtube.com/oembed?')) return okJson({ title: 'Verified fallback', author_name: 'Artist' });
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Verified fallback');
+    assert(requests.some(request => request.includes('/oembed?')));
+});
+
+test('youtube extract: empty playlist and channel fallback pages are not reported as expansions', async () => {
+    for (const url of ['https://www.youtube.com/playlist?list=PL123456789012345678', 'https://www.youtube.com/@example']) {
+        const provider = loadYouTubeProviderWithFetch(async request => {
+            if (String(request).includes('/api/v1/')) return { ok: false, status: 503 };
+            return { ok: true, text: async () => initialDataHtml({}) };
+        });
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
+test('youtube extract: fallback pages with conflicting playlist or channel identity are rejected', async () => {
+    const playlistUrl = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    const channelUrl = 'https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv';
+    for (const [url, page] of [
+        [playlistUrl, initialDataHtml({ header: { playlistHeaderRenderer: { playlistId: 'PLdifferent123456789', title: { simpleText: 'Wrong playlist' } } } })],
+        [channelUrl, channelInitialDataHtml()],
+    ]) {
+        const provider = loadYouTubeProviderWithFetch(async request => String(request).includes('/api/v1/')
+            ? { ok: false, status: 503 } : { ok: true, text: async () => page });
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
+test('youtube extract: fallback redirects to other resources are rejected', async () => {
+    for (const [url, page, finalUrl] of [
+        ['https://www.youtube.com/playlist?list=PL123456789012345678', playlistInitialDataHtml(), 'https://www.youtube.com/playlist?list=PLother1234567890123'],
+        ['https://www.youtube.com/@fallback', channelInitialDataHtml(), 'https://www.youtube.com/@other'],
+    ]) {
+        const provider = loadYouTubeProviderWithFetch(async request => String(request).includes('/api/v1/')
+            ? { ok: false, status: 503 } : { ok: true, url: finalUrl, text: async () => page });
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
+test('youtube extract: a video redirect to another item falls through to oEmbed', async () => {
+    const provider = loadYouTubeProviderWithFetch(async request => {
+        if (String(request).includes('/api/v1/')) return { ok: false, status: 503 };
+        if (String(request).includes('/oembed?')) return okJson({ title: 'Correct fallback' });
+        return { ok: true, url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', text: async () => playerResponseHtml() };
+    });
+    const url = 'https://www.youtube.com/watch?v=W7G8NAhG6l8';
+    assert.equal((await provider.extract(createMessage(url), url, {}))[0].embeds[0].title, 'Correct fallback');
+});
+
+test('youtube extract: a channel ID can redirect to a handle when the page confirms the same channel', async () => {
+    const provider = loadYouTubeProviderWithFetch(async request => String(request).includes('/api/v1/')
+        ? { ok: false, status: 503 } : { ok: true, url: 'https://www.youtube.com/@fallback', text: async () => channelInitialDataHtml() });
+    const url = 'https://www.youtube.com/channel/UCfallback';
+    assert.match((await provider.extract(createMessage(url), url, {}))[0].embeds[0].title, /Fallback Channel/);
+});
+
 test('youtube extract: unusable instance metadata falls back to the YouTube page', async () => {
     const requests = [];
     const provider = loadYouTubeProviderWithFetch(async url => {

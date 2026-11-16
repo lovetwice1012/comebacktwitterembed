@@ -33,6 +33,19 @@ function isTransientInvidiousError(errorText) {
     return /please sign in|community|temporarily|429|rate limit|extract/i.test(String(errorText));
 }
 
+function matchingOptionalId(value, expected) {
+    return value == null || typeof value === 'string' && value === expected;
+}
+
+function youtubeFinalUrl(raw) {
+    if (!raw) return null;
+    let url;
+    try { url = new URL(raw); } catch { throw new Error('YouTube returned an invalid redirect'); }
+    if (url.protocol !== 'https:' || url.username || url.password || url.port
+        || !(url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com'))) throw new Error('YouTube redirected outside its service');
+    return url;
+}
+
 function createYouTubeClient(fetch) {
     async function fetchJsonFromInstances(path, valid = value => value && typeof value === 'object' && !Array.isArray(value)) {
         let lastError = null;
@@ -65,9 +78,14 @@ function createYouTubeClient(fetch) {
             headers: REQUEST_HEADERS,
         });
         if (!res.ok) throw new Error(`YouTube page ${res.status} for ${videoId}`);
+        const final = youtubeFinalUrl(res.url);
+        if (final && !(final.pathname === '/watch' && final.searchParams.get('v') === videoId
+            || [`/shorts/${videoId}`, `/live/${videoId}`].includes(final.pathname.replace(/\/+$/, ''))))
+            throw new Error('YouTube redirected to a different video');
 
         const html = await res.text();
         const player = parseInitialPlayerResponse(html);
+        if (player?.videoDetails?.videoId !== videoId) throw new Error('YouTube page returned a different video');
         const normalized = normalizePlayerResponse(player);
         if (!normalized) throw new Error(`YouTube page did not contain player metadata for ${videoId}`);
 
@@ -104,7 +122,8 @@ function createYouTubeClient(fetch) {
 
     async function fetchVideoInfo(videoId) {
         const path = `/api/v1/videos/${encodeURIComponent(videoId)}?hl=en`;
-        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim());
+        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim()
+            && matchingOptionalId(json.videoId, videoId));
     }
 
     async function fetchVideoInfoWithFallback(videoId) {
@@ -127,7 +146,8 @@ function createYouTubeClient(fetch) {
 
     async function fetchPlaylistInfo(playlistId) {
         const path = `/api/v1/playlists/${encodeURIComponent(playlistId)}?hl=en`;
-        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim());
+        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim()
+            && matchingOptionalId(json.playlistId, playlistId));
     }
 
     async function fetchYouTubeInitialDataPage(pageUrl, context) {
@@ -141,12 +161,13 @@ function createYouTubeClient(fetch) {
         const data = parseInitialData(html);
         if (!data) throw new Error(`YouTube page did not contain initial data for ${context}`);
 
-        return { data, html, baseUrl: 'https://www.youtube.com' };
+        return { data, html, baseUrl: 'https://www.youtube.com', finalUrl: youtubeFinalUrl(res.url) };
     }
 
     async function fetchPlaylistInfoFromYouTubePage(playlistId) {
         const pageUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
-        const { data, html, baseUrl } = await fetchYouTubeInitialDataPage(pageUrl, `playlist ${playlistId}`);
+        const { data, html, baseUrl, finalUrl } = await fetchYouTubeInitialDataPage(pageUrl, `playlist ${playlistId}`);
+        if (finalUrl && finalUrl.searchParams.get('list') !== playlistId) throw new Error('YouTube redirected to a different playlist');
         const json = normalizePlaylistFromInitialData(data, html, playlistId);
         if (!json) throw new Error(`YouTube page did not contain playlist metadata for ${playlistId}`);
         return { json, baseUrl };
@@ -176,15 +197,26 @@ function createYouTubeClient(fetch) {
         const channelId = alreadyResolved ? channelIdOrUrl : await resolveChannelUrl(channelIdOrUrl);
         if (!channelId) return null;
         const path = `/api/v1/channels/${encodeURIComponent(channelId)}?hl=en`;
-        const result = await fetchJsonFromInstances(path, json => typeof json?.author === 'string' && !!json.author.trim());
+        const result = await fetchJsonFromInstances(path, json => typeof json?.author === 'string' && !!json.author.trim()
+            && matchingOptionalId(json.authorId, channelId));
         return { ...result, channelId };
     }
 
     async function fetchChannelInfoFromYouTubePage(channelIdOrUrl, alreadyResolved) {
         const pageUrl = channelPageUrl(channelIdOrUrl, alreadyResolved);
-        const { data, html, baseUrl } = await fetchYouTubeInitialDataPage(pageUrl, `channel ${channelIdOrUrl}`);
+        const { data, html, baseUrl, finalUrl } = await fetchYouTubeInitialDataPage(pageUrl, `channel ${channelIdOrUrl}`);
         const json = normalizeChannelFromInitialData(data, html, channelIdOrUrl, alreadyResolved);
         if (!json) throw new Error(`YouTube page did not contain channel metadata for ${channelIdOrUrl}`);
+        if (alreadyResolved && json.authorId && json.authorId !== channelIdOrUrl) throw new Error('YouTube page returned a different channel');
+        if (finalUrl) {
+            const requestedPath = new URL(pageUrl).pathname.replace(/\/+$/, '');
+            const finalPath = finalUrl.pathname.replace(/\/+$/, '');
+            const explicitId = data?.metadata?.channelMetadataRenderer?.externalId || data?.header?.c4TabbedHeaderRenderer?.channelId;
+            const samePath = finalPath.toLowerCase() === requestedPath.toLowerCase();
+            const sameDirectChannel = explicitId && finalPath === `/channel/${explicitId}` && json.authorId === explicitId;
+            const sameResolvedChannel = alreadyResolved && explicitId === channelIdOrUrl && json.authorId === channelIdOrUrl;
+            if (!samePath && !sameDirectChannel && !sameResolvedChannel) throw new Error('YouTube redirected to a different channel');
+        }
         return { json, baseUrl, channelId: json.authorId || channelIdOrUrl };
     }
 

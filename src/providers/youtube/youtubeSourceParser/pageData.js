@@ -288,6 +288,7 @@ function normalizePlaylistVideo(renderer) {
 function normalizePlaylistFromInitialData(data, html, playlistId) {
     const metadata = findFirstRenderer(data, 'playlistMetadataRenderer') || {};
     const header = findFirstRenderer(data, 'playlistHeaderRenderer') || {};
+    if (header.playlistId != null && header.playlistId !== playlistId) return null;
     const microformat = findFirstRenderer(data, 'microformatDataRenderer') || {};
     const ownerText = header.ownerText || header.shortBylineText || findFirstProperty(data, 'ownerText', value => textFromYouTubeText(value));
     const title = cleanYouTubeTitle(firstText(
@@ -300,6 +301,7 @@ function normalizePlaylistFromInitialData(data, html, playlistId) {
     const videos = findAllRenderers(data, 'playlistVideoRenderer', 20)
         .map(normalizePlaylistVideo)
         .filter(video => video.title || video.videoId);
+    if (!title && videos.length === 0) return null;
     const thumbnail = pickThumbnail(firstThumbnails(
         header.playlistHeaderBanner?.heroPlaylistThumbnailRenderer?.thumbnail,
         header.thumbnail,
@@ -372,6 +374,7 @@ function normalizeChannelFromInitialData(data, html, channelIdOrUrl, alreadyReso
         .map(normalizeLatestVideo)
         .filter(video => video.title)
         .slice(0, 5);
+    if (!author && latestVideos.length === 0) return null;
 
     const normalized = {
         author: author || authorId || channelIdOrUrl,
