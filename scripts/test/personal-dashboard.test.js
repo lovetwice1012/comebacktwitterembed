@@ -177,7 +177,7 @@ test('guild settings sync publishes invalidations for cached destination setting
     } finally { await f.close(); }
 });
 
-for (const writer of ['dashboard', 'bot']) test(`${writer} settings wait for an in-flight publication before allocating a revision`, { skip: !port }, async () => {
+for (const writer of ['dashboard', 'bot', 'admin']) test(`${writer} settings wait for an in-flight publication before allocating a revision`, { skip: !port }, async () => {
     const f = await createFixture(port), mysql = require('mysql');
     const connection = mysql.createConnection({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '' });
     const query = (sql, params = []) => new Promise((resolve, reject) => connection.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
@@ -196,7 +196,19 @@ for (const writer of ['dashboard', 'bot']) test(`${writer} settings wait for an 
             const { compileSettings, SETTINGS_PATH } = require('../benchmark_main_settings');
             const observedDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work((sql, ...args) => { observe(sql); return query(sql, ...args); })) };
             const bot = compileSettings(require('node:fs').readFileSync(SETTINGS_PATH, 'utf8'), f.db.queryDatabase, { db: observedDb });
-            saving = bot.setSetting({ id: 'pixiv' }, 'silent_expansion', guild, true);
+            if (writer === 'bot') saving = bot.setSetting({ id: 'pixiv' }, 'silent_expansion', guild, true);
+            else {
+                const filename = require.resolve('../../src/adminSupport/operations');
+                const nativeRequire = require('node:module').createRequire(filename), mod = { exports: {} };
+                const mocks = { '../db': observedDb, '../providers/_provider_settings': bot,
+                    '../db_schema': { TABLES: require('../../src/db_schema').TABLES, ensureDatabaseSchema: async () => {} },
+                    './discord': { id: value => String(value) }, './inspect': { providers: () => [{ id: 'pixiv' }], defaults: () => ({}), hash: () => 'fixture-hash' },
+                    '../providers/_setting_specs': { getProviderSettingSpecs: () => [] }, './telemetry': { current: () => null, event: () => {}, serializable: value => value },
+                    './actor': { currentActorId: () => user } };
+                require('node:vm').compileFunction(require('node:fs').readFileSync(filename, 'utf8'), ['require', 'module', 'exports'], { filename })(
+                    id => mocks[id] || nativeRequire(id), mod, mod.exports);
+                saving = mod.exports.settingAction('settings.change', { providerId: 'pixiv', guildId: guild, expectedHash: 'fixture-hash', key: 'silent_expansion', value: true });
+            }
         }
         if (writer === 'dashboard') f.setQueryObserver(observe);
         saving = saving.finally(() => { settled = true; });

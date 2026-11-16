@@ -56,6 +56,9 @@ async function settingAction(type, input) {
     let result;
     try {
         result = await db.withDatabaseTransaction(async query => {
+            // Match the Bot/dashboard lock order before taking a scoped row
+            // lock, so nested settings writes publish in commit order.
+            await query(`INSERT INTO ${TABLES.providers} (provider_id) VALUES ('twitter') ON DUPLICATE KEY UPDATE provider_id=provider_id`);
             // All settings writers touch these keys. The row lock precedes the
             // fresh read/CAS and is held through settings, audit and invalidation.
             await query(`INSERT IGNORE INTO ${TABLES.providers} (provider_id) VALUES (?)`, [provider.id]);
