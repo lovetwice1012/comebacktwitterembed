@@ -35,7 +35,7 @@ function compileSettings(source, queryDatabase, options = {}) {
         '../utils': { button_disabled_template, button_invisible_template },
         './_output_visibility': outputVisibility,
         '../asyncTtlCache': { AsyncTtlCache },
-        '../db': { queryDatabase, withDatabaseTransaction: async work => work(queryDatabase) },
+        '../db': options.db || { queryDatabase, withDatabaseTransaction: async work => work(queryDatabase) },
         '../adminSupport/telemetry': { current: () => null, event: () => {} },
     };
     const injectedRequire = name => {

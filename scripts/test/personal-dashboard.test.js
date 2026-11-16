@@ -162,3 +162,59 @@ test('real dashboard settings persist gallery, previous-share and silent-send ch
         assert.equal(reverted.silent_expansion, false);
     } finally { await f.close(); }
 });
+
+test('guild settings sync publishes invalidations for cached destination settings', { skip: !port }, async () => {
+    const f = await createFixture(port);
+    try {
+        const target = '444444444444444444', provider = { id: 'pixiv', enabledByDefault: false };
+        await f.settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'gallery' } }, { id: user });
+        assert.equal((await f.botSettings.getProviderSettings(provider, target)).gallery_display_mode, 'normal');
+        await f.settings.syncGuildSettings(guild, target, { id: user });
+        const events = await f.db.queryDatabase('SELECT provider_id FROM provider_settings_cache_invalidations WHERE guild_id=?', [target]);
+        assert(events.some(row => row.provider_id === 'pixiv'));
+        await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal((await f.botSettings.getProviderSettings(provider, target)).gallery_display_mode, 'gallery');
+    } finally { await f.close(); }
+});
+
+for (const writer of ['dashboard', 'bot']) test(`${writer} settings wait for an in-flight publication before allocating a revision`, { skip: !port }, async () => {
+    const f = await createFixture(port), mysql = require('mysql');
+    const connection = mysql.createConnection({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '' });
+    const query = (sql, params = []) => new Promise((resolve, reject) => connection.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
+    let saving;
+    try {
+        await query(`USE \`${f.db.schema}\``);
+        await query("INSERT INTO providers(provider_id) VALUES ('twitter') ON DUPLICATE KEY UPDATE provider_id=provider_id");
+        await query('START TRANSACTION');
+        await query("INSERT INTO providers(provider_id) VALUES ('twitter') ON DUPLICATE KEY UPDATE provider_id=provider_id");
+        await query("INSERT INTO provider_settings_cache_invalidations(provider_id,guild_id) VALUES ('twitter','first')");
+        let settled = false, signalAttempt;
+        const attempted = new Promise(resolve => { signalAttempt = resolve; });
+        const observe = sql => { if (/INSERT\s+INTO\s+providers\s*\(provider_id\)\s+VALUES\s*\('twitter'\)/i.test(sql)) signalAttempt(); };
+        if (writer === 'dashboard') saving = f.settings.saveProviderSettings(guild, 'pixiv', { changes: { silent_expansion: true } }, { id: user });
+        else {
+            const { compileSettings, SETTINGS_PATH } = require('../benchmark_main_settings');
+            const observedDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work((sql, ...args) => { observe(sql); return query(sql, ...args); })) };
+            const bot = compileSettings(require('node:fs').readFileSync(SETTINGS_PATH, 'utf8'), f.db.queryDatabase, { db: observedDb });
+            saving = bot.setSetting({ id: 'pixiv' }, 'silent_expansion', guild, true);
+        }
+        if (writer === 'dashboard') f.setQueryObserver(observe);
+        saving = saving.finally(() => { settled = true; });
+        saving.catch(() => {}); // Observe early rejection while inspecting the blocked transaction.
+        let timer;
+        try { await Promise.race([attempted, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('settings writer did not reach publication lock')), 15000); })]); }
+        finally { clearTimeout(timer); }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(settled, false);
+        assert.equal((await f.db.queryDatabase('SELECT revision FROM provider_settings_cache_invalidations')).length, 0);
+        await query('COMMIT');
+        await saving;
+        const rows = await f.db.queryDatabase('SELECT provider_id FROM provider_settings_cache_invalidations ORDER BY revision');
+        assert.deepEqual(rows.map(row => row.provider_id), ['twitter', 'pixiv']);
+    } finally {
+        await query('ROLLBACK').catch(() => {});
+        await saving?.catch(() => {});
+        connection.end();
+        await f.close();
+    }
+});

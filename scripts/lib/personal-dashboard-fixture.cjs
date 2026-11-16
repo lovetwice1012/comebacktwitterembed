@@ -17,8 +17,9 @@ async function createFixture(port) {
         const services = { store, model, stockOptions: async url => ({ item: model.boothItem(url), options: [
             { id: '7', name: '赤 / Red', state: 'sold_out' }, { id: '8', name: '青 / Blue', state: 'sold_out' },
         ] }) };
-        const unsafe = (sql, ...params) => db.queryDatabase(sql, params);
-        const tagged = (strings, ...values) => db.queryDatabase(strings.join('?'), values);
+        let observer = () => {};
+        const unsafe = (sql, ...params) => { observer(sql); return db.queryDatabase(sql, params); };
+        const tagged = (strings, ...values) => { const sql = strings.join('?'); observer(sql); return db.queryDatabase(sql, values); };
         const prisma = { $executeRawUnsafe: unsafe, $queryRawUnsafe: unsafe, $executeRaw: tagged, $queryRaw: tagged,
             $transaction: work => db.withDatabaseTransaction(() => work(prisma)) };
         const mocks = { '@/lib/prisma': { prisma }, '@/lib/bot-require': { requireBotModule: file => require(path.join(root, file)) } };
@@ -26,7 +27,7 @@ async function createFixture(port) {
         const api = load('lib/personal-links-server.ts', mocks);
         const { compileSettings, SETTINGS_PATH } = require('../benchmark_main_settings');
         const botSettings = compileSettings(fs.readFileSync(SETTINGS_PATH, 'utf8'), db.queryDatabase);
-        return { db, store, services, settings, api, botSettings, close: db.close };
+        return { db, store, services, settings, api, botSettings, setQueryObserver: callback => { observer = callback; }, close: db.close };
     } catch (error) { await db.close(); throw error; }
 }
 module.exports = { createFixture };

@@ -118,7 +118,7 @@ test('direct settings and delegated-access helpers refuse mutations before valid
 
 test('Prisma settings prepare audit schema outside the mutation and roll back when the admitted guardian changes before commit', async () => fixture(async f => {
   f.write(); let commits = 0, rollbacks = 0, schemaPrepared = 0;
-  const tx = { $executeRawUnsafe: async sql => { assert(!sql.includes('CREATE TABLE')); f.write({ epoch: 4 }); } };
+  const tx = { $executeRaw: async () => { f.write({ epoch: 4 }); }, $executeRawUnsafe: async sql => { assert(!sql.includes('CREATE TABLE')); f.write({ epoch: 4 }); } };
   const prisma = { $queryRawUnsafe: async () => [], $transaction: async work => { try { await work(tx); commits++; } catch (error) { rollbacks++; throw error; } } };
   const settings = load('lib/settings-db.ts', {
     '@/lib/prisma': { prisma },

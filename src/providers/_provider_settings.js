@@ -718,6 +718,10 @@ async function setSetting(providerInput, key, guildId, value) {
     const telemetry = require('../adminSupport/telemetry');
     const context = telemetry.current();
     const result = await require('../db').withDatabaseTransaction(async query => {
+        // Serialize all invalidation publishers until commit. Auto-increment
+        // values alone do not follow transaction commit order; the existing
+        // Twitter provider row is shared with the dashboard as a mutex.
+        await query(`INSERT INTO ${TABLES.providers} (provider_id) VALUES ('twitter') ON DUPLICATE KEY UPDATE provider_id=provider_id`);
         await ensureProviderAndGuild(provider.id, guildId);
         await query(`INSERT IGNORE INTO ${TABLES.guildProviderSettings} (provider_id,guild_id) VALUES (?,?)`, [provider.id,guildId]);
         await query(`SELECT guild_id FROM ${TABLES.guildProviderSettings} WHERE provider_id=? AND guild_id=? FOR UPDATE`, [provider.id,guildId]);

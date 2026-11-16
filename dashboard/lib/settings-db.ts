@@ -154,6 +154,12 @@ async function ensureProviderAndGuild(db: Tx, providerId: string, guildId: strin
   await db.$executeRaw`INSERT INTO guilds (guild_id) VALUES (${guildId}) ON DUPLICATE KEY UPDATE guild_id = guild_id`;
 }
 
+// Hold the same existing provider row as the Bot until commit, so revisions
+// become visible in their allocated order even for different guilds/providers.
+async function lockSettingsPublication(db: Tx) {
+  await db.$executeRaw`INSERT INTO providers (provider_id) VALUES ('twitter') ON DUPLICATE KEY UPDATE provider_id = provider_id`;
+}
+
 async function readScalarRow(providerId: string, guildId: string): Promise<Record<string, unknown> | null> {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
     "SELECT * FROM guild_provider_settings WHERE provider_id = ? AND guild_id = ? LIMIT 1",
@@ -480,6 +486,8 @@ export async function saveProviderSettings(
 
   await prisma.$transaction(async (tx) => {
     fence();
+    await lockSettingsPublication(tx);
+    fence();
     for (const [key, value] of Object.entries(validated.changes)) {
       const spec = specs.get(key);
       if (!spec) continue;
@@ -527,6 +535,8 @@ export async function resetProviderSettings(
   await ensureAuditLogTable();
 
   await prisma.$transaction(async (tx) => {
+    fence();
+    await lockSettingsPublication(tx);
     fence();
     await ensureProviderAndGuild(tx, providerId, guildId);
     const scalarColumns = specs
@@ -627,6 +637,8 @@ export async function syncGuildSettings(
 
   await prisma.$transaction(async (tx) => {
     fence();
+    await lockSettingsPublication(tx);
+    fence();
     for (const provider of getBotProviders()) {
       const specs = new Map(editableSpecs(provider.id).map((spec) => [spec.key, spec]));
       const sourceStates = await getProviderSettingsState(provider.id, sourceGuildId, locale);
@@ -638,6 +650,11 @@ export async function syncGuildSettings(
         await writeValue(tx, provider.id, targetGuildId, spec, copiedValue.value === null ? undefined : copiedValue.value);
         copied += 1;
       }
+      await tx.$executeRawUnsafe(
+        "INSERT INTO provider_settings_cache_invalidations (provider_id, guild_id) VALUES (?, ?)",
+        provider.id,
+        targetGuildId,
+      );
     }
 
     await recordAuditLog(tx, {
