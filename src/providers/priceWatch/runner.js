@@ -15,7 +15,15 @@ let timer = null;
 let activeClient = null;
 
 function stateOf(source) {
-    return storeDefault.parseJson(source.state_json, {});
+    const raw = source.state_json;
+    if ((raw === null || raw === undefined || raw === '') && !source.initialized_at_ms) return {};
+    let value;
+    try { value = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { /* Report a safe, generic error below. */ }
+    if (value === null && !source.initialized_at_ms) return {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw Object.assign(new Error('The saved price baseline could not be read.'), { code: 'PRICE_WATCH_INVALID_STATE' });
+    }
+    return value;
 }
 
 function number(value) {
@@ -142,6 +150,14 @@ async function processSource(source, context) {
                 nextPlanCheck = Math.min(nextPlanCheck, now + target.planCadence.intervalMs);
             }
             const targetBefore = target.planCadence?.baseline || before;
+            // Threshold alerts rely on their stored condition and do not need
+            // an old price. Change alerts must never replace an unreadable
+            // comparison baseline with the newly observed price.
+            if (!initial && target.baseline_at_ms !== null && target.watch_mode === 'change'
+                && (number(targetBefore.priceAmount) === null || number(targetBefore.priceAmount) < 0
+                    || !/^[A-Z]{3}$/.test(currencyOf(targetBefore)))) {
+                throw Object.assign(new Error('The saved price baseline could not be read.'), { code: 'PRICE_WATCH_INVALID_STATE' });
+            }
             const observedActive = target.watch_mode === 'threshold' ? thresholdActive(target, after) : false;
             // Missing discount metadata is not proof that a sale ended. Retain
             // each target's last condition state until the condition is known.

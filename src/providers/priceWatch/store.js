@@ -239,8 +239,11 @@ async function sourceTargets(sourceId, now = Date.now()) {
         const minutes = planIntervals.get(String(row.user_id));
         if (minutes === null) throw error('Price-watch plan interval unavailable.', 'PRICE_WATCH_PLAN_INTERVAL_UNAVAILABLE');
         const baseline = row.cadence_baseline_json == null ? null : parseJson(row.cadence_baseline_json, null);
-        if (row.cadence_baseline_json != null && (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)
-            || baseline.priceAmount == null || !Number.isFinite(Number(baseline.priceAmount)) || Number(baseline.priceAmount) < 0 || !/^[A-Z]{3}$/.test(String(baseline.currency || ''))))
+        const amount = baseline?.priceAmount;
+        const validAmount = (typeof amount === 'number' || typeof amount === 'string' && amount.trim() !== '')
+            && Number.isFinite(Number(amount)) && Number(amount) >= 0;
+        if (row.cadence_baseline_json == null && Number(row.cadence_last_checked_at_ms || 0) > 0
+            || row.cadence_baseline_json != null && (!baseline || !validAmount || !/^[A-Z]{3}$/.test(String(baseline.currency || ''))))
             throw error('Price-watch cadence baseline is invalid.', 'PRICE_WATCH_CADENCE_CORRUPT');
         row.planCadence = { intervalMs: minutes * 60000, lastCheckedAtMs: row.cadence_last_checked_at_ms == null ? null : Number(row.cadence_last_checked_at_ms),
             baseline };

@@ -45,9 +45,11 @@ test('shared price sources preserve each plan baseline and wake on upgrade', { t
         assert.deepEqual(deliveries.map(row => row.user_id), ['200', '300']);
         assert.equal(JSON.parse(deliveries[0].event_json).previousPriceAmount, 2000);
         const savedBaseline = (await db.queryDatabase("SELECT c.target_id,c.baseline_json FROM automation_price_watch_cadence c JOIN price_watch_targets t ON t.id=c.target_id WHERE t.user_id='200'"))[0];
-        await db.queryDatabase("UPDATE automation_price_watch_cadence SET baseline_json='{' WHERE target_id=?", [savedBaseline.target_id]);
-        await assert.rejects(nativeStore.sourceTargets(source.insertId, now + 180 * 60000), { code: 'PRICE_WATCH_CADENCE_CORRUPT' });
-        assert.equal((await db.queryDatabase('SELECT baseline_json FROM automation_price_watch_cadence WHERE target_id=?', [savedBaseline.target_id]))[0].baseline_json, '{');
+        for (const corrupt of ['{', null, '{"priceAmount":" ","currency":"JPY"}', '{"priceAmount":false,"currency":"JPY"}']) {
+            await db.queryDatabase('UPDATE automation_price_watch_cadence SET baseline_json=? WHERE target_id=?', [corrupt, savedBaseline.target_id]);
+            await assert.rejects(nativeStore.sourceTargets(source.insertId, now + 180 * 60000), { code: 'PRICE_WATCH_CADENCE_CORRUPT' });
+            assert.equal((await db.queryDatabase('SELECT baseline_json FROM automation_price_watch_cadence WHERE target_id=?', [savedBaseline.target_id]))[0].baseline_json, corrupt);
+        }
         await db.queryDatabase('UPDATE automation_price_watch_cadence SET baseline_json=? WHERE target_id=?', [savedBaseline.baseline_json, savedBaseline.target_id]);
         const changedAt = now + 181 * 60000;
         const stale = (await nativeStore.sourceTargets(source.insertId, changedAt)).find(row => row.user_id === '300');

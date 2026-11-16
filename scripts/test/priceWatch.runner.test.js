@@ -42,6 +42,12 @@ test('first price observation seeds a source and does not create an alert', asyn
     assert.deepEqual(store.calls.deliveries, [[]]);
 });
 
+test('a new source with a legacy JSON-null state can establish its first baseline', async () => {
+    const store = storeWith([source({ state_json: 'null' })]);
+    const result = await tick({ now: 1000, store, fetchPrice: async () => ({ productUrl: 'https://example.test', priceAmount: 1, currency: 'JPY' }) });
+    assert.equal(result.sources[0].status, 'seeded'); assert.deepEqual(store.calls.deliveries, [[]]);
+});
+
 test('price scheduler records only an aggregate delay for a due source', async () => {
     const metric = require('../../src/adminSupport/databaseMetrics').sourceLag.price, before = metric.snapshot().count;
     const store = storeWith([source({ next_check_at_ms: 1000 })]);
@@ -59,6 +65,24 @@ test('a later price change creates one change-notification delivery', async () =
     assert.equal(result.sources[0].status, 'processed');
     assert.equal(store.calls.deliveries[0].length, 1);
     assert.match(store.calls.deliveries[0][0].messageText, /価格が変わりました/);
+});
+
+test('an unreadable price baseline is retained and the change is detected after recovery', async () => {
+    const previous = { productName: 'Fixture game', productUrl: 'https://store.steampowered.com/app/730', priceAmount: 2000, currency: 'JPY' };
+    for (const invalid of [null, '', '{"priceAmount":', '[]', '{}', '{"priceAmount":null,"currency":"JPY"}', '{"priceAmount":2000,"currency":""}']) {
+        const watched = source({ initialized_at_ms: 1, state_json: invalid }), store = storeWith([watched]);
+        let fetched = 0;
+        const fetchPrice = async () => { fetched++; return { ...previous, priceAmount: 1500 }; };
+        const rejected = await tick({ now: 2000, store, fetchPrice });
+        assert.equal(rejected.sources[0].errorCode, 'PRICE_WATCH_INVALID_STATE');
+        assert.equal(fetched, invalid === null || invalid === '' || invalid === '{"priceAmount":' || invalid === '[]' ? 0 : 1);
+        assert.equal(store.calls.complete.length, 0); assert.equal(watched.state_json, invalid);
+        watched.state_json = JSON.stringify(previous);
+        const recovered = await tick({ now: 3000, store, fetchPrice });
+        assert.equal(recovered.sources[0].eventCount, 1);
+        assert.equal(store.calls.deliveries[0].length, 1);
+        assert.equal(store.calls.deliveries[0][0].event.previousPriceAmount, 2000);
+    }
 });
 
 test('shared price source keeps each plan on its own schedule and compares its own prior price', async () => {
