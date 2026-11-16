@@ -44,10 +44,10 @@ async function prepare(destinationKind, legacyMode, options = {}) {
         'node:dns': { promises: { lookup: async () => [{ address: '8.8.8.8', family: 4 }] } },
         'node:https': { Agent: class { destroy() {} } },
         '../providerFetch': { withDeadline: () => fakeFetch },
-        '../providers/_loader': { loadProviders: () => [{ ...provider, id: options.providerId || 'twitter', ...(options.steps ? { extract: async () => options.steps } : {}) }] },
+        '../providers/_loader': { loadProviders: () => options.provider ? [options.provider] : [{ ...provider, id: options.providerId || 'twitter', ...(options.steps ? { extract: async () => options.steps } : {}) }] },
         '../providers/_provider_settings': {
             PROVIDER_DEFAULTS: { legacy_mode: undefined },
-            getProviderSettings: async () => ({ enabled: true, legacy_mode: legacyMode, twitter_grid_details_position: options.detailsPosition }),
+            getProviderSettings: async () => ({ enabled: true, legacy_mode: legacyMode, twitter_grid_details_position: options.detailsPosition, ...options.providerSettings }),
         },
     });
     const db = options.db || { queryDatabase: async () => [{ webhook_url: `https://discord.com/api/webhooks/${WEBHOOK}/${'a'.repeat(60)}` }] };
@@ -74,8 +74,8 @@ async function prepare(destinationKind, legacyMode, options = {}) {
         entitlementResolver: async () => { if (options.failEntitlementAfter && ++entitlementCalls > options.failEntitlementAfter) throw Error('synthetic DB failure'); return { slotId: `${OWNER}:1`, slotIndex: 1, minuteLimit: 5, dayLimit: 24 }; },
         membershipResolver: async (_db, job) => [{ targetKind: job.target_kind, targetId: String(job.target_id) }],
     });
-    const job = { id: 'fixture', owner_user_id: OWNER, target_kind: 'x', target_id: '1', plan: {
-        context: { locale: 'ja' }, event: { providerId: options.providerId || 'twitter', url: POST_URL }, schedules: [],
+    const job = { id: 'fixture', owner_user_id: OWNER, target_kind: options.targetKind || 'x', target_id: '1', plan: {
+        context: { locale: 'ja' }, event: { providerId: options.providerId || 'twitter', url: options.eventUrl || POST_URL }, schedules: [],
         display: { format: 'expanded', media: options.media || 'inherit' }, text: options.text ?? 'notification fixture',
     } };
     const destination = destinationKind === 'dm' ? { kind: 'dm', dm_user_id: OWNER }
@@ -132,6 +132,194 @@ test('link splitting also preserves non-X provider media', async () => {
     const { prepared } = await prepare('webhook', undefined, { providerId: 'other', media: 'links', steps: [{ files: links }] });
     assert(prepared.payloads.length > 1);
     assert.deepEqual(prepared.payloads.flatMap(part => String(part.body.content || '').split('\n')).filter(line => line.startsWith('https://')), links);
+});
+
+test('URL-less generated GitHub images are attached while text and ordinary media links remain', async () => {
+    const visual = require('../../src/providers/github/visuals').buildVisualAttachment({ login: 'fixture', contributions: {
+        fromDate: '2026-01-01', toDate: '2026-01-07', cells: [{ date: '2026-01-01', level: 1 }],
+    } }, { type: 'user', login: 'fixture' }, {});
+    assert(Buffer.isBuffer(visual?.attachment?.attachment));
+    const source = visual.attachment, link = 'https://example.test/photo.png';
+    const steps = [{ content: 'provider text', embeds: [{ title: 'GitHub', url: 'https://github.com/fixture', image: { url: `attachment://${source.name}` },
+        thumbnail: { url: 'https://example.test/thumbnail.png' } }],
+        files: [source, link] }];
+    for (const kind of ['dm', 'webhook']) {
+        const { prepared, transport, job, posts, rateEvents } = await prepare(kind, undefined, { providerId: 'github', media: 'links', steps });
+        assert.equal(prepared.payloads.length, 1);
+        assert.match(prepared.payloads[0].body.content, /notification fixture\nprovider text/);
+        assert.match(prepared.payloads[0].body.content, /https:\/\/example\.test\/photo\.png/);
+        assert.match(prepared.payloads[0].body.content, /https:\/\/example\.test\/thumbnail\.png/);
+        assert.equal(prepared.payloads[0].body.embeds[0].title, 'GitHub');
+        assert.equal(prepared.payloads[0].body.embeds[0].image, undefined);
+        assert.equal(prepared.payloads[0].files.length, 1);
+        assert.equal(prepared.payloads[0].files[0].name, source.name);
+        assert.deepEqual(prepared.payloads[0].files[0].data, source.attachment);
+        const safety = require('../../src/automation/safety').createSafety({ matcher: { matchNotification: async () => [] } });
+        await safety.assertNotification(prepared, job);
+        job.plan.event.sensitive = true;
+        await assert.rejects(safety.assertNotification(prepared, job), { code: 'SAFETY_SENSITIVE_DESTINATION' });
+        delete job.plan.event.sensitive;
+        await transport.reserve(prepared, job); await transport.sendStep(prepared, job, 0);
+        assert.equal(posts.length, 1); assert.deepEqual(posts[0].payload.files[0].data, source.attachment);
+        assert(rateEvents.some(event => event[0] === 'commit' && event[1] === 0));
+    }
+});
+
+test('real GitHub profile extraction produces an attached contribution graph in link mode', async () => {
+    const profile = 'https://github.com/fixture', github = isolated(require.resolve('../../src/providers/github'), {
+        './client': { createGitHubClient: () => ({ fetchGitHubData: async () => ({ login: 'fixture', name: 'Fixture', html_url: profile,
+            contributions: { fromDate: '2026-01-01', toDate: '2026-01-07', cells: [{ date: '2026-01-01', level: 1 }], total: 1 } }) }) },
+    });
+    for (const kind of ['dm', 'webhook']) {
+        const { prepared, transport, job, posts } = await prepare(kind, undefined,
+            { provider: github, providerId: 'github', targetKind: 'auto', eventUrl: profile, media: 'links' });
+        assert.equal(prepared.payloads.length, 1);
+        assert.equal(prepared.payloads[0].files.length, 1);
+        assert.equal(prepared.payloads[0].files[0].name, 'github-contributions-fixture.png');
+        assert.match(prepared.payloads[0].body.content, /notification fixture/);
+        assert.equal(prepared.payloads[0].body.embeds[0].url, profile);
+        await transport.reserve(prepared, job); await transport.sendStep(prepared, job, 0);
+        assert.equal(posts.length, 1); assert.equal(posts[0].payload.files[0].name, 'github-contributions-fixture.png');
+    }
+    const hidden = await prepare('webhook', undefined,
+        { provider: github, providerId: 'github', targetKind: 'auto', eventUrl: profile, media: 'hide' });
+    assert.equal(hidden.prepared.payloads[0].files.length, 0);
+    assert.equal(hidden.prepared.payloads[0].body.embeds[0].image, undefined);
+    const serverLinkOnly = await prepare('webhook', undefined,
+        { provider: github, providerId: 'github', targetKind: 'auto', eventUrl: profile, media: 'links', providerSettings: { media_display_mode: 'link_only' } });
+    assert.equal(serverLinkOnly.prepared.payloads[0].files[0].name, 'github-contributions-fixture.png');
+});
+
+test('link mode splits URL-less images without duplicating text, links or metadata', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const files = Array.from({ length: 12 }, (_, index) => ({ name: `generated-${index}.png`, attachment: png }));
+    const links = Array.from({ length: 10 }, (_, index) => `https://example.test/${index}?fixture=${'x'.repeat(210)}`);
+    const { prepared, transport, job, rateEvents } = await prepare('webhook', undefined, { providerId: 'twitter', media: 'links',
+        steps: [{ content: 'provider body', files: [...files, ...links], embeds: [{ title: 'details' }], twitterGridLastRoot: { groupId: 'a'.repeat(32) } }] });
+    assert.deepEqual(prepared.payloads.map(part => part.files.length).filter(Boolean), [10, 2]);
+    assert.equal(prepared.payloads.reduce((n, part) => n + (part.files || []).length, 0), 12);
+    const contents = prepared.payloads.map(part => part.body.content || '');
+    assert.equal(contents.filter(content => content.includes('provider body')).length, 1);
+    assert.deepEqual(contents.flatMap(content => content.split('\n')).filter(line => line.startsWith('https://')), links);
+    assert.equal(prepared.payloads.at(-1).body.embeds[0].title, 'details');
+    await transport.reserve(prepared, job);
+    assert.deepEqual(rateEvents, [['reserve', prepared.payloads.length]]);
+});
+
+test('an uncertain generated-image continuation is not retried or followed by later parts', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const files = Array.from({ length: 22 }, (_, index) => ({ name: `generated-${index}.png`, attachment: png }));
+    const { prepared, transport, job, posts, rateEvents } = await prepare('webhook', undefined,
+        { providerId: 'github', media: 'links', steps: [{ files }], failPost: 2 });
+    assert.deepEqual(prepared.payloads.map(part => part.files.length), [10, 10, 2]);
+    await transport.reserve(prepared, job); await transport.sendStep(prepared, job, 0);
+    await assert.rejects(transport.sendStep(prepared, job, 1), { code: 'ETIMEDOUT' });
+    assert(rateEvents.some(event => event[0] === 'unknown' && event[1] === 1));
+    await assert.rejects(transport.sendStep(prepared, job, 1), { name: 'SafetyError' });
+    await assert.rejects(transport.sendStep(prepared, job, 2), { name: 'SafetyError' });
+    assert.equal(posts.length, 2);
+});
+
+test('missing generated image data or non-image bytes cannot silently disappear in link mode', async () => {
+    for (const step of [
+        { embeds: [{ image: { url: 'attachment://missing.png' } }] },
+        { files: [{ name: 'file.png', attachment: Buffer.from('not an image') }] },
+        { files: [{ name: 'file.exe', attachment: Buffer.from('89504e470d0a1a0a', 'hex') }] },
+        { files: [{ name: 'file.png', attachment: '/private/local.png' }] },
+        { embeds: [{ video: { url: 'attachment://video.png' } }], files: [{ name: 'video.png', attachment: Buffer.from('89504e470d0a1a0a', 'hex') }] },
+    ]) await assert.rejects(prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [step] }),
+        { code: 'SAFETY_INVALID_ATTACHMENT', decision: 'error' });
+});
+
+test('an oversized generated image is rejected before any message can be sent', async () => {
+    const bytes = new Uint8Array(24 * 1024 * 1024 + 1);
+    bytes.set(Buffer.from('89504e470d0a1a0a', 'hex'));
+    await assert.rejects(prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{ files: [bytes] }] }),
+        { code: 'ATTACHMENT_LIMIT' });
+});
+
+test('malformed remaining embed metadata is still rejected by the real safety check', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const steps = [{ embeds: [{ title: 42, image: { url: 'attachment://generated.png' } }],
+        files: [{ name: 'generated.png', attachment: png }] }];
+    const { prepared, job } = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps });
+    const safety = require('../../src/automation/safety').createSafety({ matcher: { matchNotification: async () => [] } });
+    await assert.rejects(safety.assertNotification(prepared, job), { code: 'SAFETY_INVALID_PAYLOAD' });
+});
+
+test('an image-only Embed retains its source link when the generated image becomes an attachment', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex'), sourceUrl = 'https://github.com/fixture';
+    const steps = [{ embeds: [{ url: sourceUrl, image: { url: 'attachment://generated.png' } }],
+        files: [{ name: 'generated.png', attachment: png }] }];
+    const { prepared, job } = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps });
+    assert.match(prepared.payloads[0].body.content, /https:\/\/github\.com\/fixture/);
+    assert.equal(prepared.payloads[0].body.embeds?.length || 0, 0); assert.equal(prepared.payloads[0].files.length, 1);
+    await require('../../src/automation/safety').createSafety({ matcher: { matchNotification: async () => [] } }).assertNotification(prepared, job);
+});
+
+test('explicit hide still removes generated images and inherit keeps the existing attachment', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const steps = [{ content: 'visible text', embeds: [{ title: 'GitHub', image: { url: 'attachment://generated.png' } }],
+        files: [{ name: 'generated.png', attachment: png }] }];
+    const hidden = await prepare('webhook', undefined, { providerId: 'github', media: 'hide', steps });
+    assert.equal(hidden.prepared.payloads[0].files.length, 0); assert.equal(hidden.prepared.payloads[0].body.embeds[0].image, undefined);
+    const inherited = await prepare('webhook', undefined, { providerId: 'github', media: 'inherit', steps });
+    assert.equal(inherited.prepared.payloads[0].files.length, 1); assert.equal(inherited.prepared.payloads[0].body.embeds[0].image.url, 'attachment://generated.png');
+});
+
+test('URL-less non-image files retain the existing link-mode behavior', async () => {
+    const video = Buffer.from('000000186674797069736f6d0000000069736f6d6d703432', 'hex');
+    const steps = [{ content: 'clip notification', embeds: [{ title: 'Twitch clip', url: 'https://clips.twitch.tv/Fixture' }],
+        files: [{ name: 'twitch-fixture.mp4', attachment: video }] }];
+    const { prepared, transport, job, posts } = await prepare('webhook', undefined, { providerId: 'twitch', media: 'links', steps });
+    assert.equal(prepared.payloads[0].files.length, 0);
+    assert.match(prepared.payloads[0].body.content, /clip notification/);
+    assert.equal(prepared.payloads[0].body.embeds[0].url, 'https://clips.twitch.tv/Fixture');
+    await transport.reserve(prepared, job); await transport.sendStep(prepared, job, 0); assert.equal(posts.length, 1);
+});
+
+test('an existing public image URL is preferred over attaching its buffered copy', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex'), publicUrl = 'https://example.test/image.png';
+    const steps = [{ embeds: [{ title: 'image', image: { url: 'attachment://copy.png' } }],
+        files: [{ name: 'copy.png', attachment: png, fallbackUrl: publicUrl }] }];
+    const { prepared } = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps });
+    assert.equal(prepared.payloads[0].files.length, 0);
+    assert.match(prepared.payloads[0].body.content, /https:\/\/example\.test\/image\.png/);
+});
+
+test('a raw generated image receives a usable image filename', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const { prepared } = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{ files: [png] }] });
+    assert.equal(prepared.payloads[0].files[0].name, 'generated-0.png');
+    assert.deepEqual(prepared.payloads[0].files[0].data, png);
+    const typed = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{ files: [new Uint8Array(png)] }] });
+    assert.equal(typed.prepared.payloads[0].files[0].name, 'generated-0.png');
+    assert.deepEqual(typed.prepared.payloads[0].files[0].data, png);
+    const extensionless = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{
+        embeds: [{ image: { url: 'attachment://graph' } }], files: [{ name: 'graph', attachment: png }],
+    }] });
+    assert.equal(extensionless.prepared.payloads[0].files[0].name, 'graph.png');
+    const mismatchedImage = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{ files: [{ name: 'graph.jpg', attachment: png }] }] });
+    assert.equal(mismatchedImage.prepared.payloads[0].files[0].name, 'graph.png');
+    const longName = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{ files: [{ name: `${'x'.repeat(140)}.png`, attachment: png }] }] });
+    assert.equal(longName.prepared.payloads[0].files[0].name.length, 120);
+    assert.match(longName.prepared.payloads[0].files[0].name, /\.png$/);
+});
+
+test('a generated spoiler image stays covered when link mode falls back to an attachment', async () => {
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+    const steps = [{ embeds: [{ fields: [], image: { url: 'attachment://generated.png' } }],
+        files: [{ name: 'generated.png', attachment: png, spoiler: true }] }];
+    const { prepared, job } = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps });
+    assert.equal(prepared.payloads[0].files[0].name, 'SPOILER_generated.png');
+    const safety = require('../../src/automation/safety').createSafety({ matcher: { matchNotification: async () => [] } });
+    await safety.assertNotification(prepared, job);
+    job.plan.event.sensitive = true;
+    await assert.rejects(safety.assertNotification(prepared, job), { code: 'SAFETY_SENSITIVE_DESTINATION' });
+    const lowercase = await prepare('webhook', undefined, { providerId: 'github', media: 'links', steps: [{
+        files: [{ name: 'spoiler_generated.png', attachment: png, spoiler: true }],
+    }] });
+    assert.equal(lowercase.prepared.payloads[0].files[0].name, 'SPOILER_spoiler_generated.png');
 });
 
 test('a media link longer than Discord can carry fails before any message is sent', async () => {
@@ -332,5 +520,26 @@ test('real SQL reserves every byte-split message, retains an unknown and release
         await assert.rejects(tooMany.transport.reserve(tooMany.prepared, tooMany.job), { code: 'AUTOMATION_DELIVERY_SIZE_LIMIT' });
         assert.equal(tooMany.posts.length, 0);
         assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_counters'))[0].n), 0);
+    } finally { await db.close(); }
+});
+
+test('real SQL charges generated-image parts separately and retains unknown delivery', { skip: !port, timeout: 60000 }, async () => {
+    assert([33621, 33622].includes(port), 'only an explicit isolated database port is permitted');
+    const db = await require('../lib/automation-test-db').createTestDatabase(port);
+    try {
+        const limiter = require('../../src/automation/rate-limits').createRateLimiter(db);
+        const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+        const files = Array.from({ length: 12 }, (_, index) => ({ name: `generated-${index}.png`, attachment: png }));
+        const { prepared, transport, job, posts } = await prepare('dm', undefined,
+            { db, rateLimiter: limiter, providerId: 'github', media: 'links', steps: [{ files }], failPost: 2 });
+        assert.deepEqual(prepared.payloads.map(part => part.files.length), [10, 2]);
+        await transport.reserve(prepared, job);
+        assert.equal((await limiter.getSlotUsage(`${OWNER}:1`)).todayReserved, 2);
+        await transport.sendStep(prepared, job, 0);
+        await assert.rejects(transport.sendStep(prepared, job, 1), { code: 'ETIMEDOUT' });
+        const rows = await db.queryDatabase('SELECT parts_json FROM automation_rate_reservations WHERE owner_user_id=?', [OWNER]);
+        assert.deepEqual(JSON.parse(rows[0].parts_json), ['committed', 'unknown']);
+        await assert.rejects(transport.sendStep(prepared, job, 1), { name: 'SafetyError' });
+        assert.equal(posts.length, 2);
     } finally { await db.close(); }
 });

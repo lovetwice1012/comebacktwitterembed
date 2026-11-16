@@ -53,21 +53,81 @@ function splitText(text, size = 1900) {
     }
     return chunks;
 }
+function hasRemainingEmbedContent(embed) {
+    // Keep malformed metadata for the normal safety validator to reject;
+    // remove only rows that became empty after their media was removed.
+    if (['title', 'description', 'url', 'timestamp', 'type'].some(key => embed[key] != null && typeof embed[key] !== 'string')) return true;
+    if (embed.fields != null && !Array.isArray(embed.fields)) return true;
+    if (['author', 'footer'].some(key => embed[key] != null && (typeof embed[key] !== 'object' || Array.isArray(embed[key])))) return true;
+    return Boolean(embed.title || embed.description || embed.fields?.length || embed.author?.name || embed.footer?.text);
+}
 function filterMedia(payload, mode) {
     if (mode === 'inherit') return payload;
-    const links = [];
+    const links = [], fallbackImages = [], attachmentReferences = [], sourceLinks = new Set();
     const embeds = (payload.embeds || []).map(raw => {
         const embed = toJSON(raw);
         for (const key of ['image', 'thumbnail', 'video']) {
-            if (mode === 'links' && /^https:\/\//.test(embed[key]?.url || '')) links.push(embed[key].url);
+            const media = embed[key];
+            if (mode === 'links' && media) {
+                if (typeof media.url === 'string' && /^https:\/\//.test(media.url)) links.push(media.url);
+                else if (typeof media.url === 'string' && /^attachment:\/\//.test(media.url))
+                    attachmentReferences.push({ name: media.url.slice('attachment://'.length), kind: key });
+                else throw new SafetyError('SAFETY_INVALID_ATTACHMENT', 'error');
+            }
             delete embed[key];
         }
         return embed;
+    }).filter(embed => {
+        if (hasRemainingEmbedContent(embed)) return true;
+        // An image-only Embed may carry the link to its source post. Keep it
+        // accessible when the image itself becomes a plain attachment/link.
+        if (mode === 'links' && typeof embed.url === 'string' && /^https:\/\//.test(embed.url)) sourceLinks.add(embed.url);
+        return false;
     });
-    for (const file of payload.files || []) {
-        const url = typeof file === 'string' ? file : file.fallbackUrl || (typeof file.attachment === 'string' ? file.attachment : '');
-        if (mode === 'links' && /^https:\/\//.test(url)) links.push(url);
+    for (const [index, file] of (payload.files || []).entries()) {
+        const url = typeof file === 'string' ? file : file?.fallbackUrl || (typeof file?.attachment === 'string' ? file.attachment : '');
+        if (mode !== 'links') continue;
+        if (/^https:\/\//.test(url)) { links.push(url); continue; }
+        const rawBinary = Buffer.isBuffer(file) || file instanceof Uint8Array;
+        const rawData = rawBinary ? file : file?.attachment;
+        const view = Buffer.isBuffer(rawData) ? rawData : rawData instanceof Uint8Array
+            ? Buffer.from(rawData.buffer, rawData.byteOffset, rawData.byteLength) : null;
+        if (!view) throw new SafetyError('SAFETY_INVALID_ATTACHMENT', 'error');
+        let format;
+        // The shared detector checks bytes only; it makes no provider request.
+        try { format = require('../providers/twitter/safeMedia').detectTwitterMediaFormat(view, 'photo'); }
+        catch {
+            const name = !rawBinary ? String(file?.name || '') : '';
+            const expectedImage = /\.(?:jpe?g|png|webp|gif|avif|svg|bmp|tiff?|heic|heif)$/i.test(name)
+                || attachmentReferences.some(reference => reference.name === name && reference.kind !== 'video');
+            // Link mode previously omitted local non-image files, such as a
+            // buffered Twitch clip. Preserve that behavior; never claim an
+            // unreadable purported image was attached successfully.
+            if (!expectedImage) continue;
+            throw new SafetyError('SAFETY_INVALID_ATTACHMENT', 'error');
+        }
+        if (view.length > TWITTER_ATTACHMENT_BUDGET) throw failure('ATTACHMENT_LIMIT');
+        const data = Buffer.isBuffer(rawData) ? rawData : Buffer.from(view);
+        let name = !rawBinary && file.name ? String(file.name) : `generated-${index}.${format === 'jpeg' ? 'jpg' : format}`;
+        if (!rawBinary && file.spoiler === true && !name.startsWith('SPOILER_')) name = `SPOILER_${name}`;
+        const extension = format === 'jpeg' ? 'jpg' : format;
+        const currentExtension = /\.([A-Za-z0-9]+)$/.exec(name)?.[1]?.toLowerCase();
+        if (currentExtension && !(format === 'jpeg' ? ['jpg', 'jpeg'] : [extension]).includes(currentExtension)) {
+            if (!['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'].includes(currentExtension)) throw new SafetyError('SAFETY_INVALID_ATTACHMENT', 'error');
+            name = `${name.slice(0, name.lastIndexOf('.'))}.${extension}`;
+        }
+        if (!currentExtension) name += `.${extension}`;
+        if (name.length > 120) {
+            const suffix = name.slice(name.lastIndexOf('.'));
+            name = name.slice(0, 120 - suffix.length) + suffix;
+        }
+        fallbackImages.push({ ...(rawBinary ? {} : file), attachment: data, name });
     }
+    if (mode === 'links' && attachmentReferences.some(reference => !(payload.files || []).some(file =>
+        !Buffer.isBuffer(file) && file && typeof file === 'object' && file.name === reference.name
+        && (reference.kind !== 'video' || typeof file.attachment === 'string' && /^https:\/\//.test(file.attachment)
+            || typeof file.fallbackUrl === 'string' && /^https:\/\//.test(file.fallbackUrl)))))
+        throw new SafetyError('SAFETY_INVALID_ATTACHMENT', 'error');
     if (mode !== 'links') {
         const chunks = splitText(payload.content);
         return { ...payload, embeds, files: [], content: chunks[0] || '', ...(chunks.length > 1 ? { contentContinuations: chunks.slice(1) } : {}) };
@@ -78,8 +138,10 @@ function filterMedia(payload, mode) {
         if (last && last.length + 1 + value.length <= 1900) chunks[chunks.length - 1] = `${last}\n${value}`;
         else chunks.push(value);
     };
+    for (const link of sourceLinks) if (!links.includes(link) && !String(payload.content || '').includes(link)) append(link);
     for (const link of links) append(link);
-    return { ...payload, embeds, files: [], content: chunks[0] || '', ...(chunks.length > 1 ? { contentContinuations: chunks.slice(1) } : {}) };
+    return { ...payload, embeds, files: fallbackImages, content: chunks[0] || '', ...(fallbackImages.length ? { linkFallbackImages: true } : {}),
+        ...(chunks.length > 1 ? { contentContinuations: chunks.slice(1) } : {}) };
 }
 
 // Direct aggregate summaries use admitted observations without refetching each
@@ -268,18 +330,18 @@ function createTransport(db, destinations, client, options = {}) {
         const payloads = [], payloadSlots = [], normalExpansions = [];
         for (const [stepIndex, rawStep] of steps.entries()) {
             const filtered = snapshotAggregate ? rawStep : filterMedia(rawStep, plan.display.media);
-            const { contentContinuations = [], ...step } = filtered;
+            const { contentContinuations = [], linkFallbackImages = false, ...step } = filtered;
             const groups = [[]];
             let total = 0;
             for (const file of step.files || []) {
                 const value = typeof file === 'string' ? file : file.attachment;
                 const buffer = Buffer.isBuffer(value) ? value : typeof value === 'string' && /^https:\/\//.test(value) ? await publicFile(value) : null;
                 if (!buffer) throw failure('UNSUPPORTED_ATTACHMENT');
-                const budget = splitTwitterExpanded ? TWITTER_ATTACHMENT_BUDGET : FILE_LIMIT;
+                const budget = splitTwitterExpanded || linkFallbackImages ? TWITTER_ATTACHMENT_BUDGET : FILE_LIMIT;
                 if (buffer.length > budget) throw failure('ATTACHMENT_LIMIT');
                 let files = groups.at(-1);
                 if (total + buffer.length > budget || files.length >= 10) {
-                    if (!splitTwitterExpanded) throw failure('ATTACHMENT_LIMIT');
+                    if (!splitTwitterExpanded && !linkFallbackImages) throw failure('ATTACHMENT_LIMIT');
                     files = []; groups.push(files); total = 0;
                 }
                 total += buffer.length;
@@ -289,12 +351,15 @@ function createTransport(db, destinations, client, options = {}) {
             }
             const target = /** @type {any} */ ({ client });
             const { normalExpansion, detailsOnLastPart, ...discordStep } = step;
+            // Each physical group supplies its own files. Continuations must
+            // not inherit the complete original attachment list.
+            delete discordStep.files;
             const moveDetailsToLastContinuation = detailsOnLastPart && contentContinuations.length > 0;
             for (const [groupIndex, files] of groups.entries()) {
                 // Preserve the provider's last-details layout even if an
                 // individual image batch needs further splitting by bytes.
                 const detailsIndex = detailsOnLastPart ? groups.length - 1 : 0;
-                const bodyStep = moveDetailsToLastContinuation ? { content: discordStep.content, flags: discordStep.flags }
+                const bodyStep = moveDetailsToLastContinuation ? (groupIndex === 0 ? { content: discordStep.content, flags: discordStep.flags } : { flags: discordStep.flags })
                     : groupIndex === detailsIndex ? discordStep : { flags: discordStep.flags };
                 const payload = MessagePayload.create(target, { ...bodyStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
                 payload.resolveBody(); await payload.resolveFiles();
