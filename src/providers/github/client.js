@@ -24,13 +24,48 @@ function githubHeaders() {
 
 // Bind the transport per provider load so consumers can supply an isolated client.
 function createGitHubClient(fetch) {
-    async function fetchJson(url) {
+    async function fetchJson(url, validate) {
         const res = await fetch(url, { headers: githubHeaders() });
         if (!res.ok) {
             const err = Object.assign(new Error(`github api ${res.status} for ${url}`), { status: res.status });
             throw err;
         }
-        return await res.json();
+        const value = await res.json();
+        if (validate && !validate(value, res)) throw Object.assign(new Error('GitHub returned mismatched resource metadata'), { code: 'GITHUB_IDENTITY_MISMATCH' });
+        return value;
+    }
+
+    function matchesUser(profile, requested, response) {
+        if (!profile || typeof profile !== 'object' || Array.isArray(profile)
+            || typeof profile.login !== 'string' || !profile.login.trim()) return false;
+        let finalUrl;
+        if (response.url) {
+            try { finalUrl = new URL(response.url); } catch { return false; }
+            if (finalUrl.protocol !== 'https:' || finalUrl.hostname !== 'api.github.com' || finalUrl.port || finalUrl.username || finalUrl.password) return false;
+        }
+        if (profile.login.toLowerCase() === requested.toLowerCase()) return true;
+        if (!response.redirected || !finalUrl) return false;
+        const userPath = `/users/${encodeURIComponent(profile.login)}`.toLowerCase();
+        const id = String(profile.id ?? '');
+        return finalUrl.pathname.toLowerCase() === userPath
+            || /^[1-9]\d{0,19}$/.test(id) && finalUrl.pathname === `/user/${id}`;
+    }
+
+    function matchesRepo(repoData, owner, repo, response) {
+        if (!repoData || typeof repoData !== 'object' || Array.isArray(repoData) || typeof repoData.full_name !== 'string') return false;
+        const names = repoData.full_name.split('/');
+        if (names.length !== 2 || !names[0] || !names[1]) return false;
+        let finalUrl;
+        if (response.url) {
+            try { finalUrl = new URL(response.url); } catch { return false; }
+            if (finalUrl.protocol !== 'https:' || finalUrl.hostname !== 'api.github.com' || finalUrl.port || finalUrl.username || finalUrl.password) return false;
+        }
+        if (repoData.full_name.toLowerCase() === `${owner}/${repo}`.toLowerCase()) return true;
+        if (!response.redirected || !finalUrl) return false;
+        const repoPath = `/repos/${encodeURIComponent(names[0])}/${encodeURIComponent(names[1])}`.toLowerCase();
+        const id = String(repoData.id ?? '');
+        return finalUrl.pathname.toLowerCase() === repoPath
+            || /^[1-9]\d{0,19}$/.test(id) && finalUrl.pathname === `/repositories/${id}`;
     }
 
     async function fetchOptionalJson(url) {
@@ -85,7 +120,7 @@ function createGitHubClient(fetch) {
         const repoPath = `/repos/${owner}/${repo}`;
 
         if (parsed.type === 'repo') {
-            const repoData = await fetchJson(apiUrl(repoPath));
+            const repoData = await fetchJson(apiUrl(repoPath), (value, response) => matchesRepo(value, parsed.owner, parsed.repo, response));
             // Use the renderer's predicate so hidden/hosted cards need no local
             // activity or avatar data. The text breakdown is independent of the
             // generated card's language bar, including in compact mode.
@@ -117,7 +152,7 @@ function createGitHubClient(fetch) {
             };
         }
         if (parsed.type === 'user') {
-            const profile = await fetchJson(apiUrl(`/users/${encodePathPart(parsed.login)}`));
+            const profile = await fetchJson(apiUrl(`/users/${encodePathPart(parsed.login)}`), (value, response) => matchesUser(value, parsed.login, response));
             const contributions = await fetchContributionCalendar(parsed.login).catch(() => null);
             return { ...profile, contributions };
         }
