@@ -54,6 +54,22 @@ test('first guest observation seeds the cursor without posting historical items'
     assert.deepEqual(store.calls.complete[0].cursor.seenContentIds, ['old-1', 'old-2']);
 });
 
+test('initial YouTube tab baselines are not reported as new on the next observation', async () => {
+    const historical = { contentId: 'post:old', url: 'https://example.test/post/old' };
+    const oldVideo = { contentId: 'old-video', url: 'https://example.test/video/old' };
+    const fresh = { contentId: 'post:new', url: 'https://example.test/post/new' };
+    const store = baseStore([source()]);
+    const first = await tick({ now: 1000000, store, fetchSource: async () => ({ items: [oldVideo], baselineItems: [historical], state: {} }) });
+    assert.equal(first.sources[0].status, 'seeded');
+    assert.deepEqual(store.calls.complete[0].cursor.seenContentIds, ['old-video', 'post:old']);
+    assert.equal(store.calls.create.length, 0);
+
+    store.claimDueSources = async () => [source({ initialized_at_ms: 1000000, cursor_json: JSON.stringify(store.calls.complete[0].cursor) })];
+    const next = await tick({ now: 1030000, store, fetchSource: async () => ({ items: [fresh, historical, oldVideo], state: {} }) });
+    assert.equal(next.sources[0].newItemCount, 1);
+    assert.deepEqual(store.calls.create[0].map(item => item.contentId), ['post:new']);
+});
+
 test('unreadable discovery cursors preserve history and fail before fetching or admitting items', async () => {
     for (const [cursor, code] of [
         [null, 'AUTO_WATCH_INVALID_CURSOR'], ['', 'AUTO_WATCH_INVALID_CURSOR'], ['null', 'AUTO_WATCH_INVALID_CURSOR'],

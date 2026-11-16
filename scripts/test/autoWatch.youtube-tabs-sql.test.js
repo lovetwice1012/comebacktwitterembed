@@ -44,6 +44,20 @@ test('YouTube SQL settings, atomic baseline/admission, shared-source isolation, 
         };
         const deliveries = async () => db.queryDatabase(`SELECT t.user_id,i.content_key,d.status FROM auto_watch_deliveries d
             JOIN auto_watch_targets t ON t.id=d.target_id JOIN auto_watch_items i ON i.id=d.item_id ORDER BY t.user_id,i.content_key`);
+        await t.test('a newly created source persists tab baselines without replaying old posts on the second poll', async () => {
+            const scenario = { releases: [f.release()], posts: [f.post()] };
+            assert.equal((await run(scenario)).status, 'seeded');
+            const [saved] = await db.queryDatabase('SELECT cursor_json FROM auto_watch_sources');
+            const cursor = JSON.parse(saved.cursor_json);
+            assert(cursor.seenContentIds.includes(f.video));
+            assert(cursor.seenContentIds.includes(`post:${f.postId}`));
+            now += 1800000;
+            const second = await run(scenario);
+            assert.equal(second.newItemCount, 0);
+            assert.deepEqual(await deliveries(), []);
+            await db.queryDatabase("UPDATE auto_watch_sources SET initialized_at_ms=NULL,cursor_json=NULL,state_json='{}',etag=NULL,last_modified=NULL");
+            await db.queryDatabase('UPDATE auto_watch_targets SET baseline_at_ms=NULL,youtube_releases_baseline_at_ms=NULL,youtube_community_baseline_at_ms=NULL');
+        });
         await t.test('migration adds safe defaults to legacy targets and can be applied idempotently', async () => {
             const migration = readFileSync(require('node:path').join(__dirname, '../../migrations/20261020_add_youtube_watch_options.sql'), 'utf8');
             const schema = require('../../src/db_schema')._internal;

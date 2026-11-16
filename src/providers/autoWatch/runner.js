@@ -198,7 +198,7 @@ async function processSource(source, context) {
         }
         if (isFirstObservation) {
             const seededCursor = {
-                ...advanceCursor(cursor, observed, observed, { seed: true }),
+                ...advanceCursor(cursor, [...observed, ...baselineItems], [...observed, ...baselineItems], { seed: true }),
                 ...initialCursor(source.provider_id, observed),
                 admissionVersion: 1,
             };

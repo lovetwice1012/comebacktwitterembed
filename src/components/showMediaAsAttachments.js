@@ -70,27 +70,37 @@ async function fetchImageExtension(rawUrl) {
     const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; comebacktwitterembed/1.0)' };
 
     try {
-        const head = await fetch(rawUrl, { method: 'HEAD', headers });
-        const fromHead = getImageExtensionFromContentType(getContentTypeHeader(head.headers));
+        const head = await fetch(rawUrl, { method: 'HEAD', headers, signal: AbortSignal.timeout(4000) });
+        const fromHead = head.ok === false ? null : getImageExtensionFromContentType(getContentTypeHeader(head.headers));
         if (fromHead) return fromHead;
     } catch (err) {
         void err;
     }
 
     try {
-        const res = await fetch(rawUrl, { headers: { ...headers, Range: 'bytes=0-15' } });
-        const fromContentType = getImageExtensionFromContentType(getContentTypeHeader(res.headers));
-        if (fromContentType) return fromContentType;
-        if (typeof res.buffer === 'function') {
-            const bytes = await res.buffer();
-            const fromBytes = getImageExtensionFromMagicBytes(bytes);
-            if (fromBytes) return fromBytes;
+        const res = await fetch(rawUrl, { headers: { ...headers, Range: 'bytes=0-15' }, signal: AbortSignal.timeout(4000) });
+        try {
+            if (!res.ok) return null;
+            const fromContentType = getImageExtensionFromContentType(getContentTypeHeader(res.headers));
+            if (fromContentType) return fromContentType;
+            const chunks = [];
+            let size = 0;
+            for await (const chunk of res.body) {
+                const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                const part = bytes.subarray(0, 16 - size);
+                chunks.push(part);
+                size += part.length;
+                if (size >= 16) break;
+            }
+            return getImageExtensionFromMagicBytes(Buffer.concat(chunks, size));
+        } finally {
+            res.body?.destroy();
         }
     } catch (err) {
         void err;
     }
 
-    return 'jpg';
+    return null;
 }
 
 async function resolveImageExtension(rawUrl) {
@@ -100,6 +110,7 @@ async function resolveImageExtension(rawUrl) {
 async function buildImageFile(url, index) {
     if (imageUrlHasExtension(url)) return url;
     const extension = await resolveImageExtension(url);
+    if (!extension) throw new Error('GRID_SOURCE_INCOMPLETE');
     return {
         attachment: url,
         name: `embed-image-${index}.${extension}`,
