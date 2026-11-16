@@ -6,23 +6,36 @@ const { readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const { compileFunction } = require('node:vm');
 
-function fixture({ description, url = 'https://x.com/example/status/1234567890123456789', translateOriginal = false, response = 'translated' }) {
+function fixture({ description, url = 'https://x.com/example/status/1234567890123456789', translateOriginal = false, response = 'translated', locale = 'en-US', quote = { description: 'quoted post' }, realNormalizer = false }) {
     const filename = require.resolve('../../src/components/translate'), actual = createRequire(filename), mod = { exports: {} }, requests = [], edits = [], replies = [];
     const mocks = {
         '../providerFetch': { withDeadline: () => async target => { requests.push(new URL(target)); const index = requests.length - 1;
             return { ok: true, text: async () => Array.isArray(response) ? response[index] : response }; } },
         '../settings': { detectProviderIdFromMessage: () => 'twitter', checkComponentIncludesDisabledButtonAndIfFindDeleteIt: async value => value },
         '../providers/_provider_settings': { getSetting: async () => translateOriginal },
-        '../interactionResponse': { normalizeEmbed: value => value },
+        '../interactionResponse': realNormalizer ? actual('../interactionResponse') : { normalizeEmbed: value => value },
     };
     compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports'], { filename })(
         id => Object.hasOwn(mocks, id) ? mocks[id] : actual(id), mod, mod.exports);
-    const interaction = { guildId: 'fixture', locale: 'en-US', message: {
-        embeds: [{ url, description }, { description: 'quoted post' }], components: [], attachments: [],
+    const interaction = { guildId: 'fixture', locale, message: {
+        embeds: [{ url, description }, quote], components: [], attachments: [],
         edit: async value => { edits.push(value); },
     }, editReply: async value => { replies.push(value); } };
     return { handle: () => mod.exports.handle(interaction), requests, replies, edits };
 }
+
+test('translation preserves real Discord quote embeds and supports Latin American Spanish', async () => {
+    const { Embed, Locale } = require('discord.js');
+    const quote = new Embed({ title: 'Quote', description: 'Quoted text', image: { url: 'https://example.test/quote.png' } });
+    const f = fixture({ description: 'original', translateOriginal: true, locale: Locale.SpanishLATAM, quote, realNormalizer: true });
+    await f.handle();
+    assert.equal(f.requests[0].searchParams.get('target'), 'es');
+    for (const result of [f.replies[0], f.edits[0]]) {
+        assert.equal(result.embeds[1].description, 'Quoted text');
+        assert.equal(result.embeds[1].image.url, 'https://example.test/quote.png');
+        assert.equal(Object.hasOwn(result.embeds[1], 'data'), false);
+    }
+});
 
 test('translation includes every line of an X post while preserving its generated link and optional statistics', async () => {
     const url = 'https://x.com/example/status/1234567890123456789', body = 'one\ntwo\nthree\nfour\nfive\nsix';

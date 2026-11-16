@@ -65,6 +65,7 @@ async function handle(interaction, context = {}) {
 
     let target = interaction.locale;
     if (target.startsWith('en-')) target = 'en';
+    if (target === 'es-419') target = 'es';
     if (target === 'jp') target = 'ja';
 
     const originalDescription = sourceEmbed.description || '';

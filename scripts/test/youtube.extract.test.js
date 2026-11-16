@@ -274,6 +274,50 @@ test('youtube extract: falls back to YouTube page metadata when Invidious return
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '3,210'));
 });
 
+test('youtube extract: invalid successful video responses use the next instance', async () => {
+    for (const invalid of [null, [], {}, { title: '  ' }]) {
+        let requests = 0;
+        const provider = loadYouTubeProviderWithFetch(async () => okJson(++requests === 1 ? invalid : videoInfo()));
+        const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+        const result = await provider.extract(createMessage(url), url, {});
+        assert.equal(requests, 2);
+        assert.equal(result[0].embeds[0].title, 'Example Video');
+    }
+});
+
+test('youtube extract: unusable instance metadata falls back to the YouTube page', async () => {
+    const requests = [];
+    const provider = loadYouTubeProviderWithFetch(async url => {
+        requests.push(String(url));
+        if (String(url).includes('/api/v1/videos/')) return okJson({});
+        if (String(url).startsWith('https://www.youtube.com/watch?')) return { ok: true, text: async () => playerResponseHtml() };
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.youtube.com/watch?v=W7G8NAhG6l8';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Fallback Video');
+    assert(requests.some(request => request.startsWith('https://www.youtube.com/watch?')));
+});
+
+test('youtube extract: playlist and channel requests skip malformed successful responses', async () => {
+    let playlistRequests = 0;
+    const playlist = loadYouTubeProviderWithFetch(async () => okJson(++playlistRequests === 1 ? [] : playlistInfo()));
+    const playlistUrl = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    assert.equal((await playlist.extract(createMessage(playlistUrl), playlistUrl, {}))[0].embeds[0].title, 'Example Playlist');
+    assert.equal(playlistRequests, 2);
+
+    let resolveRequests = 0, channelRequests = 0;
+    const channel = loadYouTubeProviderWithFetch(async url => {
+        if (String(url).includes('/api/v1/resolveurl?')) return okJson(++resolveRequests === 1 ? {} : { ucid: 'UCexample' });
+        if (String(url).includes('/api/v1/channels/')) return okJson(++channelRequests === 1 ? null : channelInfo());
+        throw new Error('unexpected fixture request');
+    });
+    const channelUrl = 'https://www.youtube.com/@example';
+    assert.match((await channel.extract(createMessage(channelUrl), channelUrl, {}))[0].embeds[0].title, /Example Channel/);
+    assert.equal(resolveRequests, 2);
+    assert.equal(channelRequests, 2);
+});
+
 test('youtube extract: shorts URLs are labeled as Shorts', async () => {
     const provider = loadYouTubeProviderWithFetch(async () => okJson(videoInfo()));
 

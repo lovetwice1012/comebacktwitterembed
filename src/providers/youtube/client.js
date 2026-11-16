@@ -34,7 +34,7 @@ function isTransientInvidiousError(errorText) {
 }
 
 function createYouTubeClient(fetch) {
-    async function fetchJsonFromInstances(path) {
+    async function fetchJsonFromInstances(path, valid = value => value && typeof value === 'object' && !Array.isArray(value)) {
         let lastError = null;
         for (const baseUrl of getInstances()) {
             try {
@@ -46,6 +46,10 @@ function createYouTubeClient(fetch) {
                 const json = await res.json();
                 if (json?.error && isTransientInvidiousError(json.error)) {
                     lastError = new Error(json.error);
+                    continue;
+                }
+                if (!json?.error && !valid(json)) {
+                    lastError = new Error('Invidious response did not contain usable metadata');
                     continue;
                 }
                 return { json, baseUrl };
@@ -100,7 +104,7 @@ function createYouTubeClient(fetch) {
 
     async function fetchVideoInfo(videoId) {
         const path = `/api/v1/videos/${encodeURIComponent(videoId)}?hl=en`;
-        return fetchJsonFromInstances(path);
+        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim());
     }
 
     async function fetchVideoInfoWithFallback(videoId) {
@@ -123,7 +127,7 @@ function createYouTubeClient(fetch) {
 
     async function fetchPlaylistInfo(playlistId) {
         const path = `/api/v1/playlists/${encodeURIComponent(playlistId)}?hl=en`;
-        return fetchJsonFromInstances(path);
+        return fetchJsonFromInstances(path, json => typeof json?.title === 'string' && !!json.title.trim());
     }
 
     async function fetchYouTubeInitialDataPage(pageUrl, context) {
@@ -164,7 +168,7 @@ function createYouTubeClient(fetch) {
 
     async function resolveChannelUrl(channelUrl) {
         const path = `/api/v1/resolveurl?url=${encodeURIComponent(channelUrl)}`;
-        const { json } = await fetchJsonFromInstances(path);
+        const { json } = await fetchJsonFromInstances(path, json => typeof json?.ucid === 'string' && !!json.ucid.trim());
         return json?.ucid || null;
     }
 
@@ -172,7 +176,7 @@ function createYouTubeClient(fetch) {
         const channelId = alreadyResolved ? channelIdOrUrl : await resolveChannelUrl(channelIdOrUrl);
         if (!channelId) return null;
         const path = `/api/v1/channels/${encodeURIComponent(channelId)}?hl=en`;
-        const result = await fetchJsonFromInstances(path);
+        const result = await fetchJsonFromInstances(path, json => typeof json?.author === 'string' && !!json.author.trim());
         return { ...result, channelId };
     }
 

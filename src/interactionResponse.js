@@ -110,7 +110,9 @@ function normalizeEmbedFields(fields) {
 
 function normalizeEmbed(embed) {
     if (!embed || typeof embed !== 'object') return embed;
-    const next = { ...embed };
+    // Discord.js Embed and EmbedBuilder instances expose their fields through
+    // getters; spreading the instance copies only its internal `data` field.
+    const next = { ...(typeof embed.toJSON === 'function' ? embed.toJSON() : embed) };
     if (next.title !== undefined) next.title = truncateText(next.title, 256);
     if (next.description !== undefined) next.description = truncateText(next.description, EMBED_DESCRIPTION_LIMIT);
     if (Array.isArray(next.fields)) {
