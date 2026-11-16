@@ -24,18 +24,35 @@ const TOTAL_TIMEOUT_MS = 90000;
 const MAX_REDIRECTS = 3;
 const MAX_CONCURRENT = 2;
 const MAX_WAITING = 8;
+const MAX_QUEUE_WAIT_MS = 15000;
 const INPUT_CONCURRENCY = 2;
 const FORMAT_INFO = Object.freeze({ jpeg: ['image/jpeg', 'jpg'], png: ['image/png', 'png'], webp: ['image/webp', 'webp'] });
-let active = 0;
-const waiting = [];
-
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
-async function acquire() {
-    if (active < MAX_CONCURRENT) { active++; return; }
-    if (waiting.length >= MAX_WAITING) throw failure('IMAGE_GRID_BUSY', '画像の処理が混み合っています。時間をおいて再度お試しください。');
-    await new Promise(resolve => waiting.push(resolve));
+function createLimiter(maxActive, maxWaiting, waitMs) {
+    let active = 0;
+    const waiting = [];
+    const busy = () => failure('IMAGE_GRID_BUSY', '画像の処理が混み合っています。時間をおいて再度お試しください。');
+    return {
+        async acquire() {
+            if (active < maxActive) { active++; return; }
+            if (waiting.length >= maxWaiting) throw busy();
+            await new Promise((resolve, reject) => {
+                const item = { resolve, timer: null };
+                item.timer = setTimeout(() => {
+                    const index = waiting.indexOf(item);
+                    if (index >= 0) { waiting.splice(index, 1); reject(busy()); }
+                }, waitMs);
+                waiting.push(item);
+            });
+        },
+        release() {
+            const item = waiting.shift();
+            if (item) { clearTimeout(item.timer); item.resolve(); }
+            else active--;
+        },
+    };
 }
-function release() { const next = waiting.shift(); if (next) next(); else active--; }
+const limiter = createLimiter(MAX_CONCURRENT, MAX_WAITING, MAX_QUEUE_WAIT_MS);
 
 function boundedInteger(value, fallback, min, max, name) {
     if (value === undefined) return fallback;
@@ -90,12 +107,12 @@ function imageFormat(data) {
     throw failure('IMAGE_GRID_FORMAT', '画像の形式を確認してください。');
 }
 
-async function fetchImage(value, fetchImpl, signal, total) {
+async function fetchImage(value, fetchImpl, signal, total, sharedAgent) {
     let url = validateUrl(value);
     for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
         // The socket uses the validated DNS result itself, preventing a second
         // resolution from redirecting the request to a private address.
-        const agent = new https.Agent({ keepAlive: false, lookup });
+        const agent = sharedAgent || new https.Agent({ keepAlive: false, lookup });
         let response;
         try {
             response = await fetchImpl(url.href, { redirect: 'manual', agent, signal, timeout: REQUEST_TIMEOUT_MS, size: MAX_IMAGE_BYTES });
@@ -121,7 +138,7 @@ async function fetchImage(value, fetchImpl, signal, total) {
             response?.body?.destroy();
             if (error?.code?.startsWith('IMAGE_GRID_')) throw error;
             throw failure('IMAGE_GRID_DOWNLOAD', '画像を取得できませんでした。');
-        } finally { agent.destroy(); }
+        } finally { if (!sharedAgent) agent.destroy(); }
     }
     throw failure('IMAGE_GRID_DOWNLOAD', '画像を取得できませんでした。');
 }
@@ -222,17 +239,22 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
         // declarations through its ESM default export in this project.
         sharp = /** @type {typeof import('sharp').default} */ (/** @type {unknown} */ (require('sharp')));
     } catch { throw failure('IMAGE_GRID_UNAVAILABLE', '画像をまとめる機能を利用できません。'); }
-    await acquire();
-    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
-    timeout.unref?.();
+    await limiter.acquire();
+    let controller, timeout, agent;
     try {
+        controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
+        // A private, bounded pool lets this operation reuse vetted TLS sockets.
+        // It is never shared across users and is destroyed on success or failure.
+        agent = new https.Agent({ keepAlive: true, maxSockets: INPUT_CONCURRENCY, maxFreeSockets: INPUT_CONCURRENCY, lookup });
+        timeout.unref?.();
         const fetchImpl = deps.fetch || require('node-fetch');
         const total = { bytes: 0 }, cachedSources = new Array(urls.length);
         let cachedBytes = 0;
         // Do not retain all source files while decoding: fetch and resize one
         // source within each bounded worker, retaining only a tile or metadata.
         const tiles = await mapConcurrent(urls, INPUT_CONCURRENCY, async (url, i) => {
-            let data = await fetchImage(url, fetchImpl, controller.signal, total);
+            let data = await fetchImage(url, fetchImpl, controller.signal, total, agent);
             try {
                 const format = imageFormat(data);
                 const input = sharp(data, { failOn: 'warning', limitInputPixels: MAX_INPUT_PIXELS, autoOrient: true, animated: false });
@@ -266,7 +288,7 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
                 let data = cachedSources[i];
                 cachedSources[i] = undefined;
                 if (data) cachedBytes -= data.length;
-                else data = await fetchImage(urls[i], fetchImpl, controller.signal, secondPass);
+                else data = await fetchImage(urls[i], fetchImpl, controller.signal, secondPass, agent);
                 try {
                     if (createHash('sha256').update(data).digest('hex') !== tile.hash)
                         throw failure('IMAGE_GRID_DOWNLOAD', '画像が変更されたため、もう一度お試しください。');
@@ -281,26 +303,37 @@ async function composeTwitterImageGrid(urls, options, deps = {}) {
             }, controller);
         }
         const composite = sharp({ create: { width: layout.width, height: layout.height, channels: 4, background: config.background } }).composite(overlays);
-        let data = await composite.png().toBuffer(), width = layout.width, height = layout.height;
+        let width = layout.width, height = layout.height, master;
         let quality = config.quality, adapted = layout.scaled;
+        const encode = transform => config.format === 'jpeg' ? transform.jpeg({ quality }).toBuffer()
+            : config.format === 'webp' ? transform.webp({ quality }).toBuffer() : transform.png().toBuffer();
+        // Most results fit immediately. Encode the composed canvas directly
+        // instead of compressing and decoding an intermediate PNG first.
+        let data = await encode(composite.clone());
         for (let attempt = 0; attempt < 8; attempt++) {
-            if (controller.signal.aborted) throw failure('IMAGE_GRID_TIMEOUT', '画像の処理に時間がかかりました。再度お試しください。');
-            const transform = sharp(data, { limitInputPixels: MAX_OUTPUT_PIXELS });
-            if (config.format === 'jpeg') data = await transform.jpeg({ quality }).toBuffer();
-            else if (config.format === 'webp') data = await transform.webp({ quality }).toBuffer();
-            else data = await transform.png().toBuffer();
             if (controller.signal.aborted) throw failure('IMAGE_GRID_TIMEOUT', '画像の処理に時間がかかりました。再度お試しください。');
             if (data.length <= config.maxOutputBytes) return { data, contentType: FORMAT_INFO[config.format][0], filename: `twitter-grid.${FORMAT_INFO[config.format][1]}`,
                 width, height, columns: layout.columns, rows: layout.rows, adapted };
+            if (attempt === 7) break;
             adapted = true;
+            // On the uncommon oversize path, create a lossless master once.
+            // Re-encoding that master avoids accumulating JPEG/WebP artifacts.
+            if (!master) master = await composite.clone().png().toBuffer();
+            if (controller.signal.aborted) throw failure('IMAGE_GRID_TIMEOUT', '画像の処理に時間がかかりました。再度お試しください。');
             if (config.format !== 'png' && quality > 40) quality = Math.max(40, quality - 15);
-            else { width = Math.max(1, Math.floor(width * 0.8)); height = Math.max(1, Math.floor(height * 0.8)); data = await sharp(data).resize(width, height).png().toBuffer(); }
+            else { width = Math.max(1, Math.floor(width * 0.8)); height = Math.max(1, Math.floor(height * 0.8)); }
+            let transform = sharp(master, { limitInputPixels: MAX_OUTPUT_PIXELS });
+            if (width !== layout.width || height !== layout.height) transform = transform.resize(width, height);
+            data = await encode(transform);
         }
         throw failure('IMAGE_GRID_OUTPUT_SIZE', 'まとめた画像が大きすぎます。画像の大きさを小さくしてください。');
     } catch (error) {
         if (error?.code?.startsWith('IMAGE_GRID_')) throw error;
         throw failure('IMAGE_GRID_PROCESS', '画像をまとめられませんでした。');
-    } finally { clearTimeout(timeout); controller.abort(); release(); }
+    } finally {
+        clearTimeout(timeout); controller?.abort();
+        try { agent?.destroy(); } finally { limiter.release(); }
+    }
 }
 
-module.exports = { composeTwitterImageGrid, _internal: { validateUrl, imageFormat, gridOptions, geometry, autoBase, autoGeometry, fetchImage } };
+module.exports = { composeTwitterImageGrid, _internal: { validateUrl, imageFormat, gridOptions, geometry, autoBase, autoGeometry, fetchImage, createLimiter } };

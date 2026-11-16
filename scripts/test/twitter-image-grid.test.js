@@ -344,6 +344,21 @@ test('at most two image compositions can download concurrently', async () => {
     unblock(); await Promise.all(jobs); assert.equal(entered, 3);
 });
 
+test('queued composition expires cleanly and a later request can use the released slot', async () => {
+    const limiter = _internal.createLimiter(1, 1, 25);
+    await limiter.acquire();
+    await assert.rejects(limiter.acquire(), { code: 'IMAGE_GRID_BUSY' });
+    limiter.release();
+    await limiter.acquire();
+    const next = limiter.acquire();
+    await assert.rejects(limiter.acquire(), { code: 'IMAGE_GRID_BUSY' });
+    limiter.release();
+    await next;
+    limiter.release();
+    await limiter.acquire();
+    limiter.release();
+});
+
 test('WebP output is a real decodable image, and pbs requests pin validated DNS to their socket', async () => {
     const source = await solid(11, 22, 33); let lookup;
     const result = await composeTwitterImageGrid(urls(1), { format: 'webp', cellWidth: 128, cellHeight: 128 }, { fetch: async (_url, options) => {
@@ -352,6 +367,49 @@ test('WebP output is a real decodable image, and pbs requests pin validated DNS 
     assert.equal(lookup, require('../../src/providers/autoWatch/publicDns').lookup);
     assert.equal(result.contentType, 'image/webp');
     assert.equal((await sharp(result.data).metadata()).format, 'webp');
+});
+
+test('each composition reuses only its own bounded DNS-validated agent and destroys it', async () => {
+    const source = await solid(11, 22, 33), agents = [], destroyed = new Map();
+    const fetch = async (_url, options) => {
+        const agent = options.agent;
+        if (!destroyed.has(agent)) {
+            agents.push(agent); destroyed.set(agent, 0);
+            const original = agent.destroy.bind(agent);
+            agent.destroy = () => { destroyed.set(agent, destroyed.get(agent) + 1); return original(); };
+        }
+        assert.equal(agent.options.lookup, require('../../src/providers/autoWatch/publicDns').lookup);
+        assert.equal(agent.options.keepAlive, true);
+        assert.equal(agent.maxSockets, 2);
+        return response(200, source);
+    };
+    await Promise.all([composeTwitterImageGrid(urls(3), { cellWidth: 128 }, { fetch }),
+        composeTwitterImageGrid(urls(3), { cellWidth: 128 }, { fetch })]);
+    assert.equal(agents.length, 2);
+    assert.notEqual(agents[0], agents[1]);
+    assert.deepEqual(agents.map(agent => destroyed.get(agent)), [1, 1]);
+});
+
+test('a failed image download also destroys the operation agent', async () => {
+    let agent, destroyed = 0;
+    await assert.rejects(composeTwitterImageGrid(urls(1), { cellWidth: 128 }, { fetch: async (_url, options) => {
+        agent = options.agent;
+        const original = agent.destroy.bind(agent);
+        agent.destroy = () => { destroyed++; return original(); };
+        return response(403, null);
+    } }), { code: 'IMAGE_GRID_DOWNLOAD' });
+    assert.ok(agent); assert.equal(destroyed, 1);
+});
+
+test('a failed agent initialization releases the composition slot', { timeout: 3000 }, async () => {
+    const https = require('node:https');
+    const failing = mock.method(https, 'Agent', function () { throw new Error('synthetic agent failure'); });
+    try {
+        for (let i = 0; i < 2; i++) await assert.rejects(composeTwitterImageGrid(urls(1)), { code: 'IMAGE_GRID_PROCESS' });
+    } finally { failing.mock.restore(); }
+    const source = await solid(1, 2, 3);
+    const result = await composeTwitterImageGrid(urls(1), { cellWidth: 128 }, { fetch: async () => response(200, source) });
+    assert.equal(result.width, 128);
 });
 
 test('twenty real 9 MiB JPEGs are resized as a bounded pipeline rather than retained as source buffers', { timeout: 90000 }, async t => {
@@ -392,4 +450,17 @@ test('output byte budget is enforced without omitting any source images', async 
         fetch: async () => { downloaded++; return response(200, image); },
     });
     assert.equal(downloaded, 20); assert(result.data.length <= 256 * 1024); assert.equal(result.adapted, true);
+});
+
+test('an oversized JPEG is re-encoded from the lossless image rather than a prior JPEG', async () => {
+    let seed = 123456789;
+    const raw = Buffer.alloc(512 * 512 * 3);
+    for (let i = 0; i < raw.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; raw[i] = seed >>> 24; }
+    const source = await sharp(raw, { raw: { width: 512, height: 512, channels: 3 } }).png().toBuffer();
+    const result = await composeTwitterImageGrid(urls(1), { columns: 1, cellWidth: 512, format: 'jpeg', quality: 95, maxOutputBytes: 256 * 1024 },
+        { fetch: async () => response(200, source) });
+    const reference = await sharp(source).jpeg({ quality: 80 }).toBuffer();
+    assert.equal(result.adapted, true);
+    assert.ok(result.data.length <= 256 * 1024);
+    assert.deepEqual(result.data, reference);
 });
