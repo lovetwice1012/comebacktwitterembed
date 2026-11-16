@@ -209,6 +209,7 @@ func (a *App) httpProbe(ctx context.Context, target string) Object {
 func (a *App) collect(ctx context.Context, deep bool) Object {
 	unit := unitSnapshot(ctx, a.cfg.BotUnit)
 	v := Object{"observedAt": now(), "bootId": a.boot, "ruleVersion": "deterministic-v1", "unit": unit, "localHTTP": a.httpProbe(ctx, a.cfg.LocalHealthURL), "publicHTTP": a.httpProbe(ctx, a.cfg.PublicHealthURL), "host": Object{"meminfo": readEvidence("/proc/meminfo"), "loadavg": readEvidence("/proc/loadavg"), "pressureCPU": readEvidence("/proc/pressure/cpu"), "pressureMemory": readEvidence("/proc/pressure/memory"), "pressureIO": readEvidence("/proc/pressure/io"), "disk": diskSnapshot(a.cfg.StateDir)}}
+	v["journalStorage"] = a.journalStorageHealth()
 	if a.cfg.WorkerURL != "" {
 		v["analysisHTTP"] = a.httpProbe(ctx, strings.TrimSuffix(a.cfg.WorkerURL, "/execute")+"/health")
 	}
@@ -376,18 +377,6 @@ func (a *App) monitorOnce(parent context.Context) {
 			a.detect("management.storage.pressure", "管理記録用ディスクの空き容量が少なくなっています", Object{"freeBytes": free, "thresholdBytes": uint64(2 << 30), "eventIds": []string{eventID}, "automaticDeletion": false}, p)
 		} else {
 			a.good("management.storage.pressure", Object{"freeBytes": free, "scope": "Management storage capacity"})
-		}
-	}
-	// The journal collector's cap applies to the complete SQLite state, not
-	// just journal rows. Warn before reaching it even when the filesystem itself
-	// still has ample free space; this check never deletes historical data.
-	if size, err := a.store.stateBytes(); err == nil {
-		limit := journalStateLimit(a.cfg)
-		evidence := Object{"stateBytes": size, "stateLimitBytes": limit, "thresholdBytes": journalStorageWarningThreshold(limit), "eventIds": []string{eventID}, "automaticDeletion": false}
-		if size >= journalStorageWarningThreshold(limit) {
-			a.detect("management.journal.capacity", "管理記録の保存上限が近づいています", evidence, p)
-		} else {
-			a.good("management.journal.capacity", evidence)
 		}
 	}
 	if p.AutoPauseReports && !plannedOCIAbsence(a.cfg, p, time.Now()) {

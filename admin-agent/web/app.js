@@ -74,6 +74,10 @@ function renderOverviewShards(data){
 }
 function renderOverviewHealth(health,metrics){
     const healthRoot=clear('health');const snapshot=health.snapshot||{};const unit=snapshot.unit||{};const unitLabels={active:'稼働中',inactive:'停止',failed:'失敗',activating:'起動中',deactivating:'停止中'};
+    const storage=snapshot.journalStorage;if(storage&&Number.isFinite(storage.stateBytes)&&Number.isFinite(storage.stateLimitBytes)){
+        const state=({ok:'',warning:'上限に接近',full:'上限に到達'}[storage.state]||'');
+        healthRoot.append(text('p',`管理記録　${(storage.stateBytes/1e9).toFixed(1)} GB / ${(storage.stateLimitBytes/1e9).toFixed(1)} GB　${state}`,state?'error':'muted'));
+    }
     if(health.workloadMonitoring?.state==='planned_standby')healthRoot.append(text('p',health.workloadMonitoring.message,'muted'));
     table(healthRoot,[['管理API','応答あり'],['監視記録の保存',({progressing:'更新を確認',stalled:'更新停止',not_observed:'未観測'}[health.monitor?.state]||'未確認')],['監視記録の最終保存',time(health.monitor?.lastPersistedAt)],['Botプロセス',unitLabels[unit.ActiveState]||'未観測'],['Bot進捗の最終記録',snapshot.heartbeatAgeSeconds==null?'未観測':`${Math.round(snapshot.heartbeatAgeSeconds)} 秒前`],['通常ダッシュボード（ローカル）',probeLabel(snapshot.localHTTP)],['通常ダッシュボード（公開経路）',probeLabel(snapshot.publicHTTP)],['待機・実行中の管理操作',`${health.pendingActions} 件`],['成否不明の管理操作',`${health.unknownActions} 件`],['最初の要求記録',time(metrics?.coverage?.firstRecordedRequestAt)],['最新の要求記録',time(metrics?.coverage?.latestRecordedRequestAt)]],[['確認項目',row=>row[0]],['確認できた状態',row=>row[1]]]);
     healthRoot.append(text('p','件数は保存できた要求に基づきます。未記録の期間を正常と判断しないでください。','muted'));raw(healthRoot,{...health,coverage:metrics?.coverage},false,'稼働・計測状態の全フィールド');

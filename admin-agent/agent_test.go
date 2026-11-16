@@ -140,6 +140,36 @@ func TestJournalStorageWarningThreshold(t *testing.T) {
 		}
 	}
 }
+
+func TestJournalStorageHealthReportsCapacityAndMissingState(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "state-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	a := &App{store: &Store{path: f.Name()}, cfg: Config{JournalStateMaxBytes: 100}}
+	for _, tc := range []struct {
+		size  int64
+		state string
+	}{{89, "ok"}, {90, "warning"}, {100, "full"}} {
+		if err := f.Truncate(tc.size); err != nil {
+			t.Fatal(err)
+		}
+		v := a.journalStorageHealth()
+		if v["state"] != tc.state || v["stateBytes"] != tc.size || v["automaticDeletion"] != false {
+			t.Fatalf("size %d: %#v", tc.size, v)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(f.Name()); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.journalStorageHealth()["state"]; got != "unknown" {
+		t.Fatalf("missing file: %v", got)
+	}
+}
 func TestAuthenticationActorAndCookieCSRF(t *testing.T) {
 	a := testApp(t)
 	for _, actor := range []string{"wrong"} {

@@ -29,6 +29,22 @@ func journalStorageWarningThreshold(limit int64) int64 {
 	return limit - limit/10
 }
 
+func (a *App) journalStorageHealth() Object {
+	limit := journalStateLimit(a.cfg)
+	size, err := a.store.stateBytes()
+	if err != nil {
+		return Object{"state": "unknown", "stateLimitBytes": limit}
+	}
+	state := "ok"
+	if size >= limit {
+		state = "full"
+	} else if size >= journalStorageWarningThreshold(limit) {
+		state = "warning"
+	}
+	return Object{"state": state, "stateBytes": size, "stateLimitBytes": limit,
+		"warningThresholdBytes": journalStorageWarningThreshold(limit), "automaticDeletion": false}
+}
+
 func (a *App) reportJournalPause(ctx context.Context, source, reason string, cursorPresent bool, rawEventsStored any) {
 	stateCtx, cancel := context.WithTimeout(ctx, journalStoreTimeout)
 	defer cancel()
