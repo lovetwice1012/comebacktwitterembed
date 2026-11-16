@@ -140,9 +140,67 @@ function parseTikTokProfileHtml(html) {
     return json?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || null;
 }
 
+function decodeMetaValue(value) {
+    const named = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' };
+    return String(value || '').replace(/&(#x[0-9a-f]+|#\d+|amp|quot|apos|lt|gt);/gi, (raw, key) => {
+        if (key[0] !== '#') return named[key.toLowerCase()] || raw;
+        const number = key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+        return number > 0 && number <= 0x10ffff && !(number >= 0xd800 && number <= 0xdfff) ? String.fromCodePoint(number) : raw;
+    });
+}
+
+function parseTikTokProfileMeta(html, expectedId) {
+    const metadata = new Map();
+    for (const [tag] of String(html || '').matchAll(/<meta\b[^>]*>/gi)) {
+        const attrs = {};
+        for (const match of tag.matchAll(/([^\s=<>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g))
+            attrs[match[1].toLowerCase()] = decodeMetaValue(match[2] ?? match[3] ?? match[4] ?? '');
+        const key = String(attrs.property || attrs.name || '').toLowerCase();
+        if (!key.startsWith('og:')) continue;
+        if (metadata.has(key) && metadata.get(key) !== attrs.content) return null;
+        metadata.set(key, attrs.content || '');
+    }
+    const canonical = metadata.get('og:url');
+    let parsed, url;
+    try { url = new URL(canonical); parsed = parseTikTokUrl(canonical); } catch { return null; }
+    if (url.protocol !== 'https:' || url.username || url.password || parsed?.kind !== 'profile'
+        || parsed.id.toLowerCase() !== String(expectedId).toLowerCase()) return null;
+    let title = String(metadata.get('og:title') || '').trim().replace(/\s+on TikTok\s*$/i, '').trim();
+    if (!title) return null;
+    const titleHandle = title.match(/\(@([\w.-]+)\)\s*$/);
+    if (titleHandle && titleHandle[1].toLowerCase() !== String(expectedId).toLowerCase()) return null;
+    if (titleHandle) title = title.slice(0, titleHandle.index).trim() || parsed.id;
+    let avatar;
+    try {
+        const image = new URL(metadata.get('og:image'));
+        if (image.protocol === 'https:' && !image.username && !image.password) avatar = image.toString();
+    } catch { /* A profile without an avatar is still usable. */ }
+    const stats = {};
+    const description = String(metadata.get('og:description') || '');
+    const descriptionHandle = description.match(/^\s*@([\w.-]+)/);
+    if (descriptionHandle && descriptionHandle[1].toLowerCase() !== String(expectedId).toLowerCase()) return null;
+    // A generic error page can echo the requested og:url. Require an
+    // independent handle in the displayed profile metadata as well.
+    if (!titleHandle && !descriptionHandle) return null;
+    const match = description.match(/^\s*@([\w.-]+)\s+([\d,.]+[KMB]?)\s+Followers,\s*([\d,.]+[KMB]?)\s+Following,\s*([\d,.]+[KMB]?)\s+Likes\b/i);
+    if (match && match[1].toLowerCase() === String(expectedId).toLowerCase()) {
+        const count = value => {
+            if (!/^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?[KMB]?$/i.test(value)) return undefined;
+            const suffix = value.slice(-1).toLowerCase(), multiplier = { k: 1e3, m: 1e6, b: 1e9 }[suffix] || 1;
+            const parsedCount = Number(value.replace(/,/g, '').replace(/[kmb]$/i, '')) * multiplier;
+            return Number.isFinite(parsedCount) && parsedCount >= 0 && parsedCount <= Number.MAX_SAFE_INTEGER ? Math.round(parsedCount) : undefined;
+        };
+        stats.followerCount = count(match[2]);
+        stats.followingCount = count(match[3]);
+        stats.heartCount = count(match[4]);
+    }
+    return { user: { uniqueId: parsed.id, nickname: title, ...(avatar ? { avatarMedium: avatar } : {}) }, stats };
+}
+
 module.exports = {
     parseTikTokVideoHtml,
     parseTikTokProfileHtml,
+    parseTikTokProfileMeta,
     extractJsonFromScript,
     parseTikTokUrl,
     pickStrings,

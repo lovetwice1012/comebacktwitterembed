@@ -8,6 +8,20 @@ function hydrationHtml(scope) {
     return `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({ __DEFAULT_SCOPE__: scope })}</script>`;
 }
 
+test('tiktok crawler metadata rejects conflicting identity and preserves verified compact counts', () => {
+    const canonical = '<meta property="og:url" content="https://www.tiktok.com/@creator">';
+    const title = value => `<meta property="og:title" content="${value}">`;
+    const description = value => `<meta property="og:description" content="${value}">`;
+    assert.equal(parser.parseTikTokProfileMeta(canonical + title('Other (@other) on TikTok'), 'creator'), null);
+    assert.equal(parser.parseTikTokProfileMeta(canonical + title('Creator on TikTok') + description('@other 2 Followers, 1 Following, 3 Likes'), 'creator'), null);
+    assert.equal(parser.parseTikTokProfileMeta(canonical + title('Creator') + '<meta property="og:url" content="https://www.tiktok.com/@other">', 'creator'), null);
+    assert.equal(parser.parseTikTokProfileMeta(canonical + title('Visit TikTok to discover profiles!') + description('Watch and discover content.'), 'creator'), null);
+    const valid = parser.parseTikTokProfileMeta(canonical + title('Creator (@creator) on TikTok')
+        + description('@creator 12.3K Followers, 0 Following, 1.2M Likes'), 'creator');
+    assert.equal(valid.user.nickname, 'Creator');
+    assert.deepEqual(valid.stats, { followerCount: 12300, followingCount: 0, heartCount: 1200000 });
+});
+
 test('tiktok source parser: raw HTML returns post and profile payloads without dropping source fields', () => {
     const item = { id: '123', desc: 'caption', video: { duration: 12 }, stats: { diggCount: 34 } };
     const profile = { user: { uniqueId: 'creator' }, stats: { followerCount: 456 } };

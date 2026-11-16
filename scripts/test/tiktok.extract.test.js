@@ -110,6 +110,23 @@ function createProfileData(overrides = {}) {
     };
 }
 
+test('tiktok rejects mismatched or failed video and profile responses', async () => {
+    const videoUrl = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const profileUrl = 'https://www.tiktok.com/@creator';
+    const cases = [
+        [videoUrl, { ok: true, text: async () => videoPageHtml(createVideoData({ id: '7335753580093164833' })) }],
+        [videoUrl, { ok: false, status: 503, text: async () => videoPageHtml(createVideoData()) }],
+        [profileUrl, { ok: true, text: async () => profilePageHtml(createProfileData({ user: { uniqueId: 'other', nickname: 'Other' } })) }],
+        [profileUrl, { ok: false, status: 503, text: async () => profilePageHtml(createProfileData()) }],
+    ];
+    for (const [url, response] of cases) {
+        const provider = loadTikTokProviderWithFetch(async () => response);
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
 function createPhotoPostData(count = 5, overrides = {}) {
     return createVideoData({
         id: '7335753580093164833',
@@ -440,6 +457,57 @@ test('tiktok extract: builds profile embeds for account links', async () => {
     assert.equal(result[0].embeds[0].thumbnail.url, 'https://image.example/avatar.jpg');
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Followers' && field.value === '12.3K'));
     assert.equal(result[0].suppressSourceEmbeds, true);
+});
+
+test('tiktok distinguishes unavailable profile counts from an actual zero', async () => {
+    const provider = loadTikTokProviderWithFetch(async () => ({ text: async () => profilePageHtml(createProfileData({ stats: { followerCount: 0 } })) }));
+    const url = 'https://www.tiktok.com/@creator';
+    const result = await provider.extract(createMessage(url), url, {});
+    const fields = result[0].embeds[0].fields;
+    assert.equal(fields.find(field => field.name === 'Followers').value, '0');
+    assert.equal(fields.find(field => field.name === 'Following').value, '—');
+    assert.equal(fields.find(field => field.name === 'Likes').value, '—');
+});
+
+test('tiktok public profile falls back to verified crawler metadata when hydration is absent', async () => {
+    const calls = [];
+    const html = '<meta property="og:url" content="https://www.tiktok.com/@creator">'
+        + '<meta property="og:title" content="Creator on TikTok">'
+        + '<meta property="og:description" content="@creator 12.3K Followers, 0 Following, 1.2M Likes - Public page">'
+        + '<meta property="og:image" content="https://p16.tiktokcdn.com/avatar.jpg">';
+    const provider = loadTikTokProviderWithFetch(async (url, options) => {
+        calls.push({ url: String(url), agent: options.headers['User-Agent'] });
+        return { ok: true, status: 200, url: String(url), text: async () => calls.length === 1 ? '<html></html>' : html };
+    });
+    const url = 'https://www.tiktok.com/@creator';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].agent, /Discordbot/);
+    assert.equal(result[0].embeds[0].title, 'Creator (@creator)');
+    const fields = result[0].embeds[0].fields;
+    assert.equal(fields.find(field => field.name === 'Followers').value, '12.3K');
+    assert.equal(fields.find(field => field.name === 'Following').value, '0');
+    assert.equal(fields.find(field => field.name === 'Likes').value, '1.2M');
+    assert.equal(fields.find(field => field.name === 'Videos').value, '—');
+});
+
+test('tiktok crawler fallback cannot use another profile metadata', async () => {
+    const html = '<meta property="og:url" content="https://www.tiktok.com/@other">'
+        + '<meta property="og:title" content="Other on TikTok">';
+    const provider = loadTikTokProviderWithFetch(async url => ({ ok: true, status: 200, url: String(url), text: async () => html }));
+    const url = 'https://www.tiktok.com/@creator';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(result[0].content, 'Please check the original link.');
+    assert.equal(result[0].embeds, undefined);
+});
+
+test('tiktok profile rate limiting does not trigger an immediate fallback request', async () => {
+    let calls = 0;
+    const provider = loadTikTokProviderWithFetch(async () => { calls++; return { ok: false, status: 429 }; });
+    const url = 'https://www.tiktok.com/@creator';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(calls, 1);
+    assert.equal(result[0].content, 'Please check the original link.');
 });
 
 test('tiktok extract: profile status and website fields are configurable', async () => {

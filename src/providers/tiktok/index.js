@@ -21,6 +21,7 @@ const { toApiLocaleFamily } = require('../../discordLocales');
 const {
     parseTikTokVideoHtml,
     parseTikTokProfileHtml,
+    parseTikTokProfileMeta,
     parseTikTokUrl,
     extractJsonFromScript,
     pickFirstString,
@@ -82,8 +83,10 @@ function truncate(text, maxLength) {
 }
 
 function formatNumber(value) {
-    const num = Number(value || 0);
-    if (!Number.isFinite(num) || num < 1000) return String(num || 0);
+    if (!['number', 'string'].includes(typeof value) || typeof value === 'string' && !value.trim()) return '—';
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) return '—';
+    if (num < 1000) return String(num);
     const strip = s => s.replace(/\.0$/, '');
     if (num < 1000000) return strip((num / 1000).toFixed(1)) + 'K';
     if (num < 1000000000) return strip((num / 1000000).toFixed(1)) + 'M';
@@ -155,16 +158,47 @@ async function fetchVideoData(id) {
     if (!AWEME_ID_PATTERN.test(id)) return null;
     const url = `https://www.tiktok.com/@i/video/${id}`;
     const res = await fetch(url, { headers: commonHeaders() });
+    if (res.ok === false) throw Object.assign(new Error('TikTok video request failed'), { status: res.status });
     const html = await res.text();
-    return parseTikTokVideoHtml(html);
+    const item = parseTikTokVideoHtml(html);
+    if (!item || typeof item.id !== 'string' || item.id !== id) throw new Error('TikTok returned incomplete or mismatched video metadata');
+    return item;
 }
 
 async function fetchProfileData(uniqueId) {
     if (!/^[\w\d_.-]+$/.test(uniqueId)) return null;
     const url = `https://www.tiktok.com/@${uniqueId}`;
-    const res = await fetch(url, { headers: commonHeaders() });
-    const html = await res.text();
-    return parseTikTokProfileHtml(html);
+    const checkResponse = res => {
+        if (res.ok === false) throw Object.assign(new Error('TikTok profile request failed'), { status: res.status });
+        if (typeof res.url === 'string' && res.url) {
+            let resolved, finalUrl;
+            try { finalUrl = new URL(res.url); resolved = parseTikTokUrl(res.url); } catch { /* Invalid redirect fails below. */ }
+            if (finalUrl?.protocol !== 'https:' || finalUrl.username || finalUrl.password || resolved?.kind !== 'profile'
+                || resolved.id.toLowerCase() !== uniqueId.toLowerCase()) throw new Error('TikTok redirected to a different profile');
+        }
+    };
+    let firstError;
+    try {
+        const res = await fetch(url, { headers: commonHeaders() });
+        checkResponse(res);
+        const profile = parseTikTokProfileHtml(await res.text());
+        if (typeof profile?.user?.uniqueId !== 'string' || profile.user.uniqueId.toLowerCase() !== uniqueId.toLowerCase())
+            throw new Error('TikTok returned incomplete or mismatched profile metadata');
+        return profile;
+    } catch (error) {
+        if (error?.status === 429) throw error;
+        firstError = error;
+    }
+    try {
+        const res = await fetch(url, { headers: commonHeaders('Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)') });
+        checkResponse(res);
+        const profile = parseTikTokProfileMeta(await res.text(), uniqueId);
+        if (!profile) throw new Error('TikTok returned incomplete or mismatched profile metadata');
+        return profile;
+    } catch (error) {
+        if (error?.status === 429) throw error;
+        throw firstError || error;
+    }
 }
 
 function extensionFromContentType(contentType) {
