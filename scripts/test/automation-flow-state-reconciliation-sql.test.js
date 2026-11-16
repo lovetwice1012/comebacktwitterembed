@@ -72,7 +72,8 @@ async function fixture(work, input = {}) {
         const monitor = await createMonitors(db, service, {}).save(actor, 'auto', { name: 'Reconciliation monitor', providerId: 'github', source: 'reconciliation', destinationId: destination.id });
         const workflow = await service.createWorkflow(actor, { definition: input.definition || definition(input.multiple) });
         await service.activateWorkflow(actor, workflow.id, { expectedRevision: 1 }); await service.attach(actor, workflow.id, 'auto', monitor.id);
-        let now = Date.now(); evaluator = createEvaluator(service.dictionaryData);
+        let now = input.alignMinuteWindow ? Math.ceil(Date.now() / 60000) * 60000 + 10000 : Date.now();
+        evaluator = createEvaluator(service.dictionaryData);
         const store = createGraphStore(db), queue = createQueue(db, evaluator, { clock: () => now, graph: { enabled: true, store } });
         flow = createFlowRuntime(db, evaluator, store, { assertEnabled: () => {} });
         const history = createHistory(db, service);
@@ -163,7 +164,19 @@ test('damaged pre-receipt legacy snapshots fail their attested anchor while new 
         await f.query("UPDATE automation_jobs SET plan_json='{}' WHERE id=?", [jobs[0].id]); assert.equal(await f.queue.claim(f.clock()), null);
         assert.equal(await f.state(first.runId), 'failed'); assert.equal(await f.state(second.runId), 'failed');
         const trace = await f.history.trace(f.actor, second.runId); assert(trace.items.length > 0);
-    }, { definition: batch });
+    }, { definition: batch, alignMinuteWindow: true });
+});
+
+test('aggregate events on opposite sides of a minute boundary keep separate jobs', { skip: !port }, async () => {
+    const batch = definition(false); batch.nodes.splice(1, 0, { id: 'batch', type: 'aggregate', config: { ...NODE_TYPES.aggregate.defaults, minutes: 1, key: 'all' } });
+    batch.edges = [{ id: 'a', source: 'start', target: 'batch', port: 'out' }, { id: 'b', source: 'batch', target: 'left', port: 'out' }];
+    await fixture(async f => {
+        const first = await f.run('before boundary'); f.advance(50000);
+        const second = await f.run('after boundary'); f.advance(60001); await f.drain();
+        const jobs = await f.query('SELECT * FROM automation_jobs'); assert.equal(jobs.length, 2);
+        const links = await f.query("SELECT run_id FROM automation_flow_edges WHERE receipt_kind='job_member'");
+        assert.deepEqual(new Set(links.map(row => row.run_id)), new Set([first.runId, second.runId]));
+    }, { definition: batch, alignMinuteWindow: true });
 });
 
 test('audit and projection failures roll back both job and run changes, including restart cleanup', { skip: !port }, async () => fixture(async f => {
