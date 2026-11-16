@@ -35,6 +35,7 @@ async function createTestDatabase(port) {
     try { admin = await acquire(); }
     catch (error) {
         try { await new Promise(resolve => pool.end(resolve)); } catch { /* Preserve the exact original admission error. */ }
+        try { await new Promise(resolve => intentPool.end(resolve)); } catch { /* Preserve the exact original admission error. */ }
         throw error;
     }
     const adminQuery = queryOn(admin);

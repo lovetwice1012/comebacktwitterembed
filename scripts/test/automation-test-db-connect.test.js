@@ -51,13 +51,13 @@ for (const failures of [1, 2]) test(`pool admission tolerates ${failures} proven
         assert.deepEqual(fixture.diagnostics, Array.from({ length: failures }, (_, index) => ({ code: 'AUTOMATION_TEST_DB_CONNECT_RETRY', attempt: index + 2, port })));
         assert.equal(fixture.sql.filter(sql => sql.startsWith('CREATE DATABASE ')).length, 1);
     } finally { await db.close(); }
-    assert.equal(fixture.counts().endCount, 1); assert.equal(fixture.connections[0].releases, 1);
+    assert.equal(fixture.counts().endCount, 2); assert.equal(fixture.connections[0].releases, 1);
 });
 
 test('three failed TCP admissions reject the exact final error and close the unopened pool', async () => {
     const errors = [timeout(), timeout(), timeout()], fixture = transport([...errors]);
     await assert.rejects(fixture.create(), error => error === errors[2]);
-    assert.equal(fixture.counts().acquireCount, 3); assert.equal(fixture.counts().endCount, 1); assert.equal(fixture.sql.length, 0);
+    assert.equal(fixture.counts().acquireCount, 3); assert.equal(fixture.counts().endCount, 2); assert.equal(fixture.sql.length, 0);
     assert.deepEqual(fixture.diagnostics.map(value => value.attempt), [2, 3]);
 });
 
@@ -69,7 +69,7 @@ for (const [name, change] of [
 ]) test(`pool admission never retries ${name}`, async () => {
     const error = Object.assign(timeout(), change), fixture = transport([error]);
     await assert.rejects(fixture.create(), actual => actual === error);
-    assert.equal(fixture.counts().acquireCount, 1); assert.equal(fixture.counts().endCount, 1); assert.equal(fixture.sql.length, 0); assert.deepEqual(fixture.diagnostics, []);
+    assert.equal(fixture.counts().acquireCount, 1); assert.equal(fixture.counts().endCount, 2); assert.equal(fixture.sql.length, 0); assert.deepEqual(fixture.diagnostics, []);
 });
 
 test('the explicit non-production port guard still runs before pool creation', async () => {
@@ -82,7 +82,7 @@ test('the explicit non-production port guard still runs before pool creation', a
 test('a callback that already supplies a connection is not treated as pre-handshake TCP admission', async () => {
     const error = timeout(), fixture = transport([{ error, connection: { query: () => assert.fail('No SQL may run') } }]);
     await assert.rejects(fixture.create(), actual => actual === error);
-    assert.equal(fixture.counts().acquireCount, 1); assert.equal(fixture.counts().endCount, 1);
+    assert.equal(fixture.counts().acquireCount, 1); assert.equal(fixture.counts().endCount, 2);
     assert.equal(fixture.sql.length, 0); assert.deepEqual(fixture.diagnostics, []);
 });
 
@@ -101,7 +101,7 @@ for (const phase of ['query', 'work', 'commit']) test(`a connect-shaped error af
         assert.equal(fixture.sql.filter(sql => sql === 'ROLLBACK').length, phase === 'query' ? 0 : 1);
         assert.equal(fixture.connections.at(-1).releases, 1); assert.deepEqual(fixture.diagnostics, []);
     } finally { fixture.failStatement(null); await db.close(); }
-    assert.equal(fixture.counts().endCount, 1);
+    assert.equal(fixture.counts().endCount, 2);
 });
 
 test('successful transaction work and its commit run once and release their connection', async () => {
@@ -111,5 +111,5 @@ test('successful transaction work and its commit run once and release their conn
         assert.equal(workCalls, 1); assert.equal(fixture.sql.filter(sql => sql === 'START TRANSACTION').length, 1); assert.equal(fixture.sql.filter(sql => sql === 'COMMIT').length, 1);
         assert.equal(fixture.connections.at(-1).releases, 1); assert.deepEqual(fixture.diagnostics, []);
     } finally { await db.close(); }
-    assert.equal(fixture.counts().endCount, 1);
+    assert.equal(fixture.counts().endCount, 2);
 });
