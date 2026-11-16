@@ -158,8 +158,9 @@ function twitchDescriptionMaxLength(settings) {
 }
 
 function formatNumber(value) {
+    if (!['number', 'string'].includes(typeof value) || typeof value === 'string' && !value.trim()) return '';
     const n = Number(value);
-    if (!Number.isFinite(n)) return '';
+    if (!Number.isFinite(n) || n < 0) return '';
     return n.toLocaleString('en-US');
 }
 

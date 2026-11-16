@@ -113,6 +113,17 @@ function addVisibleField(fields, settings, key, name, value, inline = true) {
     addField(fields, name, value, inline);
 }
 
+function sumKnownCounts(...values) {
+    const parsed = values.map(value => {
+        if (!['number', 'string'].includes(typeof value) || typeof value === 'string' && !value.trim()) return null;
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    });
+    if (parsed.some(value => value === null)) return undefined;
+    const total = parsed.reduce((sum, value) => sum + value, 0);
+    return Number.isSafeInteger(total) ? total : undefined;
+}
+
 function stateText(data, isPullRequest = false) {
     if (isPullRequest && data.merged_at) return 'merged';
     return data.state || '';
@@ -237,7 +248,7 @@ function buildPullEmbed(data, parsed, message, settings, lang) {
     addVisibleField(fields, settings, 'changes', tr(STR.changes, lang), `+${formatNumber(data.additions)} / -${formatNumber(data.deletions)}`, true);
     addVisibleField(fields, settings, 'commits', tr(STR.commits, lang), formatNumber(data.commits), true);
     addVisibleField(fields, settings, 'files', tr(STR.files, lang), formatNumber(data.changed_files), true);
-    addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber((data.comments || 0) + (data.review_comments || 0)), true);
+    addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber(sumKnownCounts(data.comments, data.review_comments)), true);
     addVisibleField(fields, settings, 'mergeable', tr(STR.mergeable, lang), mergeableText(data), true);
     addVisibleField(fields, settings, 'review_state', tr(STR.reviewState, lang), reviewStateText(data), true);
     addVisibleField(fields, settings, 'checks', tr(STR.checks, lang), checksText(data), true);

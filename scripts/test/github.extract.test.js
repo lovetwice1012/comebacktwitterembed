@@ -262,6 +262,19 @@ test('github extract: builds issue embeds with state, labels, and assignees', as
     assert.equal(fieldValue(embed, 'Assignees'), 'octo');
 });
 
+test('github distinguishes unavailable comment counts from zero', async () => {
+    for (const [route, value, expected] of [['issues', null, undefined], ['issues', 0, '0'], ['pull', null, undefined], ['pull', 0, '0']]) {
+        const number = 42, url = `https://github.com/owner/repo/${route}/${number}`;
+        const provider = loadGitHubProviderWithFetch(async () => okJson({ title: 'Fixture', html_url: url,
+            comments: value, ...(route === 'pull' ? { review_comments: value } : {}) }));
+        const result = await provider.extract(createMessage(url), url, {});
+        assert.equal(fieldValue(result[0].embeds[0], 'Comments'), expected);
+    }
+    const url = 'https://github.com/owner/repo/pull/42';
+    const partial = loadGitHubProviderWithFetch(async () => okJson({ title: 'Fixture', html_url: url, comments: 3, review_comments: null }));
+    assert.equal(fieldValue((await partial.extract(createMessage(url), url, {}))[0].embeds[0], 'Comments'), undefined);
+});
+
 test('github extract: builds pull request embeds with merged state and change summary', async () => {
     const requests = [];
     const provider = loadGitHubProviderWithFetch(async (url) => {

@@ -192,6 +192,16 @@ test('twitch never presents another channel or clip as the requested resource', 
     }
 });
 
+test('twitch does not report an unavailable view count as zero', async () => {
+    for (const [value, expected] of [[null, undefined], [0, '0']]) {
+        const data = createGqlResponse(); data[0].data.clip.viewCount = value;
+        const provider = loadTwitchProviderWithFetch(async () => ({ ok: true, json: async () => data }));
+        const url = 'https://clips.twitch.tv/SampleClip-abc_123';
+        const result = await provider.extract(createMessage(url), url, { media_display_mode: 'thumbnail_only' });
+        assert.equal(result[0].embeds[0].fields?.find(field => field.name === 'Views')?.value, expected);
+    }
+});
+
 test('twitch extract: uploads clip video as a bot attachment without oauth env', async () => {
     const calls = [];
     const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls, {
