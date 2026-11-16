@@ -53,10 +53,17 @@ test('Twitch streaming preserves offline/null state and live metadata past unrel
         '","data":{"user":{"id":"1","login":"sample","stream":{"id":"stream-1","title":"配信 😀","createdAt":"2026-10-13T00:00:00Z"}}}}'));
     assert.equal(live.items[0].title, '配信 😀');
     assert.equal(live.items[0].publishedAtMs, Date.parse('2026-10-13T00:00:00Z'));
-    const offline = await acquire('twitch', 'sample', streamedResponse('{"ignored":"', '","data":{"user":{"id":"1","stream":null}}}'));
+    const offline = await acquire('twitch', 'sample', streamedResponse('{"ignored":"', '","data":{"user":{"id":"1","login":"sample","stream":null}}}'));
     assert.deepEqual(offline.items, []);
     await assert.rejects(acquire('twitch', 'sample', streamedResponse('{"data":{"user":{"id":"1"}},"ignored":"', '"}')), { code: 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE' });
     await assert.rejects(acquire('twitch', 'sample', streamedResponse('{"errors":[{}],"data":{"user":{"stream":null}},"ignored":"', '"}')), { code: 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE' });
+});
+
+test('Twitch does not treat missing or mismatched channel identity as an offline stream', async () => {
+    for (const user of [{ id: '1', stream: null }, { id: '1', login: 'other', stream: null }, { login: 'sample', stream: null }]) {
+        await assert.rejects(acquire('twitch', 'sample', streamedResponse('', JSON.stringify({ data: { user } }), { repeats: 0 })),
+            { code: 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE' });
+    }
 });
 
 test('Pixiv streaming keeps null index entries, timestamps, and empty manga index', async () => {

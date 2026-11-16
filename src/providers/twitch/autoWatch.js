@@ -53,6 +53,9 @@ async function fetch(source, context) {
     const user = response.body?.data?.user;
     if (response.body?.errors?.length || user && !Object.hasOwn(user, 'stream')) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'Twitch did not return a complete guest channel state.');
     if (!user) throw monitorError('AUTO_WATCH_SOURCE_NOT_FOUND', 'Twitch channel was not found or is not guest-visible.', { retryAfterMs: 6 * 60 * MINUTE });
+    if (typeof user.id !== 'string' || !user.id.trim() || typeof user.login !== 'string'
+        || user.login.toLowerCase() !== String(source.source_key).toLowerCase())
+        throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'Twitch did not confirm the requested channel identity.');
     const stream = user.stream;
     const items = stream ? [{
         contentId: stream.id,
