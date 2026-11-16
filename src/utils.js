@@ -102,7 +102,9 @@ function isIgnorableInteractionAckError(err) {
 
 function isMissingPermissionsError(err) {
     const code = discordErrorCode(err);
-    return code === 50001 || code === 50013;
+    // Discord reports missing message-history access with distinct codes
+    // when sending a reply or referencing an existing message.
+    return code === 50001 || code === 50013 || code === 160002 || code === 160009;
 }
 
 function unwrapDiscordUrlDecoration(content) {

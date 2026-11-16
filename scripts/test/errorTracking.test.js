@@ -121,6 +121,8 @@ test('error tracking classifies json decode, http, and Discord permission errors
     assert.equal(classifyErrorType(new SyntaxError('Unexpected token < in JSON')), 'provider_api_json_decode_error');
     assert.equal(classifyErrorType(new Error('phixiv api 503 for https://example.test')), 'provider_api_http_error');
     assert.equal(classifyErrorType({ code: 50013, rawError: { message: 'Missing Permissions' } }), 'discord_missing_permissions');
+    assert.equal(classifyErrorType({ code: 160002, status: 403 }), 'discord_missing_permissions');
+    assert.equal(classifyErrorType({ rawError: { code: 160009 }, status: 403 }), 'discord_missing_permissions');
     assert.equal(classifyErrorType({ code: 'UND_ERR_CONNECT_TIMEOUT' }), 'network_transport_error');
     assert.equal(classifyErrorType({ code: 'ECONNRESET' }), 'network_transport_error');
 });

@@ -128,6 +128,20 @@ test('failed or uncertain deliveries preserve the original message and embeds', 
     }
 });
 
+test('missing message-history permission is reported as a permission failure and does not retry or delete the source', async () => {
+    for (const code of [160002, 160009]) {
+        let attempts = 0; const errors = [];
+        const message = source(async () => { attempts++; throw { code, status: 403 }; });
+        const result = await dispatcher({ '../errorTracking': { recordError: (_error, context) => errors.push(context.errorType),
+            recordMetric() {}, recordAnalyticsEvent() {} } }).runSendSteps(message,
+        [{ content: 'replacement', files: ['https://media.example/a.jpg'], send: 'reply-source', deleteSource: true }]);
+        assert.equal(attempts, 1);
+        assert.equal(result.outcome, 'E');
+        assert.deepEqual(message.postprocess, []);
+        assert.deepEqual(errors, ['discord_missing_permissions']);
+    }
+});
+
 test('a response without a message ID is uncertain and never permits source cleanup or retry', async () => {
     let calls = 0;
     const message = source(async () => { calls++; return {}; });

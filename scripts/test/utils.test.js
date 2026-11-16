@@ -100,5 +100,7 @@ test('discord API error helpers match common interaction and permission codes', 
     assert.equal(isIgnorableInteractionAckError({ code: 50013 }), false);
     assert.equal(isMissingPermissionsError({ code: 50013 }), true);
     assert.equal(isMissingPermissionsError({ rawError: { code: 50001 } }), true);
+    assert.equal(isMissingPermissionsError({ code: 160002, status: 403 }), true);
+    assert.equal(isMissingPermissionsError({ rawError: { code: 160009 } }), true);
     assert.equal(isMissingPermissionsError({ code: 10062 }), false);
 });

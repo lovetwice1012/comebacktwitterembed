@@ -190,7 +190,7 @@ function classifyErrorType(err, fallbackType = 'unknown') {
     if (code === 10008) return 'discord_unknown_message';
     if (code === 10062) return 'discord_unknown_interaction';
     if (code === 40060) return 'discord_interaction_already_acknowledged';
-    if (code === 50001 || code === 50013) return 'discord_missing_permissions';
+    if (code === 50001 || code === 50013 || code === 160002 || code === 160009) return 'discord_missing_permissions';
     if (code === 20028 || code === 31001 || code === 429) return 'discord_rate_limited';
     if (isNetworkTransportError(err)) return 'network_transport_error';
     if (isJsonDecodeError(err)) return 'provider_api_json_decode_error';
