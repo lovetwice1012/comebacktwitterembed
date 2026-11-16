@@ -79,13 +79,15 @@ function createGitHubClient(fetch) {
     async function fetchOptionalBuffer(url) {
         try {
             const res = await fetch(url, {
+                size: 4 * 1024 * 1024,
                 headers: {
                     Accept: 'image/png,image/*;q=0.9,*/*;q=0.8',
                     'User-Agent': 'ComebackTwitterEmbed/1.0',
                 },
             });
             if (!res.ok || typeof res.buffer !== 'function') return null;
-            return await res.buffer();
+            const buffer = await res.buffer();
+            return Buffer.isBuffer(buffer) && buffer.length <= 4 * 1024 * 1024 ? buffer : null;
         } catch {
             return null;
         }

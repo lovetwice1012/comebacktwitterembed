@@ -2,6 +2,9 @@
 
 const zlib = require('zlib');
 const jpeg = require('jpeg-js');
+const MAX_RASTER_BYTES = 4 * 1024 * 1024;
+const MAX_RASTER_DIMENSION = 4096;
+const MAX_RASTER_PIXELS = 16 * 1000 * 1000;
 
 /** @type {number[] | undefined} */
 let crc32Table;
@@ -202,11 +205,14 @@ function decodePng(buffer) {
     let bitDepth = 0;
     let colorType = 0;
     let interlace = 0;
+    let transparency = null;
     const idat = [];
     let pos = 8;
 
     while (pos + 12 <= buffer.length) {
         const length = buffer.readUInt32BE(pos);
+        if (length > buffer.length - pos - 12) return null;
+        if (crc32(buffer.subarray(pos + 4, pos + 8 + length)) !== buffer.readUInt32BE(pos + 8 + length)) return null;
         const type = buffer.slice(pos + 4, pos + 8).toString('ascii');
         const data = buffer.slice(pos + 8, pos + 8 + length);
         if (type === 'IHDR') {
@@ -217,17 +223,30 @@ function decodePng(buffer) {
             interlace = data[12];
         } else if (type === 'IDAT') {
             idat.push(data);
+        } else if (type === 'tRNS') {
+            if (transparency) return null;
+            transparency = data;
         } else if (type === 'IEND') {
             break;
         }
         pos += length + 12;
     }
 
-    const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 0 ? 1 : 0;
-    if (!width || !height || bitDepth !== 8 || interlace !== 0 || channels === 0 || idat.length === 0) return null;
+    const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 0 ? 1 : 0;
+    if (!width || !height || width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION || width * height > MAX_RASTER_PIXELS
+        || bitDepth !== 8 || interlace !== 0 || channels === 0 || idat.length === 0) return null;
+    let transparentKey = null;
+    if (transparency) {
+        if (colorType === 0 && transparency.length === 2) transparentKey = [transparency.readUInt16BE(0)];
+        else if (colorType === 2 && transparency.length === 6) transparentKey = [transparency.readUInt16BE(0), transparency.readUInt16BE(2), transparency.readUInt16BE(4)];
+        else return null;
+        if (transparentKey.some(value => value > 255)) return null;
+    }
 
-    const inflated = zlib.inflateSync(Buffer.concat(idat));
     const rowBytes = width * channels;
+    const expectedBytes = height * (rowBytes + 1);
+    const inflated = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: expectedBytes });
+    if (inflated.length !== expectedBytes) return null;
     const rgba = Buffer.alloc(width * height * 4);
     const previous = Buffer.alloc(rowBytes);
     const current = Buffer.alloc(rowBytes);
@@ -235,6 +254,7 @@ function decodePng(buffer) {
 
     for (let y = 0; y < height; y++) {
         const filter = inflated[offset++];
+        if (filter > 4) return null;
         inflated.copy(current, 0, offset, offset + rowBytes);
         offset += rowBytes;
 
@@ -251,16 +271,17 @@ function decodePng(buffer) {
         for (let x = 0; x < width; x++) {
             const src = x * channels;
             const dst = (y * width + x) * 4;
-            if (channels === 1) {
+            if (channels === 1 || colorType === 4) {
                 rgba[dst] = current[src];
                 rgba[dst + 1] = current[src];
                 rgba[dst + 2] = current[src];
-                rgba[dst + 3] = 255;
+                rgba[dst + 3] = colorType === 4 ? current[src + 1] : transparentKey?.[0] === current[src] ? 0 : 255;
             } else {
                 rgba[dst] = current[src];
                 rgba[dst + 1] = current[src + 1];
                 rgba[dst + 2] = current[src + 2];
-                rgba[dst + 3] = channels === 4 ? current[src + 3] : 255;
+                rgba[dst + 3] = channels === 4 ? current[src + 3] : transparentKey && transparentKey[0] === current[src]
+                    && transparentKey[1] === current[src + 1] && transparentKey[2] === current[src + 2] ? 0 : 255;
             }
         }
         current.copy(previous);
@@ -273,8 +294,8 @@ function decodeJpeg(buffer) {
     if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
     if (buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
     try {
-        const image = jpeg.decode(buffer, { useTArray: true, maxMemoryUsageInMB: 128 });
-        if (!image?.width || !image?.height || !image.data) return null;
+        const image = jpeg.decode(buffer, { useTArray: true, maxMemoryUsageInMB: 128, maxResolutionInMP: 16 });
+        if (!image?.width || !image?.height || image.width > MAX_RASTER_DIMENSION || image.height > MAX_RASTER_DIMENSION || !image.data) return null;
         return { width: image.width, height: image.height, pixels: Buffer.from(image.data) };
     } catch {
         return null;
@@ -282,7 +303,8 @@ function decodeJpeg(buffer) {
 }
 
 function decodeRasterImage(buffer) {
-    return decodePng(buffer) || decodeJpeg(buffer);
+    if (!Buffer.isBuffer(buffer) || buffer.length > MAX_RASTER_BYTES) return null;
+    try { return decodePng(buffer) || decodeJpeg(buffer); } catch { return null; }
 }
 
 function blendPixel(pixels, width, height, x, y, rgba) {
