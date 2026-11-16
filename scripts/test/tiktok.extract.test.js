@@ -603,6 +603,56 @@ test('tiktok extract: resolves short links internally before scraping', async ()
     assert.equal(result[0].files[0].attachment.toString(), 'shortvideo');
 });
 
+test('tiktok extract: follows a bounded chain of trusted short-link redirects', async () => {
+    const seen = [];
+    const provider = loadTikTokProviderWithFetch(async requestUrl => {
+        seen.push(requestUrl);
+        if (requestUrl === 'https://vm.tiktok.com/first/') return { status: 302, headers: { get: () => 'https://vt.tiktok.com/second/' } };
+        if (requestUrl === 'https://vt.tiktok.com/second/') return { status: 302, headers: { get: () => 'https://www.tiktok.com/@creator' } };
+        if (requestUrl === 'https://www.tiktok.com/@creator') return { text: async () => profilePageHtml(createProfileData()) };
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+    const url = 'https://vm.tiktok.com/first/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator');
+    assert.deepEqual(seen, [url, 'https://vt.tiktok.com/second/', 'https://www.tiktok.com/@creator']);
+});
+
+for (const [name, status, location] of [
+    ['missing redirect', 200, null], ['rate limited', 429, null],
+    ['foreign redirect', 302, 'https://example.com/@creator'], ['insecure redirect', 302, 'http://www.tiktok.com/@creator'],
+    ['redirect cycle', 302, 'https://vm.tiktok.com/first/'],
+]) test(`tiktok extract: ${name} follows the configured failure policy without another fetch`, async () => {
+    let calls = 0;
+    const provider = loadTikTokProviderWithFetch(async () => { calls++; return { status, headers: { get: () => location } }; });
+    const url = 'https://vm.tiktok.com/first/';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(calls, 1);
+    assert.equal(result[0].outputRole, 'failure_notice');
+    assert.equal(result[0].components[0].components[0].toJSON().url, url);
+});
+
+test('tiktok extract: a long redirect chain is bounded and respects failure display', async () => {
+    let calls = 0;
+    const provider = loadTikTokProviderWithFetch(async () => ({ status: 302, headers: { get: () => `https://vm.tiktok.com/next${++calls}/` } }));
+    const url = 'https://vm.tiktok.com/first/';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(calls, 5);
+    assert.equal(result[0].outputRole, 'failure_notice');
+});
+
+test('tiktok extract: a destination reached at the redirect limit is still expanded', async () => {
+    let calls = 0;
+    const provider = loadTikTokProviderWithFetch(async requestUrl => {
+        if (requestUrl === 'https://www.tiktok.com/@creator') return { text: async () => profilePageHtml(createProfileData()) };
+        return { status: 302, headers: { get: () => ++calls === 5 ? 'https://www.tiktok.com/@creator' : `https://vm.tiktok.com/next${calls}/` } };
+    });
+    const url = 'https://vm.tiktok.com/first/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(calls, 5);
+    assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator');
+});
+
 test('tiktok extract: honors reply and delete source settings', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {

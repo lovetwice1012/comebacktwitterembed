@@ -140,18 +140,34 @@ function mediaHeaders() {
 }
 
 async function resolveTikTokUrl(rawUrl) {
-    const parsed = parseTikTokUrl(rawUrl);
-    if (!parsed) return null;
-    if (!parsed.needsResolve) return parsed;
-
-    const res = await fetch(rawUrl, {
-        headers: commonHeaders('Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)'),
-        redirect: 'manual',
-    });
-    const location = res.headers?.get?.('Location') || res.headers?.get?.('location');
-    if (!location) return null;
-    const resolved = new URL(location, rawUrl);
-    return parseTikTokUrl(resolved.toString());
+    let current = rawUrl;
+    const visited = new Set();
+    for (let hops = 0; hops <= 5; hops++) {
+        const parsed = parseTikTokUrl(current);
+        if (!parsed) throw new Error('TikTok link has an unsupported destination');
+        if (!parsed.needsResolve) return parsed;
+        if (hops === 5) break;
+        const target = new URL(current);
+        if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.port
+            || !/^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/.test(target.hostname) || visited.has(target.href)) {
+            throw new Error('TikTok link has an unsafe or repeated destination');
+        }
+        visited.add(target.href);
+        const res = await fetch(target.href, {
+            headers: commonHeaders('Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)'),
+            redirect: 'manual',
+        });
+        if (res.status >= 400) throw Object.assign(new Error('TikTok short link request failed'), { status: res.status });
+        const location = res.headers?.get?.('Location') || res.headers?.get?.('location');
+        if (!location) throw new Error('TikTok short link did not provide a destination');
+        const next = new URL(location, target);
+        if (next.protocol !== 'https:' || next.username || next.password || next.port
+            || !/^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/.test(next.hostname)) {
+            throw new Error('TikTok link redirected to an unsafe destination');
+        }
+        current = next.href;
+    }
+    throw new Error('TikTok short link redirected too many times');
 }
 
 async function fetchVideoData(id) {
