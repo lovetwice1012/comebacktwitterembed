@@ -9,7 +9,8 @@ const { compileFunction } = require('node:vm');
 function fixture({ description, url = 'https://x.com/example/status/1234567890123456789', translateOriginal = false, response = 'translated' }) {
     const filename = require.resolve('../../src/components/translate'), actual = createRequire(filename), mod = { exports: {} }, requests = [], edits = [], replies = [];
     const mocks = {
-        '../providerFetch': { withDeadline: () => async target => { requests.push(new URL(target)); return { ok: true, text: async () => response }; } },
+        '../providerFetch': { withDeadline: () => async target => { requests.push(new URL(target)); const index = requests.length - 1;
+            return { ok: true, text: async () => Array.isArray(response) ? response[index] : response }; } },
         '../settings': { detectProviderIdFromMessage: () => 'twitter', checkComponentIncludesDisabledButtonAndIfFindDeleteIt: async value => value },
         '../providers/_provider_settings': { getSetting: async () => translateOriginal },
         '../interactionResponse': { normalizeEmbed: value => value },
@@ -57,6 +58,12 @@ test('translation respects text and statistics settings in real X extraction out
         const [linkOnly] = await provider.extract(message, url, { legacy_mode: true, twitter_text_mode: 'link_only', hidden_output_items: ['stats'] });
         const f = fixture({ description: linkOnly.embeds[0].description, url }); await f.handle();
         assert.equal(f.requests.length, 0); assert.equal(f.replies[0].embeds[0].description, linkOnly.embeds[0].description);
+        tweet.article = { title: 'Article title', preview_text: 'Article preview' };
+        const [article] = await provider.extract(message, url, { legacy_mode: true, twitter_text_mode: 'link_only' });
+        const articleTranslation = fixture({ description: article.embeds[0].description, url }); await articleTranslation.handle();
+        assert.equal(articleTranslation.requests.length, 1);
+        assert.match(articleTranslation.requests[0].searchParams.get('text'), /Article title/);
+        assert.doesNotMatch(articleTranslation.requests[0].searchParams.get('text'), /View on Twitter|:speech_balloon:/);
     } finally {
         delete require.cache[providerPath]; if (oldProvider) require.cache[providerPath] = oldProvider;
         if (oldFetch) require.cache[fetchPath] = oldFetch; else delete require.cache[fetchPath];
@@ -73,6 +80,16 @@ test('link-only and statistics-only X displays are preserved without translating
     }
 });
 
+test('article text following generated X metadata is translated without changing the link or statistics', async () => {
+    const url = 'https://x.com/example/status/1234567890123456789';
+    const metadata = `[View on Twitter](${url})\n\n:speech_balloon:0 replies • :recycle:1 retweets • :heart:2 likes`;
+    const f = fixture({ description: `${metadata}\n\nArticle title\nArticle preview`, url });
+    await f.handle();
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests[0].searchParams.get('text'), 'Article title\nArticle preview');
+    assert.equal(f.replies[0].embeds[0].description, `${metadata}\n\ntranslated`);
+});
+
 test('a long description without recognizable generated metadata is translated in full', async () => {
     const description = 'one\ntwo\nthree\nfour\nfive\nsix';
     const f = fixture({ description }); await f.handle();
@@ -84,4 +101,11 @@ test('an empty translation response cannot silently erase the original text', as
     const f = fixture({ description: 'original text', response: '  ', translateOriginal: true });
     await assert.rejects(f.handle(), /TRANSLATION_EMPTY_RESPONSE/);
     assert.equal(f.replies.length, 0); assert.equal(f.edits.length, 0);
+});
+
+test('a failed article translation cannot partially edit the original message', async () => {
+    const url = 'https://x.com/example/status/1234567890123456789';
+    const f = fixture({ description: `post\n\n[View on Twitter](${url})\n\narticle`, response: ['translated post', ''], translateOriginal: true });
+    await assert.rejects(f.handle(), /TRANSLATION_EMPTY_RESPONSE/);
+    assert.equal(f.requests.length, 2); assert.equal(f.replies.length, 0); assert.equal(f.edits.length, 0);
 });

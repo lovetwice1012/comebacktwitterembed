@@ -27,13 +27,17 @@ function splitTwitterDescription(description, sourceUrl) {
         const link = `[${label}](${sourceUrl})`, index = description.lastIndexOf(link);
         if (index < 0 || index > 0 && description.slice(index - 2, index) !== '\n\n') continue;
         const after = description.slice(index + link.length);
-        if (after && !(after.startsWith('\n\n') && stats.test(after.slice(2)))) continue;
+        if (after && !after.startsWith('\n\n')) continue;
+        const next = after.startsWith('\n\n') ? after.indexOf('\n\n', 2) : -1;
+        const following = after.startsWith('\n\n') ? after.slice(2, next < 0 ? undefined : next) : '';
+        const statsLength = stats.test(following) ? 2 + following.length : 0;
         const start = index > 0 ? index - 2 : 0;
-        return { text: description.slice(0, start), suffix: description.slice(start) };
+        const end = index + link.length + statsLength;
+        return { before: description.slice(0, start), metadata: description.slice(start, end), after: description.slice(end) };
     }
     // Compact X embeds can contain only the Bot's statistics line.
-    if (stats.test(description)) return { text: '', suffix: description };
-    return { text: description, suffix: '' };
+    if (stats.test(description)) return { before: '', metadata: description, after: '' };
+    return { before: description, metadata: '', after: '' };
 }
 
 async function handle(interaction, context = {}) {
@@ -64,19 +68,19 @@ async function handle(interaction, context = {}) {
     if (target === 'jp') target = 'ja';
 
     const originalDescription = sourceEmbed.description || '';
-    let translatable = originalDescription;
-    let trailingTail = '';
     const looksTwitterLike = /twitter\.com|x\.com|vxtwitter\.com|fxtwitter\.com/.test(sourceEmbed.url || '');
-
-    if (looksTwitterLike) {
-        ({ text: translatable, suffix: trailingTail } = splitTwitterDescription(originalDescription, sourceEmbed.url));
-    }
-
-    if (translatable.trim().length > 0) {
-        const translated = await translateText(translatable, target);
+    const parts = looksTwitterLike ? splitTwitterDescription(originalDescription, sourceEmbed.url)
+        : { before: originalDescription, metadata: '', after: '' };
+    const translatePart = async text => {
+        if (!text.trim()) return text;
+        const translated = await translateText(text, target);
         if (!translated.trim()) throw new Error('TRANSLATION_EMPTY_RESPONSE');
-        messageObject.embeds[0].description = translated + trailingTail;
-    } else if (originalDescription) messageObject.embeds[0].description = originalDescription;
+        return translated;
+    };
+    const afterSeparator = parts.after.startsWith('\n\n') ? '\n\n' : '';
+    const description = await translatePart(parts.before) + parts.metadata + afterSeparator
+        + await translatePart(parts.after.slice(afterSeparator.length));
+    if (description) messageObject.embeds[0].description = description;
 
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
