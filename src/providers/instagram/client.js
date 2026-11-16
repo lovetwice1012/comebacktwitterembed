@@ -166,7 +166,7 @@ function createInstagramClient(fetch) {
         ];
     }
 
-    async function fetchProfileCandidate(candidate) {
+    async function fetchProfileCandidate(candidate, username) {
         const res = await fetch(candidate.url, { headers: candidate.headers });
         const text = await res.text();
         if (!res.ok) {
@@ -185,7 +185,7 @@ function createInstagramClient(fetch) {
         }
 
         const profile = normalizeProfileData(parsed);
-        if (!profile) {
+        if (!profile || typeof profile.username !== 'string' || profile.username.toLowerCase() !== username.toLowerCase()) {
             /** @type {Error & {status?: number}} */
             const err = new Error(`instagram profile missing user ${res.status}`);
             err.status = res.status;
@@ -199,7 +199,7 @@ function createInstagramClient(fetch) {
         let lastError = null;
         for (const candidate of profileApiCandidates(username)) {
             try {
-                return await fetchProfileCandidate(candidate);
+                return await fetchProfileCandidate(candidate, username);
             } catch (err) {
                 lastError = err;
                 if (err?.status === 429) {
@@ -227,8 +227,14 @@ function createInstagramClient(fetch) {
             throw err;
         }
 
+        if (typeof res.url === 'string' && res.url) {
+            let resolved;
+            try { if (new URL(res.url).protocol === 'https:') resolved = parseInstagramUrl(res.url); } catch { /* Invalid redirect is not a profile. */ }
+            if (resolved?.kind !== 'profile' || resolved.username.toLowerCase() !== username.toLowerCase())
+                throw new Error('instagram profile redirected to a different page');
+        }
         const profile = normalizeProfileHtmlData(username, text);
-        if (!profile) {
+        if (!profile || typeof profile.username !== 'string' || profile.username.toLowerCase() !== username.toLowerCase()) {
             /** @type {Error & {status?: number}} */
             const err = new Error(`instagram profile html missing user ${res.status}`);
             err.status = res.status;

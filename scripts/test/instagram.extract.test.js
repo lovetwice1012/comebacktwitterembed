@@ -670,6 +670,60 @@ test('instagram extract: profile links build a profile card', async () => {
     assert.equal(result[0].components[0].components[1].data.custom_id, 'delete:instagram');
 });
 
+test('instagram profile lookup rejects another account and tries the next source', async () => {
+    const requests = [];
+    const provider = loadInstagramProviderWithFetch(async url => {
+        requests.push(String(url));
+        if (String(url) === 'https://www.instagram.com/artist.profile/') return {
+            ok: true, status: 200, text: async () => profileHtml({ title: 'Other (&#064;other.profile) &#x2022; Instagram profile' }),
+        };
+        if (String(url).includes('/api/v1/users/web_profile_info/')) return {
+            ok: true, status: 200, text: async () => JSON.stringify({ data: { user: { username: 'Artist.Profile', full_name: 'Correct Profile' } } }),
+        };
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.instagram.com/artist.profile/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Correct Profile (@Artist.Profile)');
+    assert(requests.some(request => request.includes('/api/v1/users/web_profile_info/')));
+});
+
+test('instagram profile API skips a mismatched account and does not cache it', async () => {
+    let apiCalls = 0;
+    const provider = loadInstagramProviderWithFetch(async url => {
+        if (String(url) === 'https://www.instagram.com/artist.profile/') return { ok: true, status: 200, text: async () => '<html></html>' };
+        if (String(url).includes('/api/v1/users/web_profile_info/')) return { ok: true, status: 200, text: async () => JSON.stringify({ data: { user:
+            ++apiCalls === 1 ? { username: 'other.profile', full_name: 'Other' } : { username: 'artist.profile', full_name: 'Correct' } } }) };
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.instagram.com/artist.profile/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Correct (@artist.profile)');
+    assert.equal(apiCalls, 2);
+    const cached = await provider.extract(createMessage(url), url, {});
+    assert.equal(cached[0].embeds[0].title, 'Correct (@artist.profile)');
+    assert.equal(apiCalls, 2);
+});
+
+test('instagram profile login redirects cannot masquerade as the requested account', async () => {
+    const requests = [];
+    const provider = loadInstagramProviderWithFetch(async url => {
+        requests.push(String(url));
+        if (String(url) === 'https://www.instagram.com/artist.profile/') return {
+            ok: true, status: 200, url: 'https://www.instagram.com/accounts/login/',
+            text: async () => profileHtml({ title: 'Instagram' }),
+        };
+        if (String(url).includes('/api/v1/users/web_profile_info/')) return {
+            ok: true, status: 200, text: async () => JSON.stringify({ data: { user: { username: 'artist.profile', full_name: 'Correct' } } }),
+        };
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.instagram.com/artist.profile/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Correct (@artist.profile)');
+    assert(requests.some(request => request.includes('/api/v1/users/web_profile_info/')));
+});
+
 test('instagram extract: profile links retry alternate profile API candidates', async () => {
     const requestedUrls = [];
     const provider = loadInstagramProviderWithFetch(async (url) => {
