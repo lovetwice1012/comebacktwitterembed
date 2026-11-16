@@ -51,8 +51,10 @@ function createPolicy(db = require('../../db')) {
             await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_targets t ON t.id=d.target_id
                 JOIN auto_watch_items i ON i.id=d.item_id JOIN auto_watch_sources s ON s.id=t.source_id
                 SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,COALESCE(t.next_poll_at_ms,?),
+                    COALESCE(t.last_notification_window_at_ms,0)+COALESCE(?*60000,s.poll_interval_ms)),
+                    d.cadence_due_at_ms=GREATEST(i.discovered_at_ms,COALESCE(t.next_poll_at_ms,?),
                     COALESCE(t.last_notification_window_at_ms,0)+COALESCE(?*60000,s.poll_interval_ms))
-                WHERE t.user_id=? AND t.enabled=1 AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [now, minutes, id, now]);
+                WHERE t.user_id=? AND t.enabled=1 AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [now, minutes, now, minutes, id, now]);
             const boosted = await query(`SELECT t.id,t.last_polled_at_ms,t.last_notification_window_at_ms,s.last_checked_at_ms,
                 COALESCE(?*60000,s.poll_interval_ms) AS base_interval_ms FROM auto_watch_targets t JOIN auto_watch_sources s ON s.id=t.source_id
                 JOIN automation_monitor_cadence c ON c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id AND c.slot_cost>1 WHERE t.user_id=? AND t.enabled=1`, [minutes, id]);
@@ -61,7 +63,9 @@ function createPolicy(db = require('../../db')) {
                 const next = Number(target.last_polled_at_ms ?? target.last_checked_at_ms ?? now) + cadence.intervalMs;
                 await query('UPDATE auto_watch_targets SET next_poll_at_ms=? WHERE id=?', [next, target.id]);
                 await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
-                    SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?) WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [next, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, target.id, now]);
+                    SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?),d.cadence_due_at_ms=GREATEST(i.discovered_at_ms,?,?+?)
+                    WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`,
+                [next, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, next, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, target.id, now]);
             }
             // Lowering a user's interval brings its sources forward. Raising it
             // is picked up by the next shared check without postponing peers.

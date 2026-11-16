@@ -105,6 +105,7 @@ test('real SQL per-monitor cadence uses shared physical notification slots and p
             const before = await targetRow(target); await boost(owner, target, 3); const after = await targetRow(target);
             assert.equal(Number(after.baseline_at_ms), Number(before.baseline_at_ms)); assert.equal(Number(after.last_polled_at_ms), Number(before.last_polled_at_ms)); assert.equal(Number(after.next_poll_at_ms), now + 10 * 60000);
             const delivery = (await db.queryDatabase('SELECT * FROM auto_watch_deliveries WHERE target_id=?', [target.id]))[0]; assert.equal(Number(delivery.next_attempt_at_ms), now + 10 * 60000);
+            assert.equal(Number(delivery.cadence_due_at_ms), now + 10 * 60000, 'manual cadence changes reschedule the cohort boundary');
             await store.createItemsAndDeliveries(source, [{ contentId: 'pending-one', url: 'https://github.com/cadencepending/one', discoveredAtMs: now + 1000 }], now + 1000); assert.equal((await db.queryDatabase('SELECT * FROM auto_watch_deliveries WHERE target_id=?', [target.id])).length, 1);
             assert.deepEqual(JSON.parse((await db.queryDatabase('SELECT cursor_json FROM auto_watch_sources WHERE id=?', [source.id]))[0].cursor_json), { seenContentIds: ['existing'] });
         });
@@ -118,10 +119,42 @@ test('real SQL per-monitor cadence uses shared physical notification slots and p
         });
         await t.test('admin user-base interval updates retain a valid monitor three-frame divisor in target and pending schedules', async () => {
             const owner = actor(11), target = await auto(owner, 'cadencepolicy'), source = await readySource(target); await boost(owner, target, 3);
-            await store.createItemsAndDeliveries(source, [{ contentId: 'policy-pending', url: 'https://github.com/cadencepolicy/one', discoveredAtMs: now + 1000 }], now + 1000);
+            await store.createItemsAndDeliveries(source, [
+                { contentId: 'policy-pending', url: 'https://github.com/cadencepolicy/one', discoveredAtMs: now + 1000 },
+                { contentId: 'policy-pending-2', url: 'https://github.com/cadencepolicy/two', discoveredAtMs: now + 1000 },
+            ], now + 1000);
             await require('../../src/providers/autoWatch/intervalPolicy').createPolicy(db).set(owner.userId, 60, ADMIN.userId, now + 1000);
             const row = await targetRow(target); assert.equal(Number(row.next_poll_at_ms), now + 20 * 60000, 'one-hour user base with 3 slots means 20 minutes');
-            assert.equal(Number((await db.queryDatabase('SELECT next_attempt_at_ms FROM auto_watch_deliveries WHERE target_id=?', [target.id]))[0].next_attempt_at_ms), now + 20 * 60000);
+            let pending = await db.queryDatabase('SELECT next_attempt_at_ms,cadence_due_at_ms FROM auto_watch_deliveries WHERE target_id=? ORDER BY id', [target.id]);
+            assert.equal(pending.length, 2);
+            for (const item of pending) {
+                assert.equal(Number(item.next_attempt_at_ms), now + 20 * 60000);
+                assert.equal(Number(item.cadence_due_at_ms), now + 20 * 60000, 'the cohort boundary follows the longer interval');
+            }
+            await require('../../src/providers/autoWatch/intervalPolicy').createPolicy(db).set(owner.userId, 15, ADMIN.userId, now + 2000);
+            pending = await db.queryDatabase('SELECT next_attempt_at_ms,cadence_due_at_ms FROM auto_watch_deliveries WHERE target_id=? ORDER BY id', [target.id]);
+            for (const item of pending) {
+                assert.equal(Number(item.next_attempt_at_ms), now + 5 * 60000);
+                assert.equal(Number(item.cadence_due_at_ms), now + 5 * 60000, 'the cohort boundary follows the shorter interval');
+            }
+        });
+        await t.test('ordinary interval changes reschedule the entire unsent cohort without altering retries or active leases', async () => {
+            const owner = actor(12), target = await auto(owner, 'cadenceordinary'), source = await readySource(target);
+            await store.createItemsAndDeliveries(source, ['first', 'retry', 'leased'].map(name => ({
+                contentId: `ordinary-${name}`, url: `https://github.com/cadenceordinary/${name}`, discoveredAtMs: now + 1000,
+            })), now + 1000);
+            const before = await db.queryDatabase('SELECT id,next_attempt_at_ms,cadence_due_at_ms FROM auto_watch_deliveries WHERE target_id=? ORDER BY id', [target.id]);
+            assert.equal(before.length, 3);
+            await db.queryDatabase('UPDATE auto_watch_deliveries SET attempt_count=1 WHERE id=?', [before[1].id]);
+            await db.queryDatabase('UPDATE auto_watch_deliveries SET lease_expires_at_ms=? WHERE id=?', [now + 60000, before[2].id]);
+            await require('../../src/providers/autoWatch/intervalPolicy').createPolicy(db).set(owner.userId, 5, ADMIN.userId, now + 2000);
+            const after = await db.queryDatabase('SELECT id,next_attempt_at_ms,cadence_due_at_ms FROM auto_watch_deliveries WHERE target_id=? ORDER BY id', [target.id]);
+            assert.equal(Number(after[0].next_attempt_at_ms), now + 5 * 60000);
+            assert.equal(Number(after[0].cadence_due_at_ms), now + 5 * 60000);
+            for (const index of [1, 2]) {
+                assert.equal(Number(after[index].next_attempt_at_ms), Number(before[index].next_attempt_at_ms));
+                assert.equal(Number(after[index].cadence_due_at_ms), Number(before[index].cadence_due_at_ms));
+            }
         });
     } finally { paths.forEach((path, i) => { if (originals[i]) require.cache[path] = originals[i]; else delete require.cache[path]; }); await db.close(); }
 });

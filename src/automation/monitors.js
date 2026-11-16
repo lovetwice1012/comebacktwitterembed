@@ -180,7 +180,9 @@ function createMonitors(db, service, destinations, options = {}) {
             const next = Number(row.last_polled_at_ms ?? row.last_checked_at_ms ?? now) + selected.intervalMs;
             await query('UPDATE auto_watch_targets SET next_poll_at_ms=? WHERE id=? AND user_id=?', [next, id, actor.userId]);
             await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
-                SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?) WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [next, Number(row.last_notification_window_at_ms || 0), selected.intervalMs, id, now]);
+                SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?),d.cadence_due_at_ms=GREATEST(i.discovered_at_ms,?,?+?)
+                WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`,
+            [next, Number(row.last_notification_window_at_ms || 0), selected.intervalMs, next, Number(row.last_notification_window_at_ms || 0), selected.intervalMs, id, now]);
             await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, actor.userId, row.source_id, now);
             await service.audit(query, actor, `${kind}:${id}`, 'monitor.cadence', { slotCost: selected.slotCost, intervalMs: selected.intervalMs }, row.guild_id);
             return { id: String(id), ...selected };

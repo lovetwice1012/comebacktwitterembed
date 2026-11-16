@@ -72,6 +72,15 @@ test('audit R1: real standard-store sequential claims retain a durable bounded h
             assert.deepEqual(actual.runs, Array(3).fill(graph ? 'flow_pending' : 'queued'));
             assert.equal((await runner.tick({ now: f.now + 1 })).deliveries.length, 0);
         });
+        await t.test('shortening cadence routes all already-due discoveries in the same window', async () => {
+            const f = await fixture({ ttl: false, cost: null });
+            const [current] = await db.queryDatabase("SELECT revision FROM automation_monitors WHERE target_kind='auto' AND target_id=?", [f.monitor.id]);
+            await monitors.setCadence(f.actor, 'auto', f.monitor.id, { slotCost: 3, expectedRevision: Number(current.revision), expectedUpdatedAtMs: null });
+            const { runner } = f.connect();
+            const routed = await f.ownResults(await runner.tick({ now: f.now, deliveryLimit: 32 }));
+            assert.deepEqual(routed.map(item => item.status), ['routed', 'routed', 'routed']);
+            assert.deepEqual((await f.counts()).deliveries, ['routed', 'routed', 'routed']);
+        });
         await t.test('restart after the first item keeps remaining TTL-valid events in that window, while a later observation waits', async () => {
             const f = await fixture(), original = f.connect();
             assert.equal((await original.runner.tick({ now: f.now, deliveryLimit: 1 })).deliveries[0].status, 'routed');
