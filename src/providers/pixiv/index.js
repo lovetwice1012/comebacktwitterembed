@@ -151,17 +151,12 @@ async function fetchPixivInfo(id, language, index) {
         ? [body.illustId, body.id].filter(value => value !== null && value !== undefined) : [];
     if (!identities.length || identities.some(value => String(value) !== String(id)))
         throw Object.assign(new Error('Pixiv returned incomplete or mismatched artwork metadata'), { code: 'PIXIV_IDENTITY_MISMATCH' });
+    if (body.pageCount != null && (!['number', 'string'].includes(typeof body.pageCount)
+        || typeof body.pageCount === 'string' && !/^\d+$/.test(body.pageCount)
+        || !Number.isSafeInteger(Number(body.pageCount)) || Number(body.pageCount) < 1))
+        throw Object.assign(new Error('Pixiv returned an invalid page count'), { code: 'PIXIV_PAGES_INCOMPLETE' });
     const pages = await fetchPagesJson(pagesApi);
-    const images = [body.urls, ...(Array.isArray(pages) ? pages.map(page => page?.urls) : [])];
-    for (const urls of images) for (const raw of [urls?.regular, urls?.original]) {
-        if (typeof raw !== 'string') continue;
-        let image;
-        try { image = new URL(raw); } catch { continue; }
-        const match = image.hostname === 'i.pximg.net' && image.pathname.match(/(?:^|\/)(\d+)_p\d+(?:[_.]|$)/i);
-        if (match && match[1] !== String(id))
-            throw Object.assign(new Error('Pixiv returned a different artwork image'), { code: 'PIXIV_IDENTITY_MISMATCH' });
-    }
-    const imageProxyUrls = collectPixivImageUrls(pages, body);
+    const imageProxyUrls = collectPixivImageUrls(pages, body, id);
     const isUgoira = Number(body.illustType) === 2;
     const ugoiraMeta = isUgoira ? await fetchUgoiraMeta(id, language) : null;
 
@@ -183,6 +178,8 @@ async function fetchPixivInfo(id, language, index) {
         bookmark_count: body.bookmarkCount,
         like_count: body.likeCount,
         comment_count: body.commentCount,
+        page_count: Number.isSafeInteger(Number(body.pageCount)) && Number(body.pageCount) > 0 ? Number(body.pageCount) : null,
+        pages_invalid: !Array.isArray(pages) || body.pageCount != null && pages.length > Number(body.pageCount),
         image_proxy_urls: imageProxyUrls,
         ugoira_media_urls: collectDirectUgoiraMediaUrls(body, ugoiraMeta),
     };
@@ -223,19 +220,25 @@ function unwrapPixivAjax(json, url) {
     return json.body;
 }
 
-function collectPixivImageUrls(pages, info) {
-    const out = [];
+function collectPixivImageUrls(pages, info, artworkId) {
     const pageList = Array.isArray(pages) ? pages : [];
-    for (const page of pageList) {
-        const raw = page?.urls?.regular || page?.urls?.original;
-        const proxied = proxyPixivImageUrl(raw);
-        if (proxied) out.push(proxied);
-    }
+    const imageAt = (urls, index) => {
+        const candidates = [urls?.regular, urls?.original].filter(raw => typeof raw === 'string' && raw);
+        for (const raw of candidates) {
+            let image;
+            try { image = new URL(raw); } catch { return null; }
+            if (!['http:', 'https:'].includes(image.protocol) || image.username || image.password) return null;
+            const match = image.hostname === 'i.pximg.net' && image.pathname.match(/(?:^|\/)(\d+)_p(\d+)(?:[_.]|$)/i);
+            if (match && (match[1] !== String(artworkId) || Number(match[2]) !== index)) return null;
+        }
+        return candidates.length ? proxyPixivImageUrl(candidates[0]) : null;
+    };
+    const out = pageList.map((page, index) => imageAt(page?.urls, index));
 
-    if (out.length === 0) {
-        const raw = info?.urls?.regular || info?.urls?.original;
-        const proxied = proxyPixivImageUrl(raw);
-        if (proxied) out.push(proxied);
+    if (out.length === 0 || !pageList[0]?.urls?.regular && !pageList[0]?.urls?.original) {
+        const proxied = imageAt(info?.urls, 0);
+        if (proxied && out.length) out[0] = proxied;
+        else if (proxied) out.push(proxied);
     }
 
     return out;
@@ -462,7 +465,7 @@ function normalizePixivAnalyticsTags(tags) {
 }
 
 function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls) {
-    const mediaCount = Array.isArray(images) ? images.length : 0;
+    const mediaCount = info.page_count ?? (Array.isArray(images) ? images.filter(Boolean).length : 0);
     const ugoiraMediaCount = Array.isArray(ugoiraMediaUrls) ? ugoiraMediaUrls.length : 0;
     const sensitivityKind = pixivSensitivityKind(info);
     return createProviderAnalytics({
@@ -529,7 +532,15 @@ async function extract(message, url, s) {
     if (sensitiveDisplayMode === 'suppress') {
         return [buildSensitiveSuppressedStep(message, url, s)];
     }
-    if (images.length === 0 && sensitiveDisplayMode !== 'metadata_only') return null;
+    const hideSensitiveMedia = sensitiveDisplayMode === 'metadata_only';
+    const failMedia = () => {
+        const error = Object.assign(new Error('Pixiv returned incomplete or unavailable requested pages.'), { code: 'PIXIV_PAGES_INCOMPLETE' });
+        recordProviderError('pixiv', error, message, url, { endpointKey: 'pixiv/ajax/illust/pages' });
+        return buildFailureResponse('pixiv', url, s, error);
+    };
+    if (!hideSensitiveMedia && info.pages_invalid) return failMedia();
+    if (images.length === 0 && isSensitive && !hideSensitiveMedia) return null;
+    if (images.length === 0 && !hideSensitiveMedia && !info.page_count && !parsed.index) return null;
 
     const lang = toApiLocaleFamily(guildLang);
 
@@ -552,17 +563,19 @@ async function extract(message, url, s) {
     // /artworks/:id/2 のような index 指定時は常に 1 枚のみ。
     let displayImages;
     let pageStartIndex = 0;
-    if (parsed.index && parsed.index > 0) {
-        const i = Math.min(parsed.index, images.length) - 1;
-        displayImages = [images[i]];
-        pageStartIndex = i;
+    const totalPages = info.page_count ?? images.length;
+    if (hideSensitiveMedia) displayImages = [];
+    else if (parsed.index && parsed.index > 0) {
+        const i = parsed.index - 1;
+        if (i >= totalPages || !images[i]) return failMedia();
+        displayImages = [images[i]]; pageStartIndex = i;
     } else {
-        displayImages = images.slice(0, imagesPerStep);
+        const required = Math.min(imagesPerStep, totalPages);
+        displayImages = images.slice(0, required);
+        if (displayImages.length !== required || displayImages.some(image => !image)) return failMedia();
     }
 
-    const hideSensitiveMedia = sensitiveDisplayMode === 'metadata_only';
     const spoilerSensitiveMedia = sensitiveDisplayMode === 'spoiler_attachment';
-    if (hideSensitiveMedia) displayImages = [];
     if (displayImages.length === 0 && !hideSensitiveMedia) return null;
 
     // Discord は 同じ url を持つ複数の embed を「1 個のカード」にマージし、
@@ -592,10 +605,10 @@ async function extract(message, url, s) {
             const fields = [];
             if (info.is_ugoira && shouldShowOutputItem(s, 'type')) fields.push({ name: tr(STR.typeField, lang), value: tr(STR.ugoira, lang), inline: true });
             if (tagsLine) fields.push({ name: tr(STR.tagsField, lang), value: tagsLine, inline: false });
-            if (!hideSensitiveMedia && images.length > 1) {
+            if (!hideSensitiveMedia && totalPages > 1) {
                 const pagesText = displayImages.length === 1
-                    ? `${pageStartIndex + 1} / ${images.length}`
-                    : `${pageStartIndex + 1}-${pageStartIndex + displayImages.length} / ${images.length}`;
+                    ? `${pageStartIndex + 1} / ${totalPages}`
+                    : `${pageStartIndex + 1}-${pageStartIndex + displayImages.length} / ${totalPages}`;
                 if (shouldShowOutputItem(s, 'pages')) fields.push({ name: tr(STR.pagesField, lang), value: pagesText, inline: true });
             }
             if (fields.length > 0) embed.fields = fields;

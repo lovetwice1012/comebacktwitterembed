@@ -127,6 +127,57 @@ test('pixiv never attaches another artwork when the pages response conflicts', a
     assert.equal(result[0].embeds, undefined);
 });
 
+test('pixiv preserves requested page positions and rejects only missing requested media', async () => {
+    const pages = createPages(6); pages[4] = { urls: {} };
+    const provider = loadPixivProviderWithFetch(async url => String(url).includes('/pages?') ? okJson(pages) : okJson({ ...createInfo(), pageCount: 6 }));
+    const base = 'https://www.pixiv.net/artworks/123456';
+    const normal = await provider.extract(createMessage({ content: base }), base, {});
+    assert.equal(normal[0].embeds.length, 4, 'the default four images remain usable');
+    const incomplete = await provider.extract(createMessage({ content: base }), base, { pixiv_images_per_step: 10, failure_display_policy: 'source_link' });
+    assert.equal(incomplete[0].content, 'Please check the original link.');
+    const second = await provider.extract(createMessage({ content: `${base}#2` }), `${base}#2`, {});
+    assert.match(second[0].embeds[0].image.url, /123456_p1/);
+    for (const index of [5, 99]) {
+        const url = `${base}#${index}`;
+        const result = await provider.extract(createMessage({ content: url }), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+    const sensitive = loadPixivProviderWithFetch(async url => String(url).includes('/pages?') ? okJson(pages) : okJson({ ...createInfo(), pageCount: 6, xRestrict: 1 }));
+    const metadata = await sensitive.extract(createMessage({ content: base }), base, { pixiv_r18_display_mode: 'metadata_only', pixiv_images_per_step: 10 });
+    assert.equal(metadata[0].embeds[0].image, undefined);
+});
+
+test('pixiv rejects invalid or contradictory page counts', async () => {
+    const url = 'https://www.pixiv.net/artworks/123456';
+    for (const pageCount of ['invalid', true, 0, 1]) {
+        const provider = loadPixivProviderWithFetch(async request => String(request).includes('/pages?')
+            ? okJson(createPages(2)) : okJson({ ...createInfo(), pageCount }));
+        const result = await provider.extract(createMessage({ content: url }), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
+test('pixiv does not substitute another page when upstream page order is inconsistent', async () => {
+    const pages = createPages(2).reverse();
+    const provider = loadPixivProviderWithFetch(async url => String(url).includes('/pages?') ? okJson(pages) : okJson({ ...createInfo(), pageCount: 2 }));
+    const url = 'https://www.pixiv.net/artworks/123456#1';
+    const result = await provider.extract(createMessage({ content: url }), url, { failure_display_policy: 'source_link' });
+    assert.equal(result[0].content, 'Please check the original link.');
+    assert.equal(result[0].embeds, undefined);
+});
+
+test('pixiv permits selected pages when an unrelated later page is inconsistent', async () => {
+    const pages = createPages(6); pages[4] = { urls: { regular: 'https://i.pximg.net/img/123456_p99.jpg' } };
+    const provider = loadPixivProviderWithFetch(async url => String(url).includes('/pages?') ? okJson(pages) : okJson({ ...createInfo(), pageCount: 6 }));
+    const url = 'https://www.pixiv.net/artworks/123456';
+    const first = await provider.extract(createMessage({ content: url }), url, {});
+    assert.equal(first[0].embeds.length, 4);
+    const all = await provider.extract(createMessage({ content: url }), url, { pixiv_images_per_step: 10, failure_display_policy: 'source_link' });
+    assert.equal(all[0].content, 'Please check the original link.');
+});
+
 test('pixiv extract: default mode shows 4 images in a single message', async () => {
     const provider = loadPixivProviderWithFetch(createPixivFetch(55));
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {});
@@ -425,7 +476,7 @@ test('pixiv extract: pages 404 with hidden images returns null without logging a
                 json: async () => ({ error: true, message: '', body: [] }),
             };
         }
-        return okJson({ ...createRestrictedInfo(), illustId: '115161455' });
+        return okJson({ ...createRestrictedInfo(), illustId: '115161455', pageCount: 1 });
     });
     const originalLog = console.log;
     let logged = false;
