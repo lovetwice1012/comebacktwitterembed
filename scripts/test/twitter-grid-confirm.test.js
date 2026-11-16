@@ -40,7 +40,7 @@ test('a private review shows current source and executes exactly once for its ow
     const stored = [...confirm._internal.tokens.values()].at(-1);
     assert.equal(JSON.stringify(stored).includes('private fixture text'), false);
     await confirm.confirm(f.click(token), f.deps); assert.equal(f.executed, 1);
-    await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_SOURCE_CHANGED/); assert.equal(f.executed, 1);
+    await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_CONFIRMATION_EXPIRED/); assert.equal(f.executed, 1);
 });
 test('confirmation uses the actual Twitter default and respects an explicit disable', async () => {
     const f = fixture(), settings = require('../../src/providers/_provider_settings');
@@ -83,11 +83,30 @@ test('another user, guild or channel cannot consume the owner token', async () =
     await confirm.confirm(f.click(token), f.deps); assert.equal(f.executed, 1);
 });
 test('expired tokens, revoked access and disabled settings fail before action', async () => {
-    for (const change of [f => f.advance(confirm._internal.TTL), f => f.setAllowed(false),
+    const expired = fixture(), token = await expired.offer();
+    expired.advance(confirm._internal.TTL);
+    await assert.rejects(confirm.confirm(expired.click(token), expired.deps), /GRID_CONFIRMATION_EXPIRED/);
+    assert.equal(expired.executed, 0);
+    for (const change of [f => f.setAllowed(false),
         f => { f.settings.button_disabled.user.push(uid); }, f => { f.settings.button_invisible.delete = true; }, f => { f.settings.enabled = false; }]) {
         const f = fixture(), token = await f.offer(); change(f);
         await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_SOURCE_CHANGED/); assert.equal(f.executed, 0);
     }
+});
+test('a confirmation remains usable after two minutes and is still one-use', async () => {
+    const f = fixture(), token = await f.offer();
+    f.advance(2 * 60 * 1000 + 1);
+    await confirm.confirm(f.click(token), f.deps);
+    assert.equal(f.executed, 1);
+    await assert.rejects(confirm.confirm(f.click(token), f.deps), /GRID_CONFIRMATION_EXPIRED/);
+    assert.equal(f.executed, 1);
+});
+test('simultaneous confirmation clicks execute the action only once', async () => {
+    const f = fixture(), token = await f.offer();
+    const results = await Promise.allSettled([confirm.confirm(f.click(token), f.deps), confirm.confirm(f.click(token), f.deps)]);
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    assert.match(results.find(result => result.status === 'rejected').reason.message, /GRID_CONFIRMATION_EXPIRED/);
+    assert.equal(f.executed, 1);
 });
 test('permission loss while waiting for the message lock stops the action', async () => {
     const f = fixture(), token = await f.offer(); f.setAccessFailure(3);

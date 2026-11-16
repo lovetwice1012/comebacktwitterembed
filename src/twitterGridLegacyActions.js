@@ -6,8 +6,25 @@ const cards = require('./twitterGridCards');
 const { matchesReference, matchesUniqueReference, logicalAttachments } = require('./discordAttachmentIdentity');
 const { randomBytes, createHash } = require('node:crypto');
 const twitterProvider = require('./providers/twitter');
+const { discordErrorCode, isUnknownMessageError } = require('./utils');
 let activeSourceUploads = 0;
 const MAX_SOURCE_UPLOADS = 2, MAX_SOURCE_BYTES = 80 * 1024 * 1024;
+const RECOVERY_READ_RETRY_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET']);
+function retryableRecoveryRead(error) {
+    const code = String(error?.code ?? error?.cause?.code ?? '');
+    const status = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
+    return error?.name === 'AbortError' || RECOVERY_READ_RETRY_CODES.has(code)
+        || Number.isInteger(status) && status >= 500 && status <= 599;
+}
+async function fetchRecoveryMessage(channel, id) {
+    try { return await channel.messages.fetch({ message: id, force: true }); }
+    catch (error) {
+        if (!retryableRecoveryRead(error)) throw error;
+        // A message lookup is read-only. Never repeat a delete or edit here.
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return channel.messages.fetch({ message: id, force: true });
+    }
+}
 function definitelyRejected(error) {
     const status = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
     return [400, 401, 403, 405, 413, 415, 422, 429].includes(status);
@@ -259,12 +276,19 @@ async function recover({ interaction, payload, query, db }) {
         if (!Number.isInteger(step.index) || step.index < 0 || step.index >= payload.messageIds.length
             || step.id !== payload.messageIds[step.index] || !/^[a-f0-9]{64}$/.test(step.before || '')) throw new Error('GRID_LOCK_UNAVAILABLE');
         let latest;
-        try { latest = await channel.messages.fetch({ message: step.id, force: true }); }
+        try { latest = await fetchRecoveryMessage(channel, step.id); }
         catch (error) {
-            if (step.type === 'delete' && step.index > 0 && Number(error?.code) === 10008) {
+            if (step.type === 'delete' && step.index > 0 && isUnknownMessageError(error)) {
                 payload.legacyDeletedParts = [...new Set([...(payload.legacyDeletedParts || []), step.id])]; continue;
             }
-            throw new Error('GRID_LOCK_UNAVAILABLE');
+            const code = discordErrorCode(error);
+            const status = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
+            // Preserve protocol facts, never Discord response text or URLs.
+            const failure = Object.assign(new Error('GRID_LOCK_UNAVAILABLE'), { gridDiagnostic: { stage: 'recover_message_fetch',
+                discordCode: Number.isSafeInteger(code) && code > 0 ? code : null,
+                httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+                reason: retryableRecoveryRead(error) ? 'transient_read' : code ? 'discord' : 'other' } });
+            throw failure;
         }
         if (!own(latest, interaction, step.id)) throw new Error('GRID_SOURCE_CHANGED');
         if (step.type !== 'edit' || !/^[a-f0-9]{64}$/.test(step.expected || '') || messageDigest(latest, step.namesOnly === true, interaction.channelId) !== step.expected

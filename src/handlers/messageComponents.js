@@ -77,12 +77,17 @@ async function replyComponentError(interaction, err) {
         return;
     }
 
-    const displayUnavailable = ['GRID_SPOILER_DISPLAY_UNAVAILABLE', 'GRID_NO_DISPLAYABLE_IMAGES'].includes(err?.message);
-    if (!displayUnavailable) {
+    const expectedOutcome = ['GRID_SPOILER_DISPLAY_UNAVAILABLE', 'GRID_NO_DISPLAYABLE_IMAGES', 'GRID_CONFIRMATION_EXPIRED'].includes(err?.message);
+    if (!expectedOutcome) {
+        const diagnostic = err?.message === 'GRID_LOCK_UNAVAILABLE' && err?.gridDiagnostic?.stage === 'recover_message_fetch'
+            ? { stage: 'recover_message_fetch', discordCode: Number.isSafeInteger(err.gridDiagnostic.discordCode) ? err.gridDiagnostic.discordCode : null,
+                httpStatus: Number.isInteger(err.gridDiagnostic.httpStatus) && err.gridDiagnostic.httpStatus >= 100 && err.gridDiagnostic.httpStatus <= 599 ? err.gridDiagnostic.httpStatus : null,
+                reason: ['transient_read', 'discord', 'other'].includes(err.gridDiagnostic.reason) ? err.gridDiagnostic.reason : 'other' } : null;
         recordError(err, {
             errorType: 'component_failed',
             source: 'messageComponents.handle',
             interaction,
+            ...(diagnostic ? { details: { grid: diagnostic } } : {}),
         });
         recordMetric('component_error', { interaction });
         console.error('Failed to handle component interaction:', err);
@@ -93,6 +98,12 @@ async function replyComponentError(interaction, err) {
     const payload = { content: String(interaction.locale || '').startsWith('ja')
         ? (err?.message === 'GRID_SPOILER_DISPLAY_UNAVAILABLE' ? 'スポイラー保護のため、画像は現在の表示を維持します。' : err?.message === 'GRID_NO_DISPLAYABLE_IMAGES' ? '表示を変更できる画像がありません。' : timeError ? '操作に時間がかかったため、ここまでの結果を保存しました。投稿を確認して、残りをもう一度操作してください。' : permissionError ? '操作に必要な権限を確認できませんでした。投稿と権限を確認してください。' : sourceError ? '投稿の状態を確認できませんでした。投稿を確認して、もう一度お試しください。' : '操作を完了できませんでした。投稿を確認してから、もう一度お試しください。')
         : (err?.message === 'GRID_SPOILER_DISPLAY_UNAVAILABLE' ? 'Spoiler protection keeps the images in their current display.' : err?.message === 'GRID_NO_DISPLAYABLE_IMAGES' ? 'There are no images to change.' : timeError ? 'The completed steps were saved. Check the post and retry the remaining action.' : permissionError ? 'Your current permissions could not be verified. Check the post and your permissions.' : sourceError ? 'The post could not be verified. Check the post and try again.' : 'The action could not be completed. Check the post before trying again.'), ephemeral: true };
+
+    if (err?.message === 'GRID_CONFIRMATION_EXPIRED') {
+        payload.content = String(interaction.locale || '').startsWith('ja')
+            ? 'この確認は終了しました。元の投稿からもう一度操作してください。'
+            : 'This confirmation has ended. Start again from the original post.';
+    }
 
     if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload).catch(async () => {

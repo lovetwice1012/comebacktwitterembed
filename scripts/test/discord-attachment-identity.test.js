@@ -95,3 +95,49 @@ test('legacy journal proof still recovers the same verified CDN attachment and r
         else { await assert.rejects(legacy.recover({ interaction, payload, query, db }), /GRID_LOCK_UNAVAILABLE/); assert.equal(updates, 0); }
     }
 });
+
+test('legacy deletion recovery recognizes nested Discord unknown-message codes and retains uncertain failures', async () => {
+    const id = 'a'.repeat(32), operationId = 'b'.repeat(32), guildId = '333333333333333333';
+    const root = '444444444444444444', second = '555555555555555555';
+    const intent = { version: 1, kind: 'twitter-grid-legacy', operationId, galleryId: id, lockId: id, action: 'delete',
+        steps: [{ type: 'delete', index: 1, id: second, before: 'c'.repeat(64) }] };
+    const row = { operation_id: operationId, guild_id: guildId, channel_id: channel, message_id: root, payload_json: JSON.stringify(intent) };
+    const db = { queryDatabaseIndependent: async () => [row] };
+    for (const error of [{ code: 10008 }, { rawError: { code: 10008 } }]) {
+        const payload = { id, lockId: id, messageIds: [root, second], partSignatures: ['d'.repeat(64), 'c'.repeat(64)] };
+        const interaction = { guildId, channelId: channel, client: { user: { id: '777777777777777777' } }, channel: { messages: { fetch: async () => { throw error; } } } };
+        let writes = 0;
+        const result = await legacy.recover({ interaction, payload, db, query: async () => { writes++; return { affectedRows: 1 }; } });
+        assert.equal(result.operationId, operationId); assert.deepEqual(payload.legacyDeletedParts, [second]); assert.equal(writes, 1);
+    }
+    for (const error of [{ status: 403, rawError: { code: 50013, message: 'private secret' } }, { code: 'ETIMEDOUT', message: 'private secret' }]) {
+        const payload = { id, lockId: id, messageIds: [root, second], partSignatures: ['d'.repeat(64), 'c'.repeat(64)] };
+        let attempts = 0;
+        const interaction = { guildId, channelId: channel, client: { user: { id: '777777777777777777' } }, channel: { messages: { fetch: async () => { attempts++; throw error; } } } };
+        let writes = 0;
+        await assert.rejects(legacy.recover({ interaction, payload, db, query: async () => { writes++; } }), actual => {
+            assert.equal(actual.message, 'GRID_LOCK_UNAVAILABLE');
+            assert.equal(actual.gridDiagnostic.stage, 'recover_message_fetch');
+            assert.equal(JSON.stringify(actual.gridDiagnostic).includes('private secret'), false);
+            return true;
+        });
+        assert.equal(writes, 0); assert.equal(payload.legacyDeletedParts, undefined);
+        assert.equal(attempts, error.status === 403 ? 1 : 2);
+    }
+    const payload = { id, lockId: id, messageIds: [root, second], partSignatures: ['d'.repeat(64), 'c'.repeat(64)] };
+    let reads = 0, writes = 0;
+    const interaction = { guildId, channelId: channel, client: { user: { id: '777777777777777777' } }, channel: { messages: { fetch: async () => {
+        if (++reads === 1) throw Object.assign(new Error('network timeout'), { code: 'ETIMEDOUT' });
+        throw { rawError: { code: 10008 } };
+    } } } };
+    await legacy.recover({ interaction, payload, db, query: async () => { writes++; return { affectedRows: 1 }; } });
+    assert.equal(reads, 2); assert.equal(writes, 1); assert.deepEqual(payload.legacyDeletedParts, [second]);
+
+    const rootIntent = { ...intent, steps: [{ type: 'delete', index: 0, id: root, before: 'd'.repeat(64) }] };
+    const rootDb = { queryDatabaseIndependent: async () => [{ ...row, payload_json: JSON.stringify(rootIntent) }] };
+    const rootPayload = { id, lockId: id, messageIds: [root, second], partSignatures: ['d'.repeat(64), 'c'.repeat(64)] };
+    const rootInteraction = { guildId, channelId: channel, client: { user: { id: '777777777777777777' } }, channel: { messages: { fetch: async () => { throw { rawError: { code: 10008 } }; } } } };
+    let rootWrites = 0;
+    await assert.rejects(legacy.recover({ interaction: rootInteraction, payload: rootPayload, db: rootDb, query: async () => { rootWrites++; } }), /GRID_LOCK_UNAVAILABLE/);
+    assert.equal(rootWrites, 0); assert.equal(rootPayload.legacyDeletedParts, undefined);
+});

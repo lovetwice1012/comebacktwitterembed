@@ -8,7 +8,7 @@ const { isResponseButtonHidden } = require('../utils');
 const twitterProvider = require('../providers/twitter');
 const allowedActions = new Set(['showMediaAsAttachments', 'showAttachmentsAsEmbedsImage', 'translate', 'delete']);
 const tokens = new Map();
-const TTL = 2 * 60 * 1000, MAX_PENDING = 1000;
+const TTL = 10 * 60 * 1000, MAX_PENDING = 1000;
 
 function buttonExists(message, customId) {
     return (message?.components || []).some(row => (row.components || []).some(component => {
@@ -109,8 +109,9 @@ async function confirm(interaction, deps = {}) {
     const match = /^gcf:([a-f0-9]{32})$/.exec(interaction.customId || '');
     const now = (deps.now || Date.now)(); prune(now);
     const record = match && tokens.get(match[1]);
-    if (!record || record.userId !== String(interaction.user?.id || '') || record.guildId !== String(interaction.guildId || '')
-        || record.channelId !== String(interaction.channelId || '') || record.expiresAt <= now) throw new Error('GRID_SOURCE_CHANGED');
+    if (!record) throw new Error('GRID_CONFIRMATION_EXPIRED');
+    if (record.userId !== String(interaction.user?.id || '') || record.guildId !== String(interaction.guildId || '')
+        || record.channelId !== String(interaction.channelId || '')) throw new Error('GRID_SOURCE_CHANGED');
     // Do not consume another user's token, but make a valid confirmation one-use.
     tokens.delete(match[1]);
     await interaction.deferReply({ ephemeral: true });
