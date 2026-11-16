@@ -1,7 +1,6 @@
 'use strict';
 
 const {
-    HOUR,
     MINUTE,
     conditionalHeaders,
     dateMs,
@@ -11,7 +10,7 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
-const { xmlValue, parseFeedEntries, channelIdFromHtml, parseUploadsPlaylist, parseInitialData } = require('./youtubeSourceParser');
+const { xmlValue, parseFeedEntries, parseUploadsPlaylist, parseInitialData } = require('./youtubeSourceParser');
 const { readHtmlProjection } = require('../autoWatch/streaming');
 const { readFeedProjection } = require('./autoWatchXml');
 
@@ -54,18 +53,41 @@ function feedItems(xml) {
 }
 
 async function resolveChannelId(source, context) {
-    if (/^UC[A-Za-z0-9_-]{20,}$/i.test(source.state?.channelId || '')) return source.state.channelId;
     const [kind, value] = String(source.source_key).split(':', 2);
-    if (kind === 'channel') return value;
-    if (kind !== 'handle') throw sourceError('Invalid saved YouTube source key.');
+    const validId = id => typeof id === 'string' && /^UC[A-Za-z0-9_-]{20,}$/.test(id);
+    const cached = source.state?.channelId;
+    if (cached != null && !validId(cached)) throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'The saved YouTube channel identity is invalid.');
+    if (kind === 'channel') {
+        if (!validId(value) || cached && cached !== value) throw monitorError('AUTO_WATCH_SOURCE_IDENTITY_CHANGED', 'The saved YouTube channel identity does not match its source.');
+        return value;
+    }
+    if (kind !== 'handle' || !/^[A-Za-z0-9._-]{3,}$/.test(value || '')) throw sourceError('Invalid saved YouTube source key.');
+    if (cached && source.state?.verifiedHandle === value.toLowerCase()) return cached;
+    let finalUrl;
     const response = await requestText(context, `https://www.youtube.com/@${encodeURIComponent(value)}`, {
         headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)' },
-        readBody: response => readHtmlProjection(response, { markers: ['ytInitialData'], paths: [['metadata', 'channelMetadataRenderer', 'externalId'], ['**', 'channelId']] }),
+        readBody: response => { finalUrl = response.url; return readHtmlProjection(response, { markers: ['ytInitialData'],
+            paths: [['metadata', 'channelMetadataRenderer', 'externalId'], ['header', 'c4TabbedHeaderRenderer', 'channelId']] }); },
     });
-    let metadataId;
-    try { metadataId = parseInitialData(response.body)?.metadata?.channelMetadataRenderer?.externalId; } catch { /* Invalid guest page remains unresolved. */ }
-    const channelId = /^UC[A-Za-z0-9_-]{20,}$/.test(metadataId || '') ? metadataId : channelIdFromHtml(response.body);
-    if (!channelId) throw monitorError('AUTO_WATCH_SOURCE_NOT_FOUND', 'YouTube handle could not be resolved to a public channel.', { retryAfterMs: 6 * HOUR });
+    let data;
+    try { data = parseInitialData(response.body); } catch { /* Invalid guest page remains unresolved. */ }
+    const metadataId = data?.metadata?.channelMetadataRenderer?.externalId;
+    const headerId = data?.header?.c4TabbedHeaderRenderer?.channelId;
+    if (metadataId != null && !validId(metadataId) || headerId != null && !validId(headerId)
+        || metadataId && headerId && metadataId !== headerId || !validId(metadataId || headerId))
+        throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube did not provide a verified channel identity.');
+    const channelId = metadataId || headerId;
+    if (typeof finalUrl === 'string' && finalUrl) {
+        let resolved;
+        try { resolved = new URL(finalUrl); } catch { /* Invalid redirect fails below. */ }
+        const pathname = resolved?.pathname?.replace(/\/+$/, '');
+        const sameHandle = pathname?.toLowerCase() === `/@${value}`.toLowerCase();
+        if (resolved?.protocol !== 'https:' || !/(^|\.)youtube\.com$/i.test(resolved.hostname)
+            || !(sameHandle || pathname === `/channel/${channelId}`))
+            throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube redirected to a different channel.');
+    }
+    if (cached && cached !== channelId) throw monitorError('AUTO_WATCH_SOURCE_IDENTITY_CHANGED', 'The saved YouTube channel identity does not match the verified handle.');
+    source.state = { ...(source.state || {}), verifiedHandle: value.toLowerCase() };
     return channelId;
 }
 

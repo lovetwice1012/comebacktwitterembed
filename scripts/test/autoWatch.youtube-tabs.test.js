@@ -10,6 +10,34 @@ const f = require('./helpers/youtube-watch-fixture.cjs');
 const source = (extra = {}) => ({ provider_id: 'youtube', source_key: `channel:${f.channel}`, state_json: '{}', initialized_at_ms: 100,
     cursor_json: JSON.stringify({ seenContentIds: [f.oldVideo], admissionVersion: 1 }), ...extra });
 
+test('handle resolution accepts only channel-level identity and verifies redirects', async () => {
+    const other = 'UCxxxxxxxxxxxxxxxxxxxxxx';
+    const request = source({ source_key: 'handle:example', state_json: '{}', youtube_fetch_releases: 0, youtube_fetch_community: 0 });
+    const page = data => `<script>var ytInitialData = ${JSON.stringify(data)};</script>`;
+    const run = (data, finalUrl, input = request) => fetchSource(input, { config: { enableGuestCrawls: true }, fetch: async url => {
+        if (String(url).includes('/feeds/')) return { ok: true, status: 200, headers: { get: () => null }, text: async () => `<feed><yt:channelId>${f.channel}</yt:channelId></feed>` };
+        return { ok: true, status: 200, url: finalUrl, headers: { get: () => null }, text: async () => page(data) };
+    } });
+    await assert.rejects(run({ contents: { recommendation: { channelId: other } } }), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+    await assert.rejects(run({ metadata: { channelMetadataRenderer: { externalId: f.channel } }, header: { c4TabbedHeaderRenderer: { channelId: other } } }), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+    await assert.rejects(run({ metadata: { channelMetadataRenderer: { externalId: f.channel } } }, 'https://www.youtube.com/@different'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+    const valid = await run({ header: { c4TabbedHeaderRenderer: { channelId: f.channel } } }, 'https://www.youtube.com/@Example');
+    assert.equal(valid.state.channelId, f.channel);
+    assert.equal(valid.state.verifiedHandle, 'example');
+    const oldWrong = { ...request, state_json: JSON.stringify({ channelId: other }) };
+    await assert.rejects(run({ metadata: { channelMetadataRenderer: { externalId: f.channel } } }, 'https://www.youtube.com/@example', oldWrong), { code: 'AUTO_WATCH_SOURCE_IDENTITY_CHANGED' });
+    const oldCorrect = { ...request, state_json: JSON.stringify({ channelId: f.channel }) };
+    const verified = await run({ metadata: { channelMetadataRenderer: { externalId: f.channel } } }, 'https://www.youtube.com/@example', oldCorrect);
+    assert.equal(verified.state.verifiedHandle, 'example');
+    const reused = await fetchSource({ ...request, state_json: JSON.stringify(verified.state) }, { config: { enableGuestCrawls: true }, fetch: async url => {
+        assert(String(url).includes('/feeds/'), 'a verified unchanged handle does not require another profile fetch');
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => `<feed><yt:channelId>${f.channel}</yt:channelId></feed>` };
+    } });
+    assert.equal(reused.state.channelId, f.channel);
+    await assert.rejects(run({}, undefined, { ...request, source_key: `channel:${f.channel}`, state_json: JSON.stringify({ channelId: other }) }),
+        { code: 'AUTO_WATCH_SOURCE_IDENTITY_CHANGED' });
+});
+
 test('YouTube options default to releases on/posts off and validate all server input', () => {
     assert.deepEqual(normalizeOptions(undefined), { releases: true, community: false });
     assert.deepEqual(normalizeOptions({ community: true }), { releases: true, community: true });
