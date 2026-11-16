@@ -147,7 +147,20 @@ async function fetchPixivInfo(id, language, index) {
 
     const infoJson = await fetchJson(infoApi);
     const body = unwrapPixivAjax(infoJson, infoApi);
+    const identities = body && typeof body === 'object' && !Array.isArray(body)
+        ? [body.illustId, body.id].filter(value => value !== null && value !== undefined) : [];
+    if (!identities.length || identities.some(value => String(value) !== String(id)))
+        throw Object.assign(new Error('Pixiv returned incomplete or mismatched artwork metadata'), { code: 'PIXIV_IDENTITY_MISMATCH' });
     const pages = await fetchPagesJson(pagesApi);
+    const images = [body.urls, ...(Array.isArray(pages) ? pages.map(page => page?.urls) : [])];
+    for (const urls of images) for (const raw of [urls?.regular, urls?.original]) {
+        if (typeof raw !== 'string') continue;
+        let image;
+        try { image = new URL(raw); } catch { continue; }
+        const match = image.hostname === 'i.pximg.net' && image.pathname.match(/(?:^|\/)(\d+)_p\d+(?:[_.]|$)/i);
+        if (match && match[1] !== String(id))
+            throw Object.assign(new Error('Pixiv returned a different artwork image'), { code: 'PIXIV_IDENTITY_MISMATCH' });
+    }
     const imageProxyUrls = collectPixivImageUrls(pages, body);
     const isUgoira = Number(body.illustType) === 2;
     const ugoiraMeta = isUgoira ? await fetchUgoiraMeta(id, language) : null;

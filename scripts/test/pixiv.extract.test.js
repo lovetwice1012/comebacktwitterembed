@@ -98,6 +98,35 @@ function createPixivFetch(imageCount) {
     };
 }
 
+test('pixiv never presents mismatched or unidentified artwork metadata', async () => {
+    for (const info of [
+        { ...createInfo(), illustId: '999999' },
+        { ...createInfo(), id: '999999' },
+        { ...createInfo(), illustId: undefined },
+    ]) {
+        let pages = 0;
+        const provider = loadPixivProviderWithFetch(async url => {
+            if (String(url).includes('/pages?')) { pages++; return okJson(createPages(1)); }
+            return okJson(info);
+        });
+        const url = 'https://www.pixiv.net/artworks/123456';
+        const result = await provider.extract(createMessage({ content: url }), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+        assert.equal(pages, 0);
+    }
+});
+
+test('pixiv never attaches another artwork when the pages response conflicts', async () => {
+    const provider = loadPixivProviderWithFetch(async url => String(url).includes('/pages?')
+        ? okJson([{ urls: { regular: 'https://i.pximg.net/img-master/img/2024/01/01/00/00/00/999999_p0_master1200.jpg' } }])
+        : okJson(createInfo()));
+    const url = 'https://www.pixiv.net/artworks/123456';
+    const result = await provider.extract(createMessage({ content: url }), url, { failure_display_policy: 'source_link' });
+    assert.equal(result[0].content, 'Please check the original link.');
+    assert.equal(result[0].embeds, undefined);
+});
+
 test('pixiv extract: default mode shows 4 images in a single message', async () => {
     const provider = loadPixivProviderWithFetch(createPixivFetch(55));
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {});
@@ -396,7 +425,7 @@ test('pixiv extract: pages 404 with hidden images returns null without logging a
                 json: async () => ({ error: true, message: '', body: [] }),
             };
         }
-        return okJson(createRestrictedInfo());
+        return okJson({ ...createRestrictedInfo(), illustId: '115161455' });
     });
     const originalLog = console.log;
     let logged = false;
