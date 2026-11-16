@@ -31,6 +31,9 @@
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
  * @property {string} [outputRole]            Distinguishes content from failure notices.
  * @property {boolean} [requiresPreviousSuccess] Send a continuation only after the previous message succeeds.
+ * @property {number} [instagramGalleryParts] Consecutive file steps belonging to one Instagram post.
+ * @property {{groupId: string, imageUrls: string[]}} [twitterGridLead] Earlier confirmed image part for a last-message anchor.
+ * @property {{groupId: string, imagePartOrder?: number[]}} [twitterGridLastRoot] Final-message anchor metadata.
  * @property {{imageUrls: string[], sequence: number, totalParts: number, embedStart?: number, embedEnd?: number}} [twitterGrid] Visible image URLs for the current part of an X post.
  * @property {Array<{imageUrls: string[], sequence: number, totalParts: number, embedStart?: number, embedEnd?: number}>} [twitterGridInline] Separate image groups belonging to inline quoted posts.
  * @property {boolean} [twitterGridSharedInline] Inline quoted content shares this message even if it has no grid control.

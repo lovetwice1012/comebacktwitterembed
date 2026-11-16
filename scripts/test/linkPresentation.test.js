@@ -5,6 +5,16 @@ const assert = require('node:assert/strict');
 const gallery = require('../../src/mediaGallery');
 const { createHistory, contentKey, addNotice } = require('../../src/sharedPostHistory');
 
+test('a repeated split X post keeps the notice on its final detail message', () => {
+    const groupId = 'a'.repeat(32);
+    const steps = [{ files: ['first'], twitterGridLead: { groupId, imageUrls: ['first'] } },
+        { files: ['last'], embeds: [{ title: 'post' }], twitterGridLastRoot: { groupId } }];
+    const actual = addNotice(steps, 'https://discord.com/channels/1/2/3', 'ja');
+    assert.equal(actual[0].content, undefined);
+    assert.match(actual[1].content, /以前にも共有/);
+    assert.equal(steps[1].content, undefined);
+});
+
 const settings = { gallery_display_mode: 'gallery', enabled: true, defaultLanguage: 'ja', media_display_mode: 'embed' };
 const step = () => ({ embeds: [
     { title: 'Album', url: 'https://www.pixiv.net/artworks/42', description: 'Caption', image: { url: 'https://images.example/a.jpg' } },

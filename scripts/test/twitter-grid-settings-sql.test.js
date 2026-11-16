@@ -38,3 +38,28 @@ test('grid settings migration resumes after a DDL failure and preserves existing
         assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM schema_migrations'))[0].n), 1);
     } finally { await db.close(); }
 });
+
+test('detail position migration preserves existing settings and can be resumed', { timeout: 120000 }, async () => {
+    const db = await createTestDatabase(port);
+    try {
+        for (const name of ['providers', 'guilds', 'guild_provider_settings', 'schema_migrations']) {
+            const sql = schema.SCHEMA_STATEMENTS.find(value => new RegExp(`^CREATE TABLE IF NOT EXISTS ${name}\\s*\\(`).test(value));
+            assert.ok(sql, name);
+            await db.queryDatabase(sql);
+        }
+        await db.queryDatabase('ALTER TABLE guild_provider_settings DROP COLUMN twitter_grid_details_position');
+        await db.queryDatabase("INSERT INTO providers (provider_id) VALUES ('twitter')");
+        await db.queryDatabase("INSERT INTO guilds (guild_id) VALUES ('123456789012345678')");
+        await db.queryDatabase("INSERT INTO guild_provider_settings (provider_id,guild_id,enabled,twitter_text_mode) VALUES ('twitter','123456789012345678',1,'normal')");
+        const migration = '20261116_add_twitter_grid_details_position.sql';
+        await applyTestMigration(db, migration);
+        await applyTestMigration(db, migration);
+        let row = (await db.queryDatabase("SELECT enabled,twitter_text_mode,twitter_grid_details_position FROM guild_provider_settings WHERE provider_id='twitter'"))[0];
+        assert.equal(Number(row.enabled), 1);
+        assert.equal(row.twitter_text_mode, 'normal');
+        assert.equal(row.twitter_grid_details_position, null);
+        await db.queryDatabase("UPDATE guild_provider_settings SET twitter_grid_details_position='first' WHERE provider_id='twitter'");
+        row = (await db.queryDatabase("SELECT twitter_grid_details_position FROM guild_provider_settings WHERE provider_id='twitter'"))[0];
+        assert.equal(row.twitter_grid_details_position, 'first');
+    } finally { await db.close(); }
+});

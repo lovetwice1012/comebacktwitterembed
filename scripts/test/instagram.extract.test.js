@@ -321,6 +321,43 @@ test('instagram extract: crawler carousel data retains every image', async () =>
     assert.match(result[0].embeds[0].fields.find(field => field.name === 'Media').value, /1-6 \/ 6/);
 });
 
+test('instagram extract: 11 and 20 carousel items are split in order; explicit limits and image indexes remain respected', async () => {
+    const settings = require('../../src/providers/_provider_settings');
+    assert.equal(settings._internal.settingDefault({ id: 'instagram' }, 'instagram_media_limit'), 20);
+    for (const size of [11, 20]) {
+        const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => crawlerHtml({
+            __typename: 'XIGPolarisCarouselMedia', media_type: 8, shortcode: 'CODE123',
+            owner: { username: 'artist' }, carousel_media: Array.from({ length: size }, (_, index) => xigImage(index + 1)),
+        }) }));
+        const url = 'https://www.instagram.com/p/CODE123/';
+        const result = await provider.extract(createMessage(url), url, {});
+        assert.deepEqual(result.map(step => step.files.length), [10, size - 10]);
+        assert.deepEqual(result.flatMap(step => step.files.map(file => file.name)),
+            Array.from({ length: size }, (_, index) => `instagram-${index + 1}.webp`));
+        assert.equal(result[1].requiresPreviousSuccess, true);
+        assert.equal((await provider.extract(createMessage(url), url, { instagram_media_limit: 10 })).length, 1);
+        const selected = await provider.extract(createMessage(url), `${url}?img_index=11`, {});
+        assert.equal(selected.length, 1);
+        assert.match(selected[0].embeds[0].image.url, /11\.webp/);
+    }
+});
+
+test('instagram extract: split mixed carousels retain video order and link-only mode never restores attachments', async () => {
+    const media = Array.from({ length: 12 }, (_, index) => xigImage(index + 1));
+    media[10] = { __typename: 'XIGPolarisVideoMedia', media_type: 2,
+        video_versions: [{ url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/video.mp4' }] };
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => crawlerHtml({
+        __typename: 'XIGPolarisCarouselMedia', media_type: 8, shortcode: 'CODE123',
+        owner: { username: 'artist' }, carousel_media: media,
+    }) }));
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.deepEqual(result.map(step => step.files.length), [10, 2]);
+    assert.equal(result[1].files[0].name, 'instagram-11.mp4');
+    const links = await provider.extract(createMessage(url), url, { media_display_mode: 'link_only' });
+    assert.ok(links.every(step => !step.files?.length));
+});
+
 test('instagram extract: crawler mixed carousel uses the video stream, not its thumbnail', async () => {
     const provider = loadInstagramProviderWithFetch(async () => ({
         ok: true,

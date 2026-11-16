@@ -88,7 +88,15 @@ async function findUnknownSend(channel, recorded, step, interaction, options = {
 async function recoverConfirmed(lock, interaction, dependencies = {}) {
     const now = dependencies.now || Date.now, deadlineAtMs = dependencies.deadlineAtMs || now() + 90000;
     const budget = { bytes: 0, maxBytes: 20 * 25 * 1024 * 1024 };
-    const originalRecord = lock?.journal?.payload, operationId = lock?.journal?.operationId, payload = lock?.payload;
+    const originalRecord = lock?.journal?.payload, operationId = lock?.journal?.operationId;
+    let payload = lock?.payload;
+    if (payload && Object.hasOwn(payload, 'imagePartOrder')) {
+        try {
+            const imageUrls = require('./twitterGridImageOrder').orderedImageUrls(payload);
+            const { imagePartOrder: _order, ...remaining } = payload;
+            payload = { ...remaining, imageUrls, expectedImageUrls: imageUrls };
+        } catch { return null; }
+    }
     const marker = originalRecord?.rejected413 ? require('./twitterGridRestoreJournal').rejected413State(originalRecord) : null;
     if (originalRecord?.rejected413 && !marker) return null;
     const recorded = marker ? { ...originalRecord, state: 'in_progress',

@@ -13,8 +13,10 @@ if (![33621, 33622].includes(port)) throw Error('An explicit isolated test datab
 
 for (const scenario of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere', 'largefirst', 'largenew', 'new413first', 'new413later', 'limitexceeded', 'firstfail', 'firstfailbad', 'newfail', 'restacceptedfail', 'restreadtimeout', 'newacceptedfail', 'newfirstacceptedfail', 'restfirstacceptedfail', 'restpartial', 'newpartial', 'restdenied', 'restresumefail', 'newresumefail', 'editrace', 'sendrace', 'permissionrace', 'editjournalfail', 'sendjournalfail', 'recover', 'recoverbad', 'recovertimeout', 'cleanupfail',
     'hidden:here', 'hidden:first', 'hidden:firstlater', 'hidden:rest', 'hidden:new', 'hidden:firstfail', 'hidden:recover',
+    'last:here', 'last:first', 'last:rest', 'last:recover',
     ...['initial', 'reauthorize'].flatMap(stage => ['id', 'channel', 'guild', 'author'].flatMap(field => ['wrong', 'missing'].map(value => `identity:${stage}:${field}:${value}`)))]) test(`shared gallery lock and durable journal restore mode ${scenario}`, { timeout: 60000 }, async () => {
-    const hidden = scenario.startsWith('hidden:'), mode = hidden ? scenario.slice('hidden:'.length) : scenario;
+    const hidden = scenario.startsWith('hidden:'), last = scenario.startsWith('last:');
+    const mode = hidden || last ? scenario.slice(scenario.indexOf(':') + 1) : scenario;
     const db = await createTestDatabase(port);
     try {
         const migration = readFileSync(require('node:path').join(schema.MIGRATIONS_DIR, '20260922_add_link_presentation.sql'), 'utf8');
@@ -37,6 +39,13 @@ for (const scenario of ['here', 'first', 'firstlater', 'rest', 'new', 'largehere
             partSizes: [10, urls.length - 10], partRefs: [urls.slice(0, 10).map(url => ({ type: 'url', url })), urls.slice(10).map(url => ({ type: 'url', url }))],
             partSignatures: [cards.fingerprint(first), 'f'.repeat(64)], firstStaticSignature: cards.fingerprint(first, true),
             settingsHash: cards.safetyHash(settings), nsfw: false, requesterId: userId };
+        if (last) {
+            payload.imageUrls = [...urls.slice(10), ...urls.slice(0, 10)];
+            payload.expectedImageUrls = payload.imageUrls;
+            payload.imagePartOrder = [1, 0];
+            payload.partSizes = [urls.length - 10, 10];
+            payload.partRefs = [urls.slice(10), urls.slice(0, 10)].map(items => items.map(url => ({ type: 'url', url })));
+        }
         await db.queryDatabase('INSERT INTO bot_media_galleries (gallery_id,guild_id,channel_id,message_id,provider_id,payload_json,expires_at_ms) VALUES (?,?,?,?,?,?,?)',
             [id, guildId, channelId, messageId, 'twitter', JSON.stringify(payload), Date.now() + 600000]);
         let latestId = mode === 'here' || mode === 'largehere' ? messageId : '999999999999999999'; const history = new Map();

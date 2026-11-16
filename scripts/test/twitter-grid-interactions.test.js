@@ -69,6 +69,23 @@ test('a completed public combination offers original-image restoration immediate
     assert.equal(panel.content, '公開画像を置き換えました。');
     assert.ok(panel.components[4].components.some(button => button.label === '元の画像に戻す'));
 });
+
+test('public combination from the last-message anchor includes prior images in source order', async () => {
+    const f = fixture(), original = Array.from({ length: 13 }, (_, i) => image(i));
+    f.first.id = '777777777777777777';
+    f.interaction.message.id = f.first.id;
+    f.first.attachments = files(3, 10);
+    f.second.attachments = files(10);
+    const physical = [...original.slice(10), ...original.slice(0, 10)];
+    f.patchPayload({ imageUrls: physical, expectedImageUrls: physical, imagePartOrder: [1, 0],
+        messageIds: [f.first.id, f.second.id], partSizes: [3, 10], partContainsNonImage: [false, false],
+        partRefs: [physical.slice(0, 3), physical.slice(3)].map(urls => urls.map(url => ({ type: 'url', url }))),
+        partSignatures: [cards.fingerprint(f.first), cards.fingerprint(f.second)], firstStaticSignature: cards.fingerprint(f.first, true) });
+    assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, f.row()), original);
+    assert.equal(await grid._internal.replacePublic(f.interaction, f.row(), { data: Buffer.from('grid'), filename: 'twitter-grid.jpg' }, f.deps), 'done');
+    assert.equal(f.deleted, true);
+    assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, f.row()), original);
+});
 test('automatic sizing uses one target size while cropped cells retain width and height', async () => {
     for (const [fit, expectedValue, expectedLabel] of [['i', '640', /画像サイズの目安/], ['c', '640x384', /枠の幅×高さ/]]) {
         const f = fixture(), state = { ...grid._internal.defaults(settings, 13), width: 640, height: 384, fit };

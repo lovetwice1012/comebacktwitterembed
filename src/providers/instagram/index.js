@@ -15,6 +15,38 @@ const {
     resolveMediaLimit,
 } = require('./presentation');
 const { buildInstagramProfileAnalytics, buildInstagramMediaAnalytics } = require('./analytics');
+const { MAX_MEDIA_PER_MESSAGE } = require('./constants');
+
+// Split only the final policy-filtered output: link-only and thumbnail-only
+// must not accidentally expose files that the selected display mode removed.
+function splitMediaSteps(step) {
+    const parts = [step];
+    const files = Array.isArray(step.files) ? step.files : [];
+    if (files.length > MAX_MEDIA_PER_MESSAGE) {
+        step.files = files.slice(0, MAX_MEDIA_PER_MESSAGE);
+        for (let i = MAX_MEDIA_PER_MESSAGE; i < files.length; i += MAX_MEDIA_PER_MESSAGE) {
+            parts.push({ files: files.slice(i, i + MAX_MEDIA_PER_MESSAGE), send: 'channel',
+                allowedMentions: { parse: [], repliedUser: false }, requiresPreviousSuccess: true });
+        }
+        // Permit a single gallery to cover the complete, policy-filtered post.
+        step.instagramGalleryParts = parts.length;
+    }
+    if (typeof step.content === 'string' && step.content.length > 2000) {
+        let remaining = step.content;
+        const chunks = [];
+        while (remaining.length > 2000) {
+            const newline = remaining.lastIndexOf('\n', 2000);
+            const boundary = newline > 0 ? newline : 2000;
+            chunks.push(remaining.slice(0, boundary));
+            remaining = remaining.slice(boundary + (newline > 0 ? 1 : 0));
+        }
+        chunks.push(remaining);
+        step.content = chunks.shift();
+        for (const content of chunks) parts.push({ content, send: 'channel',
+            allowedMentions: { parse: [], repliedUser: false }, requiresPreviousSuccess: true });
+    }
+    return parts;
+}
 
 const { resolveShareUrl, resolveParsedUrl, fetchProfileData, fetchInstagramData, clearCache } = createInstagramClient(fetch);
 
@@ -101,7 +133,7 @@ async function extract(message, url, s, opts) {
         step.suppressSourceEmbeds = true;
     }
 
-    return [step];
+    return splitMediaSteps(step);
 }
 
 /** @type {import('../_types').Provider} */

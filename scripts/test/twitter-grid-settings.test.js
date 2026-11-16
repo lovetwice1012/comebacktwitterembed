@@ -30,10 +30,13 @@ test('X image layout defaults and choices are isolated per server and provider',
         }
         assert.equal(getProviderSettingSpecs({ id: 'pixiv' }).some(spec => spec.key.startsWith('twitter_grid_')), false);
         await settings.setSetting(twitter, 'twitter_grid_replace_permission', 'grid-server-a', 'everyone');
+        await settings.setSetting(twitter, 'twitter_grid_details_position', 'grid-server-a', 'first');
         await settings.setSetting(twitter, 'twitter_grid_columns', 'grid-server-a', 5);
         const first = await settings.getProviderSettings(twitter, 'grid-server-a');
         const second = await settings.getProviderSettings(twitter, 'grid-server-b');
         assert.equal(first.twitter_grid_replace_permission, 'everyone');
+        assert.equal(first.twitter_grid_details_position, 'first');
+        assert.equal(second.twitter_grid_details_position, 'last');
         assert.equal(first.twitter_grid_columns, 5);
         assert.equal(second.twitter_grid_replace_permission, 'restricted');
         assert.equal(second.twitter_grid_columns, 2);
@@ -51,6 +54,10 @@ test('server settings reject unknown grid values and require server management t
     assert.equal(everyone.changes.twitter_grid_columns, 4);
     assert.equal(validateProviderChanges('twitter', { changes: { twitter_grid_replace_permission: 'restricted' } }, 'ja').dangerous, false);
     assert.throws(() => validateProviderChanges('twitter', { changes: { twitter_grid_replace_permission: 'anyone-else' } }, 'ja'));
+    assert.equal(validateProviderChanges('twitter', { changes: { twitter_grid_details_position: 'first' } }, 'ja').changes.twitter_grid_details_position, 'first');
+    assert.equal(validateProviderChanges('twitter', { changes: { twitter_grid_details_position: 'last' } }, 'ja').changes.twitter_grid_details_position, 'last');
+    assert.throws(() => validateProviderChanges('twitter', { changes: { twitter_grid_details_position: 'other' } }, 'ja'));
+    assert.throws(() => validateProviderChanges('instagram', { changes: { twitter_grid_details_position: 'last' } }, 'ja'));
     assert.throws(() => validateProviderChanges('twitter', { changes: { twitter_grid_columns: 200 } }, 'ja'));
     const custom = validateProviderChanges('twitter', { changes: { twitter_grid_columns: '7', twitter_grid_gap: '13', twitter_grid_cell_size: '777', twitter_grid_quality: '91', twitter_grid_background: '#12aBcD' } }, 'ja');
     assert.deepEqual(custom.changes, { twitter_grid_columns: 7, twitter_grid_gap: 13, twitter_grid_cell_size: 777, twitter_grid_quality: 91, twitter_grid_background: '#12abcd' });

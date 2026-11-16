@@ -904,6 +904,11 @@ async function extract(message, url, s, opts) {
         }
     }
 
+    const groupSize = step.twitterGrid?.totalParts;
+    if (s.twitter_grid_details_position !== 'first' && Number.isInteger(groupSize) && groupSize > 1) {
+        const planned = require('./lastDetailsPlan').planLastDetails(allSteps.slice(0, groupSize), require('node:crypto').randomBytes(16).toString('hex'));
+        if (planned) allSteps.splice(0, groupSize, ...planned);
+    }
     return allSteps;
 }
 

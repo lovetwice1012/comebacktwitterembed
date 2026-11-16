@@ -225,6 +225,11 @@ function matchesFingerprint(message, expected, omitImages = false) {
 async function prepare(step, message, context, storage, nextStep) {
     const meta = step?.twitterGrid, guildId = message.guildId || message.guild?.id;
     if (context.providerId !== 'twitter' || !guildId) return { step };
+    const rootOrder = step.twitterGridLastRoot?.imagePartOrder;
+    if (step.twitterGridLastRoot && (!Array.isArray(rootOrder) || !meta || rootOrder.length !== meta.totalParts
+        || rootOrder.some((index, i) => index !== (i === rootOrder.length - 1 ? 0 : i + 1)))) {
+        return { step: withoutUnlinkedActions(step) };
+    }
     const settings = context.presentationSettings || {};
     const buttonEnabled = !settings.button_invisible?.all && !settings.button_invisible?.tg && (step.components || []).length < 5;
     storage ||= gallery.store();
@@ -266,6 +271,7 @@ async function prepare(step, message, context, storage, nextStep) {
         const sourceEmbed = (step.embeds || [])[Number.isInteger(part.embedStart) ? part.embedStart : 0];
         const sourceStatusId = require('./providers/twitter/twitterSourceParser/fxTwitter')._internal.statusIdentity(sourceEmbed?.url);
         const payload = { id, kind: 'twitter-image-grid-v1', ...(sourceStatusId ? { sourceStatusId } : {}), imageUrls: [], expectedImageUrls,
+            ...(index === 0 && rootOrder ? { imagePartOrder: [...rootOrder] } : {}),
             expectedRefs: [...firstRefs, ...otherParts.flatMap(item => item.refs)], initialImageUrls: [...part.imageUrls],
             isPrimary: index === 0, ...(showButton ? {} : { headless: true }), ...(canRecordHeadless || persistentGroup ? { persistentParts: true } : {}),
             totalParts: part.totalParts, completedParts: 0, messageIds: [], partSizes: [],

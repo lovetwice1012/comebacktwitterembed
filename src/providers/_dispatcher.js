@@ -112,19 +112,36 @@ function splitRejectedTwitterStep(step, files) {
     /** @type {import('./_types').SendStep} */
     const second = { files: rightFiles, send: 'channel', allowedMentions: { parse: [], repliedUser: false },
         requiresPreviousSuccess: true, ...(step.safeTwitterMedia === true ? { safeTwitterMedia: true } : {}) };
-    const meta = step.twitterGrid;
+    const meta = step.twitterGridLead || step.twitterGrid;
     if (meta && Array.isArray(meta.imageUrls)) {
         const allFiles = new Set(files.map(twitterFileUrl).filter(Boolean));
         const leftCounts = new Map();
         for (const file of leftFiles) { const url = twitterFileUrl(file); if (url) leftCounts.set(url, (leftCounts.get(url) || 0) + 1); }
         const leftImages = [], rightImages = [];
         for (const url of meta.imageUrls) {
-            if (!allFiles.has(url)) { leftImages.push(url); continue; } // embed-only image stays on the first message
+            if (!allFiles.has(url)) {
+                // A final-anchor split moves its embeds to the right part;
+                // legacy splits keep those embeds on the left part.
+                (step.twitterGridLastRoot ? rightImages : leftImages).push(url);
+                continue;
+            }
             const left = leftCounts.get(url) || 0;
             if (left) { leftImages.push(url); leftCounts.set(url, left - 1); } else rightImages.push(url);
         }
-        first.twitterGrid = { ...meta, imageUrls: leftImages };
-        second.twitterGrid = { imageUrls: rightImages, sequence: Math.max(1, meta.sequence), totalParts: meta.totalParts };
+        if (step.twitterGridLead) {
+            first.twitterGridLead = { ...step.twitterGridLead, imageUrls: leftImages };
+            second.twitterGridLead = { ...step.twitterGridLead, imageUrls: rightImages };
+        } else if (step.twitterGridLastRoot) {
+            first.twitterGridLead = { groupId: step.twitterGridLastRoot.groupId, imageUrls: leftImages };
+            for (const key of ['content', 'embeds', 'components', 'twitterGrid', 'twitterGridLastRoot', 'twitterGridInline', 'twitterGridSharedInline']) delete first[key];
+            for (const key of ['content', 'embeds', 'components', 'twitterGridLastRoot', 'twitterGridInline', 'twitterGridSharedInline']) {
+                if (step[key] !== undefined) second[key] = step[key];
+            }
+            second.twitterGrid = { ...meta, imageUrls: rightImages };
+        } else {
+            first.twitterGrid = { ...meta, imageUrls: leftImages };
+            second.twitterGrid = { imageUrls: rightImages, sequence: Math.max(1, meta.sequence), totalParts: meta.totalParts };
+        }
     }
     return [first, second];
 }
@@ -308,6 +325,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
     // Later 413 handling inserts smaller physical parts without mutating the
     // provider's original step objects.
     steps = steps.slice();
+    const personalDeferredGroup = steps[0]?.twitterGridLead?.groupId;
     const verifiedTwitterFiles = new WeakSet();
     function releaseVerifiedFiles(index) {
         const item = steps[index];
@@ -317,6 +335,8 @@ async function runSendStepsNow(message, steps, trackingContext) {
     let previousSent = null;
     let lastStepSent = null;
     let pendingTwitterGrid = null;
+    let pendingInstagramGroup = null;
+    const deferredTwitterReceipts = new Map();
     let sendable = 0;
     let completeFallback = true;
     let twitterMediaLease = false;
@@ -351,9 +371,40 @@ async function runSendStepsNow(message, steps, trackingContext) {
         }
         if (pendingTwitterGrid && (!steps[i]?.twitterGrid || steps[i].twitterGrid.sequence === 0)) await finishPendingGrid('failed');
         lastStepSent = null;
-        const gallery = await require('../mediaGallery').prepare(steps[i], message, trackingContext);
-        const grid = await require('../twitterGridCards').prepare(gallery.step, message, trackingContext, undefined, steps.slice(i + 1));
-        const personal = i === 0 ? await require('../personalLinks/cards').prepare(grid.step, message, trackingContext) : { step: grid.step, cardId: null };
+        const current = steps[i];
+        let gallery;
+        const groupCount = current.instagramGalleryParts;
+        if (providerId === 'instagram' && trackingContext.presentationSettings?.gallery_display_mode === 'gallery'
+            && Number.isInteger(groupCount) && groupCount > 1 && groupCount <= 20 && i + groupCount <= steps.length) {
+            const group = steps.slice(i, i + groupCount);
+            // Only merge the extractor's consecutive file-only continuations.
+            // If gallery creation fails, retain the original send steps.
+            const safe = group.every((part, index) => Array.isArray(part.files) && part.files.length > 0
+                && part.files.length <= 10 && (index === 0 || part.requiresPreviousSuccess === true
+                    && !part.content && !part.embeds?.length && !part.components?.length
+                    && !part.deleteSource && !part.suppressSourceEmbeds));
+            if (safe) {
+                const combined = { ...current, files: group.flatMap(part => part.files) };
+                const candidate = await require('../mediaGallery').prepare(combined, message, trackingContext);
+                if (candidate.galleryId) {
+                    gallery = candidate;
+                    steps.splice(i + 1, groupCount - 1);
+                    result.plannedSteps -= groupCount - 1;
+                }
+            }
+        }
+        gallery ||= await require('../mediaGallery').prepare(current, message, trackingContext);
+        const instagramGroup = providerId === 'instagram' && !gallery.galleryId
+            ? await require('../instagramMultipart').prepare(gallery.step, message, trackingContext) : { step: gallery.step };
+        if (instagramGroup.unavailable) completeFallback = false;
+        const rootGroupId = instagramGroup.step.twitterGridLastRoot?.groupId;
+        const prior = rootGroupId ? deferredTwitterReceipts.get(rootGroupId) : undefined;
+        const scope = { guildId: message.guildId || message.guild?.id, channelId: message.channelId || message.channel?.id, client: message.client };
+        const deferred = rootGroupId ? require('./twitter/lastDetailsReceipts').build(instagramGroup.step, prior, scope) : null;
+        const grid = await require('../twitterGridCards').prepare(deferred?.root || instagramGroup.step, message, trackingContext, undefined,
+            deferred?.following || steps.slice(i + 1));
+        const attachPersonal = i === 0 && !gallery.step.twitterGridLead || !!rootGroupId && rootGroupId === personalDeferredGroup;
+        const personal = attachPersonal ? await require('../personalLinks/cards').prepare(grid.step, message, trackingContext) : { step: grid.step, cardId: null };
         const step = personal.step;
         const sendMode = step.send ?? (i === 0 ? 'channel' : 'reply-previous');
         if (step.suppressSourceEmbeds && !cleanup.has('suppress_embeds')) cleanup.set('suppress_embeds', i);
@@ -392,7 +443,8 @@ async function runSendStepsNow(message, steps, trackingContext) {
         }
 
         const needsSingleAttempt = providerId === 'twitter'
-            && (grid.grids?.length || pendingTwitterGrid || messageObject.files?.length);
+            && (grid.grids?.length || pendingTwitterGrid || messageObject.files?.length)
+            || providerId === 'instagram' && !!(instagramGroup.group || pendingInstagramGroup);
         let singleAttemptSender = null;
         if (needsSingleAttempt) {
             try {
@@ -534,6 +586,11 @@ async function runSendStepsNow(message, steps, trackingContext) {
                         components: row.components.filter(component => !String(component.custom_id || component.data?.custom_id || component.customId || '').startsWith('tg:')),
                     })).filter(row => row.components.length);
                 }
+                if (instagramGroup.group && messageObject.components) {
+                    messageObject.components = messageObject.components.map(row => ({ ...row,
+                        components: row.components.filter(component => !String(component.custom_id || component.data?.custom_id || component.customId || '').startsWith('delete:ig1:')),
+                    })).filter(row => row.components.length);
+                }
                 await discardUnpublishedGrid(grid.grids);
                 appendContent(messageObject, fallbackText);
 
@@ -589,6 +646,24 @@ async function runSendStepsNow(message, steps, trackingContext) {
         previousSent = sent ?? previousSent;
         lastStepSent = sent;
         if (sent) {
+            if (instagramGroup.group || pendingInstagramGroup && step.requiresPreviousSuccess) {
+                const group = instagramGroup.group || pendingInstagramGroup;
+                try {
+                    const recorded = !withoutFiles && await require('../instagramMultipart').record(group, step, sent, scope);
+                    if (!recorded) { pendingInstagramGroup = null; completeFallback = false; }
+                    else pendingInstagramGroup = group.partsState === 'complete' ? null : group;
+                } catch (error) {
+                    pendingInstagramGroup = null; completeFallback = false; require('../mediaGallery').report(error);
+                }
+            }
+            if (step.twitterGridLead) {
+                if (withoutFiles) lastStepSent = null;
+                else {
+                    const id = step.twitterGridLead.groupId;
+                    if (!deferredTwitterReceipts.has(id)) deferredTwitterReceipts.set(id, []);
+                    deferredTwitterReceipts.get(id).push({ step, sent });
+                }
+            }
             if (grid.grids?.length && !withoutFiles) {
                 for (const item of grid.grids) {
                     let bound = false;
@@ -597,6 +672,12 @@ async function runSendStepsNow(message, steps, trackingContext) {
                         const firstPart = item.isPrimary === false ? undefined : actualTwitterGridPart(step);
                         bound = await cards.bind(item, sent, undefined, undefined, firstPart);
                         if (!bound) continue;
+                        if (deferred && item.isPrimary !== false) {
+                            for (let part = 0; part < deferred.following.length; part++) {
+                                if (!await cards.append(item, actualTwitterGridPart(deferred.following[part]), prior[part].sent))
+                                    throw new Error('GRID_RECORD_CONFLICT');
+                            }
+                        }
                         if (await gridCompletion(item) === 'pending') pendingTwitterGrid = item;
                     } catch (error) {
                         require('../mediaGallery').report(error);

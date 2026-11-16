@@ -97,8 +97,11 @@ function verifySource(status, payload, tweet) {
         || sensitive(tweet.community?.is_nsfw)) return null;
     if (!Array.isArray(payload?.imageUrls) || payload.imageUrls.length < 2 || payload.imageUrls.length > 20
         || !Array.isArray(tweet.mediaURLs)) return null;
+    let sourceUrls;
+    try { sourceUrls = require('./twitterGridImageOrder').orderedImageUrls(payload); }
+    catch { return null; }
     const upstream = tweet.mediaURLs.map(photoIdentity);
-    const expected = payload.imageUrls.map(photoIdentity);
+    const expected = sourceUrls.map(photoIdentity);
     if (expected.some(id => !id) || new Set(expected).size !== expected.length) return null;
     let cursor = 0;
     for (const id of expected) {
@@ -106,7 +109,7 @@ function verifySource(status, payload, tweet) {
         if (next < 0) return null;
         cursor = next + 1;
     }
-    return [...payload.imageUrls];
+    return sourceUrls;
 }
 
 async function fetchVerifiedSource(status, payload, dependencies = {}) {
@@ -346,7 +349,10 @@ function restoredManifest(payload, operationId, mode, messages, urls, statusId, 
     if (!payload || !/^[a-f0-9]{32}$/.test(payload.id || '') || !/^[a-f0-9]{32}$/.test(operationId || '')
         || !['here', 'first', 'rest'].includes(mode) || !Array.isArray(urls) || !Array.isArray(messages)
         || !/^\d{1,22}$/.test(statusId || '') || payload.sourceStatusId && payload.sourceStatusId !== statusId) throw new Error('GRID_RESTORE_RECORD');
-    const visible = payload.imageUrls, archived = payload.restoreArchive?.imageUrls;
+    let visible;
+    try { visible = require('./twitterGridImageOrder').orderedImageUrls(payload); }
+    catch { throw new Error('GRID_RESTORE_RECORD'); }
+    const archived = payload.restoreArchive?.imageUrls;
     const equal = (a, b) => Array.isArray(a) && a.length === b.length && a.every((value, index) => value === b[index]);
     if (!equal(visible, urls) && !equal(archived, urls)) throw new Error('GRID_RESTORE_RECORD');
     if (archived && (!Array.isArray(visible) || visible.length > archived.length || visible.some((value, index) => value !== archived[index])
@@ -369,8 +375,9 @@ function restoredManifest(payload, operationId, mode, messages, urls, statusId, 
         offset += groups[part].length;
     }
     const displayed = groups.flat();
-    const { replacePhase, ...unchanged } = payload;
+    const { replacePhase, imagePartOrder, ...unchanged } = payload;
     void replacePhase;
+    void imagePartOrder;
     const targetCount = plannedGroups.flat().length, partial = groups.length < plannedGroups.length;
     const sourceImages = archived || urls, laterAvailable = !partial && mode === 'first' && displayed.length < sourceImages.length;
     return { ...unchanged, imageUrls: displayed, expectedImageUrls: displayed, partRefs: groups.map(group => group.map(url => ({ type: 'url', url }))),

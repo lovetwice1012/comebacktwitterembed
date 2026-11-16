@@ -55,6 +55,7 @@ const PROVIDER_DEFAULTS = {
     twitter_quote_mode:                                    'full',
     twitter_quote_layout:                                  'separate',
     twitter_grid_default_layout:                           'grid',
+    twitter_grid_details_position:                        'last',
     twitter_grid_columns:                                  2,
     twitter_grid_gap:                                      4,
     twitter_grid_background:                               '#000000',
@@ -92,6 +93,7 @@ const PROVIDER_DEFAULTS = {
 };
 
 const PROVIDER_SETTING_COLUMNS = {
+    twitter_grid_details_position: { column: 'twitter_grid_details_position', type: 'string' },
     twitter_grid_default_layout: { column: 'twitter_grid_default_layout', type: 'string' },
     twitter_grid_columns: { column: 'twitter_grid_columns', type: 'int' },
     twitter_grid_gap: { column: 'twitter_grid_gap', type: 'int' },
@@ -488,7 +490,7 @@ function settingDefault(provider, key) {
     if (key === 'pixiv_r18_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'pixiv_r18g_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'instagram_caption_max_length') return provider.id === 'instagram' ? 3000 : undefined;
-    if (key === 'instagram_media_limit') return provider.id === 'instagram' ? 10 : undefined;
+    if (key === 'instagram_media_limit') return provider.id === 'instagram' ? 20 : undefined;
     if (key === 'tiktok_description_max_length') return provider.id === 'tiktok' ? 900 : undefined;
     if (key === 'tiktok_video_fallback_mode') return provider.id === 'tiktok' ? 'video_url' : undefined;
     if (key === 'niconico_description_max_length') return provider.id === 'niconico' ? 1400 : undefined;

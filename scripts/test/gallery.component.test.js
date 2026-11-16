@@ -11,6 +11,15 @@ const userId = '111111111111111111';
 const botId = '444444444444444444';
 const galleryId = 'a'.repeat(32);
 
+test('Instagram gallery keeps all twenty ordered attachment pages', () => {
+    const files = Array.from({ length: 20 }, (_, index) => ({
+        attachment: `https://scontent.cdninstagram.com/${index + 1}.jpg`, name: `instagram-${index + 1}.jpg`,
+    }));
+    const pages = gallery.pagesFor({ embeds: [{ title: 'Post' }], files }, { gallery_display_mode: 'gallery' });
+    assert.equal(pages.length, 20);
+    assert.deepEqual(pages.map(page => page.files[0].name), files.map(file => file.name));
+});
+
 async function fixture() {
     await settings.setSetting({ id: 'pixiv' }, 'enabled', guildId, true);
     await settings.setSetting({ id: 'pixiv' }, 'gallery_display_mode', guildId, 'gallery');

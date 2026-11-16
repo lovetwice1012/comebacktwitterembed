@@ -231,6 +231,11 @@ function register(client) {
                 return;
             }
 
+            if (baseCustomId === 'delete' && String(interaction.customId || '').startsWith('delete:ig1:')) {
+                await require('../instagramMultipart').remove(interaction);
+                recordMetric('component_success', { interaction, componentId: baseCustomId });
+                return;
+            }
             const handler = HANDLERS[baseCustomId];
             if (!handler) {
                 await interaction.deleteReply().catch(() => {});

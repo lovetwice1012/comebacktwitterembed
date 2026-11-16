@@ -39,6 +39,7 @@ model GuildProviderSetting {
   twitterQuoteMode                             String?  @map("twitter_quote_mode") @db.VarChar(32)
   twitterQuoteLayout                           String?  @map("twitter_quote_layout") @db.VarChar(32)
   twitterGridDefaultLayout                     String?  @map("twitter_grid_default_layout") @db.VarChar(32)
+  twitterGridDetailsPosition                   String?  @map("twitter_grid_details_position") @db.VarChar(32)
   twitterGridColumns                           Int?     @map("twitter_grid_columns")
   twitterGridGap                               Int?     @map("twitter_grid_gap")
   twitterGridBackground                        String?  @map("twitter_grid_background") @db.VarChar(32)

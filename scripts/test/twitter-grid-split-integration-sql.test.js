@@ -43,10 +43,61 @@ async function setup(send, media = null) {
     };
     compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports', 'console'], { filename })(
         id => Object.hasOwn(mocks, id) ? mocks[id] : actual(id), mod, mod.exports, { log() {}, warn() {}, error() {} });
-    const message = { guildId, channelId, guild: { id: guildId }, author: { id: owner },
+    const message = { guildId, channelId, guild: { id: guildId }, author: { id: owner }, client: { user: { id: bot } },
         channel: { id: channelId, nsfw: false, send }, delete: async () => post.push('delete'), suppressEmbeds: async () => post.push('suppress') };
     return { db, storage, saved, post, run: steps => mod.exports.runSendSteps(message, steps, 'twitter', { presentationSettings: { enabled: true } }) };
 }
+
+test('final details anchor records and deletes every ordered part, including 413 subdivisions', { timeout: 120000 }, async () => {
+    const { planLastDetails } = require('../../src/providers/twitter/lastDetailsPlan');
+    const { applyTestMigration } = require('../lib/automation-test-db');
+    const grid = require('../../src/components/twitterGrid')._internal;
+    for (const rejectedAttempt of [0, 1, 2]) {
+        let calls = 0, counter = 0;
+        const accepted = [], messages = new Map();
+        const send = async payload => {
+            calls++;
+            if (calls === rejectedAttempt) throw { status: 413 };
+            const id = String(555555555555555550n + BigInt(++counter));
+            const result = { id, channelId, guildId, author: { id: bot }, content: payload.content || '',
+                embeds: payload.embeds || [], components: payload.components || [],
+                attachments: new Map((payload.files || []).map((file, index) => {
+                    const attachment = { id: String(BigInt(id) * 100n + BigInt(index)), name: `photo${index}.jpg`, contentType: 'image/jpeg', url: file };
+                    return [attachment.id, attachment];
+                })) };
+            result.delete = async () => messages.delete(id);
+            messages.set(id, result); accepted.push(result); return result;
+        };
+        const f = await setup(send);
+        try {
+            await applyTestMigration(f.db, '20261113_add_twitter_gallery_locator_index.sql');
+            const urls = Array.from({ length: 20 }, (_, i) => `https://pbs.twimg.com/media/photo${i}.jpg`);
+            const steps = sourceSteps(urls);
+            steps[0].embeds = [{ title: 'fixture', url: 'https://x.com/u/status/1', author: { name: `展開者: requester(id:${owner})` } }];
+            steps[0].components = [{ type: 1, components: [{ type: 2, custom_id: 'delete' }] }];
+            const result = await f.run(planLastDetails(steps, 'a'.repeat(32)));
+            const anchor = accepted.at(-1), row = await f.storage.get(f.saved.at(-1).id, guildId, channelId);
+            assert.equal(result.outcome, 'F');
+            assert.equal(row.message_id, anchor.id);
+            assert.equal(row.payload.partsState, 'complete');
+            assert.deepEqual(row.payload.messageIds, [anchor.id, ...accepted.slice(0, -1).map(item => item.id)]);
+            assert.deepEqual(row.payload.imagePartOrder, accepted.slice(0, -1).map((_, i) => i + 1).concat(0));
+            const channel = { id: channelId, messages: { fetch: async ({ message }) => {
+                if (!messages.has(message)) throw Object.assign(Error('unknown message'), { code: 10008 });
+                return messages.get(message);
+            } } };
+            const interaction = { guildId, channelId, channel, client: { user: { id: bot } }, user: { id: owner }, locale: 'ja',
+                memberPermissions: { has: () => true }, message: anchor, customId: anchor.components[0].components[0].custom_id,
+                editReply: async () => {}, deleteReply: async () => {} };
+            assert.deepEqual(await grid.sourceImageUrls(interaction, row), urls);
+            const handler = require('../../src/components/delete');
+            await cards.withMessageLock(interaction, group => handler.handle(interaction, group), f.db,
+                { action: 'delete', freshAccess: async () => ({ permissions: { has: () => true }, member: { _roles: [] } }),
+                    getSettings: async () => ({ enabled: true }) });
+            assert.equal(messages.size, 0);
+        } finally { await f.db.close(); }
+    }
+});
 function sourceSteps(urls) {
     return [{ files: urls.slice(0, 10), embeds: [{ title: 'fixture' }], send: 'channel', deleteSource: true,
         twitterGrid: { imageUrls: urls.slice(0, 10), sequence: 0, totalParts: 2, embedStart: 0, embedEnd: 1 } },

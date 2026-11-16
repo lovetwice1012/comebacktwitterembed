@@ -776,6 +776,7 @@ const SETTING_SPEC_CATALOG = {
             { label: '1', value: '1' },
             { label: '4', value: '4' },
             { label: '10', value: '10' },
+            { label: '20', value: '20' },
         ],
         parseValue: value => Number(value),
     },
@@ -859,6 +860,7 @@ const gridChoice = (key, en, ja, values) => ({
     choices: values.map(([value, english, japanese]) => ({ value: String(value), label: text(english, japanese) })),
 });
 const TWITTER_GRID_SETTING_SPECS = [
+    gridChoice('twitter_grid_details_position', 'Post details', '投稿本文とボタンの位置', [['last','After the last images','最後の画像と一緒'], ['first','With the first images','最初の画像と一緒']]),
     gridChoice('twitter_grid_default_layout', 'Image layout', '画像の並べ方', [['grid','Grid','グリッド'], ['horizontal','Horizontal','横並び'], ['vertical','Vertical','縦並び']]),
     gridChoice('twitter_grid_columns', 'Grid columns', 'グリッドの列数', [2,3,4,5,6].map(n => [n, `${n} columns`, `${n}列`])),
     gridChoice('twitter_grid_gap', 'Image spacing', '画像の間隔', [0,4,8,16,32].map(n => [n, `${n} px`, `${n} px`])),

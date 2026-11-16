@@ -109,7 +109,7 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "pixiv_r18_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "pixiv_r18g_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "instagram_caption_max_length") return provider.id === "instagram" ? 3000 : undefined;
-  if (key === "instagram_media_limit") return provider.id === "instagram" ? 10 : undefined;
+  if (key === "instagram_media_limit") return provider.id === "instagram" ? 20 : undefined;
   if (key === "tiktok_description_max_length") return provider.id === "tiktok" ? 900 : undefined;
   if (key === "tiktok_video_fallback_mode") return provider.id === "tiktok" ? "video_url" : undefined;
   if (key === "niconico_description_max_length") return provider.id === "niconico" ? 1400 : undefined;

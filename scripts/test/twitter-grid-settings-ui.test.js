@@ -8,7 +8,10 @@ test('the real settings catalog and form do not expose internal X image setting 
     const catalog = loadDashboard('lib/settings-catalog.ts');
     const { settings: specs } = catalog.getProviderCatalog('twitter');
     const gridSpecs = specs.filter(spec => spec.key.startsWith('twitter_grid_'));
-    assert.equal(gridSpecs.length, 9);
+    assert.equal(gridSpecs.length, 10);
+    const position = gridSpecs.find(spec => spec.key === 'twitter_grid_details_position');
+    assert.equal(position.label.ja, '投稿本文とボタンの位置');
+    assert.deepEqual(position.choices.map(choice => choice.value), ['last', 'first']);
     for (const spec of gridSpecs) assert.deepEqual(spec.description, { en: '', ja: '' }, spec.key);
     // A regular setting still retains its existing helpful description.
     const enabled = specs.find(spec => spec.key === 'enabled');

@@ -20,8 +20,10 @@ function addNotice(steps, link, language) {
     const output = steps.map(step => ({ ...step }));
     const first = output.find(step => step.outputRole !== 'failure_notice' && (step.content || step.embeds?.length || step.files?.length));
     if (!first) return output;
-    const content = [first.content, text].filter(Boolean).join('\n');
-    if (content.length <= 2000) first.content = content;
+    const groupId = first.twitterGridLead?.groupId;
+    const target = groupId ? output.find(step => step.twitterGridLastRoot?.groupId === groupId) || first : first;
+    const content = [target.content, text].filter(Boolean).join('\n');
+    if (content.length <= 2000) target.content = content;
     else output.push({ content: text, allowedMentions: { parse: [], repliedUser: false } });
     return output;
 }

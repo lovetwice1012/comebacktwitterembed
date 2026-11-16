@@ -92,7 +92,15 @@ function createAdapters(interaction, galleryId, deps = {}) {
                 const row = { ...lock.row, payload: lock.payload };
                 if (!await grid.sourcesRemainValid(interaction, row, { channel })) return { status: 'unavailable' };
                 if (request.mode === 'resume' && !restore.statusFromPartial(lock.payload, first)) return { status: 'unavailable' };
-                state.lock = lock; state.firstSignature = cards.fingerprint(first); state.snapshot = { payload: lock.payload, first };
+                let snapshotPayload = lock.payload;
+                if (Object.hasOwn(lock.payload, 'imagePartOrder')) {
+                    try {
+                        const imageUrls = require('./twitterGridImageOrder').orderedImageUrls(lock.payload);
+                        const { imagePartOrder: _order, ...remaining } = lock.payload;
+                        snapshotPayload = { ...remaining, imageUrls, expectedImageUrls: imageUrls };
+                    } catch { return { status: 'unavailable' }; }
+                }
+                state.lock = lock; state.firstSignature = cards.fingerprint(first); state.snapshot = { payload: snapshotPayload, first };
                 if (lock.payload.sharedInline) {
                     const inline = require('./twitterGridRestoreInline');
                     const inspect = request.mode === 'resume' ? inline.inspectPartial : inline.inspect;

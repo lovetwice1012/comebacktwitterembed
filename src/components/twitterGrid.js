@@ -195,6 +195,11 @@ async function sourceImageUrls(interaction, row, access) {
         all.push(...cards.resolveReferences(payload.partRefs[i], message, replaced));
     }
     if (all.length !== payload.imageUrls.length) throw new Error('GRID_SOURCE_CHANGED');
+    if (Object.hasOwn(payload, 'imagePartOrder')) {
+        // Resolve and verify each physical message first, then map its images
+        // back to the original post order for private/public composition.
+        return require('../twitterGridImageOrder').orderedGroups(all, payload.partSizes, payload.imagePartOrder);
+    }
     return all;
 }
 function embedWitnessPosition(message, witness) {

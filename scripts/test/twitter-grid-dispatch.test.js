@@ -5,26 +5,152 @@ const { readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const { compileFunction } = require('node:vm');
 
-function fixture(send, grid, media, telemetry, singleAttempt) {
+function fixture(send, grid, media, telemetry, singleAttempt, provider = 'twitter', options = {}) {
     const filename = require.resolve('../../src/providers/_dispatcher'), actual = createRequire(filename), mod = { exports: {} }, post = [];
     const mocks = {
         '../adminSupport/telemetry': telemetry || { event() {}, errorData: v => v, serializable: v => v },
         '../errorTracking': { recordError() {}, recordMetric() {}, recordAnalyticsEvent() {} },
         '../state': { incrementProcessedCounters() {} }, '../settings': { checkComponentIncludesDisabledButtonAndIfFindDeleteIt: async rows => rows },
-        '../sharedPostHistory': { run: (_m, steps, _c, run) => run(steps) }, '../mediaGallery': { prepare: async step => ({ step }), report() {} },
-        '../personalLinks/cards': { prepare: async step => ({ step }) }, '../twitterGridCards': grid,
+        '../sharedPostHistory': { run: (_m, steps, _c, run) => run(steps) }, '../mediaGallery': options.gallery || { prepare: async step => ({ step }), report() {} },
+        '../personalLinks/cards': options.personal || { prepare: async step => ({ step }) }, '../twitterGridCards': grid,
         './twitter/singleAttemptSender': singleAttempt === undefined ? { forMessage: () => ({ send }) } : singleAttempt,
+        './instagram/attachment-preflight': { prepare: async () => null },
+        ...(options.multipart ? { '../instagramMultipart': options.multipart } : {}),
         ...(media ? { './twitter/safeMedia': media } : {}),
     };
     compileFunction(readFileSync(filename, 'utf8'), ['require','module','exports','console'], { filename })(id => mocks[id] || actual(id), mod, mod.exports, { warn() {}, log() {} });
-    const message = { guildId: '3', channelId: '4', channel: { send }, reply: send, delete: async () => post.push('delete'), suppressEmbeds: async () => post.push('suppress') };
-    return { run: steps => mod.exports.runSendSteps(message, steps, 'twitter', {}), post };
+    const message = { guildId: '3', channelId: '4', channel: { send }, reply: send, delete: async () => post.push('delete'), suppressEmbeds: async () => post.push('suppress'), ...options.message };
+    return { run: steps => mod.exports.runSendSteps(message, steps, provider, options.context || {}), post };
 }
 test('dependent image continuation is not sent and source is not cleaned after its parent fails', async () => {
     let calls = 0; const noGrid = { prepare: async step => ({ step }) };
     const f = fixture(async () => { calls++; throw { status: 403, code: 50013 }; }, noGrid);
     const out = await f.run([{ files: ['https://pbs.twimg.com/media/one'], deleteSource: true }, { files: ['https://pbs.twimg.com/media/two'], requiresPreviousSuccess: true }]);
     assert.equal(calls, 1); assert.deepEqual(f.post, []); assert.equal(out.outcome, 'E');
+});
+
+test('Instagram gallery includes all continuation files and falls back to ordered posts if unavailable', async () => {
+    for (const succeeds of [true, false]) {
+        const sent = [], attempts = [], bindings = [];
+        const gallery = { prepare: async step => {
+            attempts.push(step.files.length);
+            if (succeeds) return { step: { ...step, files: [step.files[0]] }, galleryId: 'gallery-id' };
+            return { step };
+        }, store: () => ({ bind: async (...args) => bindings.push(args) }), report() {} };
+        const f = fixture(async payload => { sent.push(payload); return { id: String(sent.length) }; },
+            { prepare: async step => ({ step }) }, null, null, undefined, 'instagram',
+            { gallery, context: { presentationSettings: { gallery_display_mode: 'gallery' } } });
+        const files = Array.from({ length: 20 }, (_, i) => ({ attachment: `https://example.com/${i}.jpg`, name: `${i}.jpg` }));
+        const result = await f.run([{ files: files.slice(0, 10), instagramGalleryParts: 2, deleteSource: true },
+            { files: files.slice(10), send: 'channel', requiresPreviousSuccess: true }]);
+        assert.equal(result.outcome, 'F');
+        if (succeeds) {
+            assert.deepEqual(attempts, [20]);
+            assert.equal(sent.length, 1);
+            assert.deepEqual(bindings, [['gallery-id', '1']]);
+        } else {
+            assert.deepEqual(attempts, [20, 10, 10]);
+            assert.deepEqual(sent.flatMap(message => message.files), files);
+            assert.deepEqual(bindings, []);
+        }
+        assert.deepEqual(f.post, ['delete']);
+    }
+});
+
+test('X final details anchor records confirmed earlier parts, including after a definite 413 split', async () => {
+    const { planLastDetails } = require('../../src/providers/twitter/lastDetailsPlan');
+    for (const rejectedAttempt of [0, 1, 2]) {
+        const sent = [], bound = [], discarded = [], attempts = [];
+        const grid = {
+            prepare: async (step, _message, _context, _storage, following) => {
+                if (!step.twitterGridLastRoot) return { step };
+                assert.deepEqual(step.twitterGridLastRoot.imagePartOrder, following.map((_, i) => i + 1).concat(0));
+                return { step, grids: [{ isPrimary: true, totalParts: following.length + 1, completed: 0 }] };
+            },
+            bind: async (item, message, _storage, _db, part) => { item.completed++; bound.push([message.id, part.imageUrls]); return true; },
+            append: async (item, part, message) => { item.completed++; bound.push([message.id, part.imageUrls]); return true; },
+            finish: async item => ({ state: item.completed === item.totalParts ? 'complete' : 'pending' }),
+            discardUnbound: async grids => discarded.push(grids.length),
+        };
+        let count = 0;
+        const send = async payload => {
+            attempts.push(payload);
+            if (attempts.length === rejectedAttempt) throw { status: 413 };
+            const id = String(++count), receipt = { id, guildId: '3', channelId: '4', author: { id: '5' }, content: '', embeds: [], components: [],
+                attachments: new Map((payload.files || []).map((_, index) => [String(100 + index), { id: String(100 + index) }])) };
+            sent.push(payload); return receipt;
+        };
+        const f = fixture(send, grid, null, null, undefined, 'twitter', { message: { client: { user: { id: '5' } } } });
+        const images = Array.from({ length: 20 }, (_, index) => `https://pbs.twimg.com/media/p${index}.jpg`);
+        const steps = planLastDetails([
+            { files: images.slice(0, 10), embeds: [{ description: 'post' }], components: [{ type: 1, components: [] }], deleteSource: true,
+                twitterGrid: { imageUrls: images.slice(0, 10), sequence: 0, totalParts: 2 } },
+            { files: images.slice(10), send: 'channel', requiresPreviousSuccess: true,
+                twitterGrid: { imageUrls: images.slice(10), sequence: 1, totalParts: 2 } },
+        ], 'a'.repeat(32));
+        const result = await f.run(steps);
+        assert.equal(result.outcome, 'F');
+        assert.deepEqual(sent.flatMap(item => item.files), images);
+        assert.ok(sent.slice(0, -1).every(item => !item.embeds && !item.components));
+        assert.equal(sent.at(-1).embeds[0].description, 'post');
+        assert.equal(bound[0][0], String(sent.length));
+        assert.deepEqual(bound.slice(1).flatMap(item => item[1]), images.slice(0, rejectedAttempt === 2 ? 15 : 10));
+        assert.deepEqual(discarded, rejectedAttempt === 2 ? [1] : []);
+        assert.deepEqual(f.post, ['delete']);
+    }
+});
+
+test('personal controls are attached once to the main X post, not a split quote', async () => {
+    const { planLastDetails } = require('../../src/providers/twitter/lastDetailsPlan');
+    const calls = []; let nextId = 10;
+    const grid = { prepare: async step => ({ step }) };
+    const send = async payload => ({ id: String(nextId++), guildId: '3', channelId: '4', author: { id: '5' },
+        content: '', embeds: payload.embeds || [], components: payload.components || [],
+        attachments: new Map((payload.files || []).map((_, i) => [String(i + 100), { id: String(i + 100) }])) });
+    const personal = { prepare: async step => { calls.push(step.embeds?.[0]?.title || 'no-title'); return { step }; } };
+    const f = fixture(send, grid, null, null, undefined, 'twitter', { personal, message: { client: { user: { id: '5' } } } });
+    function group(id, title) {
+        return planLastDetails([{ files: ['first'], embeds: [{ title }], twitterGrid: { imageUrls: ['first'], sequence: 0, totalParts: 2 } },
+            { files: ['last'], send: 'channel', requiresPreviousSuccess: true, twitterGrid: { imageUrls: ['last'], sequence: 1, totalParts: 2 } }], id);
+    }
+    await f.run([...group('a'.repeat(32), 'main'), ...group('b'.repeat(32), 'quote')]);
+    assert.deepEqual(calls, ['main']);
+});
+
+test('Instagram multipart delivery keeps the source after a failed first or last part', async () => {
+    for (const failAt of [1, 2]) {
+        let calls = 0;
+        const f = fixture(async () => {
+            calls++;
+            if (calls === failAt) throw { status: 403, code: 50013 };
+            return { id: String(calls) };
+        }, { prepare: async step => ({ step }) }, null, null, undefined, 'instagram');
+        const out = await f.run([{ files: [{ attachment: 'https://example.com/1.jpg', name: '1.jpg' }], deleteSource: true },
+            { files: [{ attachment: 'https://example.com/2.jpg', name: '2.jpg' }], send: 'channel', requiresPreviousSuccess: true }]);
+        assert.equal(calls, failAt);
+        assert.deepEqual(f.post, []);
+        assert.notEqual(out.outcome, 'F');
+    }
+});
+
+test('Instagram rejected first upload removes the unbound delete control and retains the source', async () => {
+    let attempts = 0, recorded = 0;
+    const sent = [], group = { id: 'a'.repeat(32) };
+    const multipart = { prepare: async step => step.instagramGalleryParts ? { step, group } : { step },
+        record: async () => { recorded++; return true; } };
+    const f = fixture(async payload => {
+        attempts++;
+        if (attempts === 1) throw { status: 413 };
+        sent.push(payload); return { id: String(attempts) };
+    }, { prepare: async step => ({ step }) }, null, null, undefined, 'instagram', { multipart });
+    const result = await f.run([{ files: [{ attachment: 'https://example.com/1.jpg', name: '1.jpg' }],
+        instagramGalleryParts: 2, embeds: [{ title: 'Post' }], deleteSource: true,
+        components: [{ type: 1, components: [{ type: 2, custom_id: `delete:ig1:${group.id}` }] }] },
+    { files: [{ attachment: 'https://example.com/2.jpg', name: '2.jpg' }], send: 'channel', requiresPreviousSuccess: true }]);
+    assert.equal(result.fallback, true);
+    assert.equal(sent[0].components.length, 0);
+    assert.equal(recorded, 0);
+    assert.deepEqual(f.post, []);
 });
 function mockMedia(fetch) {
     return { MAX_MEDIA_BYTES: 25 * 1024 * 1024, validateTwitterMediaUrl: url => {

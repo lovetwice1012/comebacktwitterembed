@@ -23,6 +23,18 @@ test('a combined marker and its own verified embed identify an existing X post',
     assert.deepEqual(restore.verifySource(restore.statusFromCombined(f.payload, f.message), f.payload, f.tweet), f.payload.imageUrls);
 });
 
+test('source verification uses display order even if the final message is the gallery anchor', () => {
+    const f = fixture(3);
+    const [first, second, third] = f.payload.imageUrls;
+    f.payload.imageUrls = [third, first, second];
+    f.payload.partSizes = [1, 2];
+    f.payload.imagePartOrder = [1, 0];
+    const status = restore.statusFromCombined(f.payload, f.message);
+    assert.deepEqual(restore.verifySource(status, f.payload, f.tweet), [first, second, third]);
+    f.payload.imagePartOrder = [0, 0];
+    assert.equal(restore.verifySource(status, f.payload, f.tweet), null);
+});
+
 test('a Discord-hidden embedded marker identifies the source only for its exact channel and gallery', () => {
     const f = fixture();
     f.message.attachments.clear();
@@ -280,6 +292,23 @@ test('confirmed partial restoration records only visible images while retaining 
     assert.throws(() => restore.restoredManifest(f.payload, operationId, 'first', [message], [image(99), ...f.payload.imageUrls.slice(1)], postId), /GRID_RESTORE_RECORD/);
     assert.throws(() => restore.restoredManifest(f.payload, operationId, 'first', [{ ...message, attachments: new Map() }], f.payload.imageUrls, postId), /GRID_RESTORE_RECORD/);
     assert.throws(() => restore.restoredManifest({ ...f.payload, sourceStatusId: '9' }, operationId, 'first', [message], f.payload.imageUrls, postId), /GRID_RESTORE_RECORD/);
+});
+
+test('restoring a last-message anchor writes a normal ordered manifest', () => {
+    const f = fixture(3), operationId = 'b'.repeat(32), firstId = '555555555555555555';
+    const original = [...f.payload.imageUrls];
+    f.payload.imageUrls = [original[2], original[0], original[1]];
+    f.payload.imagePartOrder = [1, 0];
+    f.payload.partSizes = [1, 2];
+    f.payload.messageIds = [firstId, '666666666666666666'];
+    const files = new Map(original.map((_, index) => [String(1000 + index), {
+        id: String(1000 + index), name: `restore-${operationId}-${index}.jpg`, contentType: 'image/jpeg',
+    }]));
+    const message = { id: firstId, content: 'post', embeds: [{ title: 'post' }], components: [], attachments: files };
+    const result = restore.restoredManifest(f.payload, operationId, 'here', [message], original, postId);
+    assert.deepEqual(result.imageUrls, original);
+    assert.equal(Object.hasOwn(result, 'imagePartOrder'), false);
+    assert.deepEqual(result.partSizes, [3]);
 });
 
 test('a recombined ten-image generation restores those ten while keeping the earlier thirteen-image archive', () => {

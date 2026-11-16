@@ -8,7 +8,7 @@ const {
     resolveDisplayDensity,
     shouldShowOutputItem,
 } = require('../_output_controls');
-const { EMBED_COLOR, MAX_MEDIA_PER_MESSAGE, DESCRIPTION_MAX_LENGTH, CAPTION_MAX_LENGTH } = require('./constants');
+const { EMBED_COLOR, MAX_MEDIA_PER_POST, DESCRIPTION_MAX_LENGTH, CAPTION_MAX_LENGTH } = require('./constants');
 
 const STR = {
     requesterPrefix:              { ja: '\u5c55\u958b\u8005: ', en: 'Requested by ' },
@@ -93,18 +93,18 @@ function resolveCaptionMaxLength(value, settings = {}) {
 
 function resolveMediaLimit(value, settings = {}) {
     const n = Number(value);
-    if (n === 1 || n === 4) return n;
+    if (n === 1 || n === 4 || n === 10 || n === 20) return n;
     if (resolveDisplayDensity(settings) === 'compact') return 1;
-    return MAX_MEDIA_PER_MESSAGE;
+    return MAX_MEDIA_PER_POST;
 }
 
-function selectMedias(medias, mediaIndex, limit = MAX_MEDIA_PER_MESSAGE) {
+function selectMedias(medias, mediaIndex, limit = MAX_MEDIA_PER_POST) {
     if (!Array.isArray(medias) || medias.length === 0) return [];
     if (mediaIndex && mediaIndex > 0) {
         const index = Math.min(mediaIndex, medias.length) - 1;
         return [medias[index]];
     }
-    return medias.slice(0, Math.max(1, Math.min(MAX_MEDIA_PER_MESSAGE, limit)));
+    return medias.slice(0, Math.max(1, Math.min(MAX_MEDIA_PER_POST, limit)));
 }
 
 function displayRange(total, selectedCount, mediaIndex) {

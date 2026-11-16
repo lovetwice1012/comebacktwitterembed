@@ -88,12 +88,59 @@ function manyImages(count) {
     return Array.from({ length: count }, (_, index) => `https://pbs.twimg.com/media/image-${index + 1}.jpg`);
 }
 
+test('twitter extract: split post details default to the final attachment message and can remain first', async () => {
+    for (const count of [10, 11, 20]) {
+        const images = manyImages(count);
+        const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: images }) });
+        const url = 'https://twitter.com/a/status/1';
+        const result = await provider.extract(createMessage(), url, { legacy_mode: true });
+        assert.deepEqual(result.flatMap(step => step.files || []), images);
+        assert.match(result.at(-1).embeds[0].description, /tweet 1/);
+        if (count > 10) {
+            assert.equal(result[0].embeds, undefined);
+            assert.equal(result[0].components, undefined);
+            assert.ok(result[0].twitterGridLead);
+            assert.ok(result.at(-1).twitterGridLastRoot);
+            assert.equal(result.at(-1).requiresPreviousSuccess, true);
+            const first = await provider.extract(createMessage(), url, { legacy_mode: true, twitter_grid_details_position: 'first' });
+            assert.match(first[0].embeds[0].description, /tweet 1/);
+            assert.equal(first.at(-1).embeds, undefined);
+        }
+    }
+});
+
+test('twitter extract: final details retain quote context, inline summaries and mixed media', async () => {
+    const images = manyImages(11);
+    const video = 'https://video.twimg.com/ext_tw_video/123/1.mp4';
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: [video, ...images], qrtURL: 'https://twitter.com/a/status/2' }),
+        2: createTweet('2'),
+        3: createTweet('3', { qrtURL: 'https://twitter.com/a/status/4' }),
+        4: createTweet('4', { mediaURLs: images }),
+    });
+    const summary = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true, twitter_quote_mode: 'summary', twitter_quote_layout: 'inline', quote_repost_do_not_extract: false,
+    });
+    assert.deepEqual(summary.flatMap(step => step.files || []), [video, ...images]);
+    assert.equal(summary[0].embeds, undefined);
+    assert.equal(summary.at(-1).twitterGridSharedInline, true);
+    assert.match(summary.at(-1).embeds[1].title, /^Quoted tweet:/);
+    const quote = await provider.extract(createMessage('3'), 'https://twitter.com/a/status/3', {
+        legacy_mode: true, defaultLanguage: 'ja', quote_repost_do_not_extract: false,
+    });
+    assert.equal(quote.length, 3);
+    assert.equal(quote[1].send, 'reply-previous');
+    assert.equal(quote[1].content, undefined);
+    assert.equal(quote[2].content, '引用ツイート:');
+    assert.match(quote[2].embeds[0].description, /tweet 4/);
+});
+
 test('twitter extract: 10, 11 and 20 photos remain ordered in consecutive Discord-sized messages', async () => {
     for (const count of [10, 11, 20]) {
         const images = manyImages(count);
         const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: images }) });
         const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
-            legacy_mode: true, alwaysreplyifpostedtweetlink: true,
+            legacy_mode: true, alwaysreplyifpostedtweetlink: true, twitter_grid_details_position: 'first',
         });
         assert.equal(steps.length, Math.ceil(count / 10));
         assert.deepEqual(steps.flatMap(step => step.files || []), images);
@@ -120,7 +167,7 @@ test('twitter extract: attachment display also splits all images without duplica
     const images = manyImages(20);
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: images }) });
     const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
-        legacy_mode: true, media_display_mode: 'attachment',
+        legacy_mode: true, media_display_mode: 'attachment', twitter_grid_details_position: 'first',
     });
     assert.equal(steps.length, 2);
     assert.deepEqual(steps.map(step => step.files.length), [10, 10]);
@@ -186,7 +233,7 @@ test('twitter extract: grid metadata follows visible image parts and excludes vi
     const images = manyImages(2);
     const media = [...video, ...images];
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: media }) });
-    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
+    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true, twitter_grid_details_position: 'first' });
     assert.deepEqual(steps.map(step => step.files.length), [10, 1]);
     assert.deepEqual(steps[0].twitterGrid.imageUrls, [images[0]]);
     assert.deepEqual(steps[1].twitterGrid.imageUrls, [images[1]]);
@@ -220,7 +267,7 @@ test('twitter extract: a video-only first part and later photos remain one physi
     const video = Array.from({ length: 10 }, (_, index) => `https://video.twimg.com/ext_tw_video/${index}/clip.mp4`);
     const images = manyImages(2);
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: [...video, ...images] }) });
-    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
+    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true, twitter_grid_details_position: 'first' });
     assert.deepEqual(steps[0].twitterGrid, { imageUrls: [], sequence: 0, totalParts: 2, embedStart: 0, embedEnd: 1 });
     assert.deepEqual(steps[1].twitterGrid, { imageUrls: images, sequence: 1, totalParts: 2 });
     assert.deepEqual(steps.flatMap(step => step.files), [...video, ...images]);
@@ -247,7 +294,7 @@ test('twitter extract: a quoted post has its own ordered image parts after the p
         2: createTweet('2', { mediaURLs: images }),
     });
     const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
-        legacy_mode: true, defaultLanguage: 'ja', quote_repost_do_not_extract: false, twitter_quote_layout: 'inline',
+        legacy_mode: true, defaultLanguage: 'ja', quote_repost_do_not_extract: false, twitter_quote_layout: 'inline', twitter_grid_details_position: 'first',
     });
     assert.equal(steps.length, 3);
     assert.equal(steps[1].send, 'reply-previous');
@@ -566,7 +613,7 @@ test('twitter extract: inline summary stays marked as shared content after image
         2: createTweet('2'),
     });
     const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
-        legacy_mode: true, twitter_quote_mode: 'summary', twitter_quote_layout: 'inline', quote_repost_do_not_extract: false,
+        legacy_mode: true, twitter_quote_mode: 'summary', twitter_quote_layout: 'inline', quote_repost_do_not_extract: false, twitter_grid_details_position: 'first',
     });
     assert.equal(steps.length, 2);
     assert.equal(steps[0].twitterGrid.embedEnd, 1);
@@ -577,7 +624,7 @@ test('twitter extract: inline summary stays marked as shared content after image
 test('twitter extract: a video-only continuation remains part of the physical group', async () => {
     const images = manyImages(9), videos = ['https://video.twimg.com/ext_tw_video/123/1.mp4', 'https://video.twimg.com/ext_tw_video/123/2.mp4'];
     const provider = loadTwitterProviderWithTweets({ 1: createTweet('1', { mediaURLs: [...images, ...videos] }) });
-    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true });
+    const steps = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', { legacy_mode: true, twitter_grid_details_position: 'first' });
     assert.equal(steps.length, 2);
     assert.deepEqual(steps[0].twitterGrid.imageUrls, images);
     assert.deepEqual(steps[1].twitterGrid, { imageUrls: [], sequence: 1, totalParts: 2 });
