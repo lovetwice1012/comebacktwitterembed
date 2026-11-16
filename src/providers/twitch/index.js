@@ -313,6 +313,14 @@ async function fetchClipInfo(slug) {
         const firstError = data?.[0]?.errors?.[0]?.message || 'missing clip metadata';
         throw new Error(`twitch gql: ${firstError}`);
     }
+    if (typeof metadataClip.slug !== 'string' || metadataClip.slug !== slug || data?.[0]?.errors?.length)
+        throw new Error('twitch gql: incomplete or mismatched clip metadata');
+    if (accessClip?.id != null && metadataClip.id != null && accessClip.id !== metadataClip.id)
+        throw new Error('twitch gql: mismatched clip access metadata');
+    let accessToken;
+    try { accessToken = JSON.parse(accessClip?.playbackAccessToken?.value); } catch { /* Opaque tokens retain the existing fallback. */ }
+    if (accessToken && typeof accessToken === 'object' && Object.hasOwn(accessToken, 'clip_slug') && accessToken.clip_slug !== slug)
+        throw new Error('twitch gql: mismatched clip access metadata');
 
     return {
         ...metadataClip,
@@ -340,6 +348,10 @@ async function fetchChannelInfo(login) {
         const firstError = data?.errors?.[0]?.message || 'missing channel metadata';
         throw new Error(`twitch gql: ${firstError}`);
     }
+    if (typeof user.id !== 'string' || !user.id.trim() || typeof user.login !== 'string' || user.login.toLowerCase() !== login.toLowerCase()
+        || user.stream === undefined || user.stream !== null && (typeof user.stream !== 'object' || Array.isArray(user.stream)
+            || typeof user.stream.id !== 'string' || !user.stream.id.trim()) || data?.errors?.length)
+        throw new Error('twitch gql: incomplete or mismatched channel metadata');
     return user;
 }
 

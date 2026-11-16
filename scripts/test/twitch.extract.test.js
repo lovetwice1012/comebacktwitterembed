@@ -175,6 +175,23 @@ test('twitch urlPattern matches clips, channel clip, and channel urls', () => {
     assert.ok(matches.includes('https://m.twitch.tv/killin9hit'));
 });
 
+test('twitch never presents another channel or clip as the requested resource', async () => {
+    const cases = [
+        ['https://www.twitch.tv/killin9hit', createChannelGqlResponse({ login: 'other' })],
+        ['https://www.twitch.tv/killin9hit', createChannelGqlResponse({ stream: undefined })],
+        ['https://www.twitch.tv/killin9hit', createChannelGqlResponse({ stream: false })],
+        ['https://www.twitch.tv/killin9hit', createChannelGqlResponse({ stream: {} })],
+        ['https://clips.twitch.tv/SampleClip-abc_123', (() => { const data = createGqlResponse(); data[0].data.clip.slug = 'OtherClip'; return data; })()],
+        ['https://clips.twitch.tv/SampleClip-abc_123', (() => { const data = createGqlResponse(); data[1].data.clip.playbackAccessToken.value = '{"clip_slug":"OtherClip"}'; return data; })()],
+    ];
+    for (const [url, body] of cases) {
+        const provider = loadTwitchProviderWithFetch(async () => ({ ok: true, json: async () => body }));
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].content, 'Please check the original link.');
+        assert.equal(result[0].embeds, undefined);
+    }
+});
+
 test('twitch extract: uploads clip video as a bot attachment without oauth env', async () => {
     const calls = [];
     const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls, {
