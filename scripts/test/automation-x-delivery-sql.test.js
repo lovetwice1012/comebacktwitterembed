@@ -89,7 +89,7 @@ function independentTransactionAdapter(db, hooks = {}) {
     if (port !== 33621 || !/^cbte_automation_test_[0-9a-f]{20}$/.test(db.schema)) throw new Error('Independent transaction fixture requires disposable loopback schema');
     const pool = require('mysql').createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '',
         database: db.schema, connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
-    const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+    const acquire = () => require('../lib/automation-test-db').acquireTestConnection(pool, port);
     const queryOn = connection => (sql, args = []) => new Promise((resolve, reject) => connection.query(sql, args, (error, rows) => error ? reject(error) : resolve(rows)));
     return { ...db, queryDatabase: async (sql, args) => { const connection = await acquire(); try { await hooks.before?.(sql, args); const rows = await queryOn(connection)(sql, args); await hooks.after?.(sql, args); return rows; } finally { connection.release(); } },
         withDatabaseTransaction: async work => {

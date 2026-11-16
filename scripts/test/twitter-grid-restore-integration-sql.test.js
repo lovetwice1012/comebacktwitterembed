@@ -12,7 +12,7 @@ if (![33621, 33622].includes(port)) throw Error('An explicit isolated test datab
 async function fixture() {
     const db = await createTestDatabase(port), pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root',
         password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', database: db.schema, connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
-    db.queryDatabaseIndependent = (sql, params = []) => new Promise((resolve, reject) => pool.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
+    db.queryDatabaseIndependent = (sql, params = []) => require('../lib/automation-test-db').queryTestPool(pool, port, sql, params);
     const galleryId = 'a'.repeat(32), botId = '111111111111111111', channelId = '222222222222222222', guildId = '333333333333333333';
     const messageId = '444444444444444444', continuationId = '555555555555555555', markerId = '666666666666666666', statusId = '1234567890123456789';
     const urls = Array.from({ length: 13 }, (_, n) => `https://pbs.twimg.com/media/P${n}?format=jpg`);

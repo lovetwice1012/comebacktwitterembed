@@ -170,9 +170,9 @@ test('a separate process waits on the shared MariaDB gallery row lock', { timeou
             const pool = mysql.createPool({host:'127.0.0.1',port:Number(process.env.TEST_PORT),user:'root',
                 password:process.env.AUTOMATION_TEST_DB_PASSWORD || '',database:process.env.TEST_SCHEMA,connectionLimit:3});
             const on = connection => (sql, values=[]) => new Promise((resolve,reject) => connection.query(sql,values,(err,rows) => err ? reject(err) : resolve(rows)));
-            const db = { queryDatabaseIndependent: (sql,values=[]) => new Promise((resolve,reject) => pool.query(sql,values,(err,rows) => err ? reject(err) : resolve(rows))),
+            const db = { queryDatabaseIndependent: (sql,values=[]) => require('./scripts/lib/automation-test-db').queryTestPool(pool, Number(process.env.TEST_PORT), sql, values),
                 withDatabaseTransaction: async work => {
-                    const c = await new Promise((resolve,reject) => pool.getConnection((err,connection) => err ? reject(err) : resolve(connection)));
+                    const c = await require('./scripts/lib/automation-test-db').acquireTestConnection(pool, Number(process.env.TEST_PORT));
                     const query = on(c);
                     try { await query('START TRANSACTION'); const value = await work(query); await query('COMMIT'); return value; }
                     catch (error) { await query('ROLLBACK'); throw error; } finally { c.release(); }
@@ -211,8 +211,8 @@ test('separate processes reconcile the same deleted group without an extra Disco
             const mysql=require('mysql'), cleanup=require('./src/twitterGridDeletedCleanup')._internal;
             const pool=mysql.createPool({host:'127.0.0.1',port:Number(process.env.TEST_PORT),user:'root',password:process.env.AUTOMATION_TEST_DB_PASSWORD || '',database:process.env.TEST_SCHEMA,connectionLimit:3});
             const on=c=>(sql,values=[])=>new Promise((resolve,reject)=>c.query(sql,values,(error,rows)=>error?reject(error):resolve(rows)));
-            const db={queryDatabaseIndependent:(sql,values=[])=>new Promise((resolve,reject)=>pool.query(sql,values,(error,rows)=>error?reject(error):resolve(rows))),
-                withDatabaseTransaction:async work=>{ const c=await new Promise((resolve,reject)=>pool.getConnection((error,conn)=>error?reject(error):resolve(conn))); const query=on(c);
+            const db={queryDatabaseIndependent:(sql,values=[])=>require('./scripts/lib/automation-test-db').queryTestPool(pool, Number(process.env.TEST_PORT), sql, values),
+                withDatabaseTransaction:async work=>{ const c=await require('./scripts/lib/automation-test-db').acquireTestConnection(pool, Number(process.env.TEST_PORT)); const query=on(c);
                     try {await query('START TRANSACTION');const result=await work(query);await query('COMMIT');return result;}
                     catch(error){await query('ROLLBACK');throw error;}finally{c.release();} }};
             const entry=JSON.parse(process.env.TEST_ENTRY);

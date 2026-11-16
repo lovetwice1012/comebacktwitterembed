@@ -33,7 +33,7 @@ function steps(op, sizes, messages, { plannedLast = false, type = 'edit', base =
 async function fixture() {
     const db = await createTestDatabase(port);
     const pool = mysql.createPool({ host:'127.0.0.1', port, user:'root', password:process.env.AUTOMATION_TEST_DB_PASSWORD || '', database: db.schema, connectionLimit: 2 });
-    db.withIndependentTransaction = async work => { const c = await new Promise((resolve, reject) => pool.getConnection((e, value) => e ? reject(e) : resolve(value))); const query = (sql, params=[]) => new Promise((resolve, reject) => c.query(sql, params, (e, value) => e ? reject(e) : resolve(value))); try { await query('START TRANSACTION'); const value = await work(query); await query('COMMIT'); return value; } catch (e) { await query('ROLLBACK'); throw e; } finally { c.release(); } };
+    db.withIndependentTransaction = async work => { const c = await require('../lib/automation-test-db').acquireTestConnection(pool, port); const query = (sql, params=[]) => new Promise((resolve, reject) => c.query(sql, params, (e, value) => e ? reject(e) : resolve(value))); try { await query('START TRANSACTION'); const value = await work(query); await query('COMMIT'); return value; } catch (e) { await query('ROLLBACK'); throw e; } finally { c.release(); } };
     const close = db.close.bind(db); db.close = async () => { await new Promise(resolve => pool.end(resolve)); await close(); };
     const migration = fs.readFileSync(path.join(schema.MIGRATIONS_DIR, '20260922_add_link_presentation.sql'), 'utf8');
     await db.queryDatabase(schema._internal.splitSqlStatements(migration).find(sql => /CREATE TABLE IF NOT EXISTS bot_media_galleries/.test(sql)));

@@ -3,7 +3,7 @@
 // isolated Node test process; no socket or database server is used.
 const test = require('node:test'), assert = require('node:assert/strict');
 const mysql = require('mysql');
-const { createTestDatabase } = require('../lib/automation-test-db');
+const { createTestDatabase, queryTestPool } = require('../lib/automation-test-db');
 const port = 33621;
 const timeout = () => Object.assign(new Error('fixture connect timeout'), { code: 'ETIMEDOUT', syscall: 'connect', address: '127.0.0.1', port });
 function transport(failures = []) {
@@ -137,5 +137,21 @@ test('independent query never retries an error after SQL admission', async () =>
         await assert.rejects(db.queryDatabaseIndependent('TEST INDEPENDENT'), actual => actual === error);
         assert.equal(fixture.counts().acquireCount, before + 1);
         assert.equal(fixture.sql.filter(sql => sql === 'TEST INDEPENDENT').length, 1);
+    } finally { fixture.failStatement(null); await db.close(); }
+});
+
+test('standalone fixture query retries connection admission but never replays SQL', async () => {
+    const failures = [], fixture = transport(failures), db = await fixture.create();
+    try {
+        const before = fixture.counts().acquireCount;
+        failures.push(timeout());
+        await queryTestPool(fixture.pool, port, 'STANDALONE QUERY');
+        assert.equal(fixture.counts().acquireCount, before + 2);
+        assert.equal(fixture.sql.filter(sql => sql === 'STANDALONE QUERY').length, 1);
+        const error = timeout();
+        fixture.failStatement(sql => sql === 'FAIL QUERY' ? error : null);
+        await assert.rejects(queryTestPool(fixture.pool, port, 'FAIL QUERY'), actual => actual === error);
+        assert.equal(fixture.sql.filter(sql => sql === 'FAIL QUERY').length, 1);
+        assert.equal(fixture.connections.at(-1).releases, 1);
     } finally { fixture.failStatement(null); await db.close(); }
 });

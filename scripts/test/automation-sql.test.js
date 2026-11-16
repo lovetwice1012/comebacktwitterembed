@@ -21,7 +21,7 @@ test('real SQL: management, immutable revisions, durable handoff, aggregation, r
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 8, supportBigNumbers: true, bigNumberStrings: true });
     const schema = `cbte_automation_test_${randomBytes(10).toString('hex')}`;
     const queryOn = connection => (sql, params = []) => new Promise((resolve, reject) => connection.query(sql, params, (err, result) => err ? reject(err) : resolve(result)));
-    const acquire = () => new Promise((resolve, reject) => pool.getConnection((err, c) => err ? reject(err) : resolve(c)));
+    const acquire = () => require('../lib/automation-test-db').acquireTestConnection(pool, port);
     const close = () => new Promise((resolve, reject) => pool.end(err => err ? reject(err) : resolve()));
     const context = new AsyncLocalStorage();
     let created = false;

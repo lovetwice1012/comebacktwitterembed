@@ -3,33 +3,39 @@
 const mysql = require('mysql');
 const { randomBytes } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
+async function acquireTestConnection(source, port) {
+    if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === 3306) throw new Error('Set an explicit non-production AUTOMATION_TEST_DB_PORT');
+    for (let attempt = 1; ; attempt++) {
+        let suppliedConnection = false;
+        try {
+            return await new Promise((resolve, reject) => source.getConnection((error, connection) => {
+                suppliedConnection = connection != null;
+                if (error) reject(error); else resolve(connection);
+            }));
+        } catch (error) {
+            // Never retry an admitted connection, handshake, SQL or transaction.
+            const connectOnly = error && typeof error === 'object' && !suppliedConnection
+                && error.code === 'ETIMEDOUT' && error.syscall === 'connect'
+                && error.address === '127.0.0.1' && error.port === port
+                && !('sql' in error) && !('sqlState' in error);
+            if (!connectOnly || attempt >= 3) throw error;
+            process.stderr.write(JSON.stringify({ code: 'AUTOMATION_TEST_DB_CONNECT_RETRY', attempt: attempt + 1, port }) + '\n');
+            await new Promise(resolve => setTimeout(resolve, attempt * 50));
+        }
+    }
+}
+async function queryTestPool(source, port, sql, params = []) {
+    const connection = await acquireTestConnection(source, port);
+    try { return await new Promise((resolve, reject) => connection.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows))); }
+    finally { connection.release(); }
+}
 async function createTestDatabase(port) {
     if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === 3306) throw new Error('Set an explicit non-production AUTOMATION_TEST_DB_PORT');
     const schema = `cbte_automation_test_${randomBytes(10).toString('hex')}`;
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 8, supportBigNumbers: true, bigNumberStrings: true });
     const intentPool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
     const context = new AsyncLocalStorage();
-    const acquire = async (source = pool) => {
-        for (let attempt = 1; ; attempt++) {
-            let suppliedConnection = false;
-            try {
-                return await new Promise((resolve, reject) => source.getConnection((error, connection) => {
-                    suppliedConnection = connection != null;
-                    if (error) reject(error); else resolve(connection);
-                }));
-            } catch (error) {
-                // Only a proven TCP connect failure before pool admission is
-                // safe to repeat. Never replay a handshake, SQL or transaction.
-                const connectOnly = error && typeof error === 'object' && !suppliedConnection
-                    && error.code === 'ETIMEDOUT' && error.syscall === 'connect'
-                    && error.address === '127.0.0.1' && error.port === port
-                    && !('sql' in error) && !('sqlState' in error);
-                if (!connectOnly || attempt >= 3) throw error;
-                process.stderr.write(JSON.stringify({ code: 'AUTOMATION_TEST_DB_CONNECT_RETRY', attempt: attempt + 1, port }) + '\n');
-                await new Promise(resolve => setTimeout(resolve, attempt * 50));
-            }
-        }
-    };
+    const acquire = (source = pool) => acquireTestConnection(source, port);
     const queryOn = c => (sql, params = []) => new Promise((resolve, reject) => c.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
     let admin;
     try { admin = await acquire(); }
@@ -94,4 +100,4 @@ async function applyTestMigration(db, filename) {
     await db.queryDatabase(tracking);
     await schema._internal.applyMigrationFile(db.queryDatabase, filename);
 }
-module.exports = { createTestDatabase, grantTestDonor, applyTestMigration };
+module.exports = { acquireTestConnection, queryTestPool, createTestDatabase, grantTestDonor, applyTestMigration };

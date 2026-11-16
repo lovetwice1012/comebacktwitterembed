@@ -11,7 +11,7 @@ test('restore intents remain committed across manifest rollback and fence late c
     const database = await createTestDatabase(port);
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '',
         database: database.schema, connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
-    database.queryDatabaseIndependent = (sql, params = []) => new Promise((resolve, reject) => pool.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
+    database.queryDatabaseIndependent = (sql, params = []) => require('../lib/automation-test-db').queryTestPool(pool, port, sql, params);
     try {
         await database.queryDatabase(`CREATE TABLE IF NOT EXISTS bot_twitter_grid_action_intents (
             gallery_id CHAR(32) PRIMARY KEY,guild_id VARCHAR(22),channel_id VARCHAR(22),message_id VARCHAR(22),
