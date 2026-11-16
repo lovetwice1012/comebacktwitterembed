@@ -64,8 +64,9 @@ function explicitPrefix(pattern, path) {
     return true;
 }
 
-function createJsonProjector(paths, budget = createBudget()) {
+function createJsonProjector(paths, budget = createBudget(), options = {}) {
     const patterns = (paths || []).map(path => Array.isArray(path) ? path : String(path).split('.'));
+    const emptyOnlyArrays = (options.emptyOnlyArrays || []).map(path => Array.isArray(path) ? path : String(path).split('.'));
     const stream = parser({ packKeys: false, packStrings: false, packNumbers: false,
         streamKeys: true, streamStrings: true, streamNumbers: true });
     const frames = [];
@@ -107,11 +108,15 @@ function createJsonProjector(paths, budget = createBudget()) {
         else { budget.add(key, 0); output[key] = value; }
     };
     const consume = token => {
+        const parentFrame = frames.at(-1);
+        if (parentFrame?.emptyOnly && ['startObject', 'startArray', 'startString', 'startNumber', 'nullValue', 'trueValue', 'falseValue'].includes(token.name))
+            throw Object.assign(new Error('The provider returned an invalid non-empty index array.'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
         switch (token.name) {
         case 'startObject': case 'startArray': {
             if (frames.length >= MAX_DEPTH) throw pressure();
             const path = pathNow(), parent = frames.at(-1);
             const frame = { path, array: token.name === 'startArray', index: 0, key: null,
+                emptyOnly: token.name === 'startArray' && emptyOnlyArrays.some(pattern => matches(pattern, path)),
                 whole: !!parent?.whole || selected(path), output: undefined };
             frames.push(frame);
             if (safePath(path) && (!path.length || frame.whole || prefix(path))) ensure(frame);
@@ -164,8 +169,8 @@ function createJsonProjector(paths, budget = createBudget()) {
     };
 }
 
-async function readJsonProjection(response, paths) {
-    const projection = createJsonProjector(paths);
+async function readJsonProjection(response, paths, options = {}) {
+    const projection = createJsonProjector(paths, undefined, options);
     try {
         for await (const text of responseChunks(response)) await projection.write(text);
         return await projection.end();

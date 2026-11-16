@@ -138,6 +138,30 @@ test('a partial GitHub response cannot advance its checkpoint and a repaired res
     assert.equal(store.calls.create[0][0].contentId, 'new');
 });
 
+test('a partial Pixiv index cannot advance its checkpoint and a repaired index is admitted', async () => {
+    const cursor = JSON.stringify({ seenContentIds: ['100'], admissionVersion: 1 });
+    const item = source({ provider_id: 'pixiv', source_key: '123', initialized_at_ms: 1, cursor_json: cursor, etag: 'old-etag' });
+    const store = baseStore([item]); let healthy = false, failure;
+    store.failSource = async (_source, value) => { failure = value; };
+    const fetchSource = require('../../src/providers/autoWatch').fetchSource;
+    const run = () => tick({ now: 1000000, store, fetchSource: request => fetchSource(request, { config: { enableGuestCrawls: true }, fetch: async () => ({
+        ok: true, status: 200, headers: { get: name => name.toLowerCase() === 'etag' ? 'new-etag' : null },
+        body: require('node:stream').Readable.from([Buffer.from(JSON.stringify({ error: false,
+            body: { illusts: healthy ? { 101: null } : null, manga: [] } }))]),
+    }) }) });
+    const failed = await run();
+    assert.equal(failed.sources[0].errorCode, 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE');
+    assert.equal(failure.error.code, 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE');
+    assert.equal(store.calls.complete.length, 0);
+    assert.equal(store.calls.create.length, 0);
+    assert.equal(item.etag, 'old-etag');
+    healthy = true;
+    const recovered = await run();
+    assert.equal(recovered.sources[0].newItemCount, 1);
+    assert.equal(store.calls.complete[0].etag, 'new-etag');
+    assert.equal(store.calls.create[0][0].contentId, '101');
+});
+
 test('unreadable source state cannot silently reset a monitoring baseline', async () => {
     const { fetchSource } = require('../../src/providers/autoWatch');
     const { parseState } = require('../../src/providers/autoWatch/_shared');

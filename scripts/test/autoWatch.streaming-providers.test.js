@@ -69,6 +69,18 @@ test('Pixiv streaming keeps null index entries, timestamps, and empty manga inde
     assert.equal(result.items[1].publishedAtMs, null);
 });
 
+test('Pixiv accepts empty array indexes and rejects incomplete index values', async () => {
+    const empty = await acquire('pixiv', '123', streamedResponse('', JSON.stringify({ error: false, body: { illusts: [], manga: [] } }), { repeats: 0 }));
+    assert.deepEqual(empty.items, []);
+    for (const invalid of [null, false, 'bad', [123], [null], [{}]]) {
+        for (const key of ['illusts', 'manga']) {
+            const body = { illusts: {}, manga: {}, [key]: invalid };
+            await assert.rejects(acquire('pixiv', '123', streamedResponse('', JSON.stringify({ error: false, body }), { repeats: 0, headers: { etag: 'incomplete' } })),
+                { code: Array.isArray(invalid) ? 'AUTO_WATCH_INVALID_RESPONSE' : 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE' });
+        }
+    }
+});
+
 test('Spotify streaming ignores large assets and preserves release section membership and metadata', async () => {
     const album = 'A'.repeat(22), unrelated = 'B'.repeat(22);
     const result = await acquire('spotify', '0TnOYISbd1XYRBk9myaseg', streamedResponse('<style>/*',

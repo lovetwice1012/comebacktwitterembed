@@ -65,11 +65,16 @@ async function fetch(source, context) {
             Referer: `https://www.pixiv.net/users/${encodeURIComponent(source.source_key)}`,
             'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)',
         }),
-        readBody: response => readJsonProjection(response, PROFILE_PATHS),
+        readBody: response => readJsonProjection(response, PROFILE_PATHS, { emptyOnlyArrays: [['body', 'illusts'], ['body', 'manga']] }),
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
     if (response.body?.error) throw monitorError('AUTO_WATCH_UPSTREAM_ERROR', 'Pixiv profile endpoint returned an error.');
-    if (!response.body?.body || !Object.hasOwn(response.body.body, 'illusts') || !Object.hasOwn(response.body.body, 'manga')) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'Pixiv did not return a complete guest profile index.');
+    const index = response.body?.body;
+    // Pixiv uses an empty array for an empty index and an object keyed by ID
+    // otherwise. A null or partial index must not advance the source ETag.
+    const validIndex = value => value !== null && typeof value === 'object' && (!Array.isArray(value) || value.length === 0);
+    if (!index || !Object.hasOwn(index, 'illusts') || !Object.hasOwn(index, 'manga')
+        || !validIndex(index.illusts) || !validIndex(index.manga)) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'Pixiv did not return a complete guest profile index.');
     return { items: artworkItems(response.body?.body), state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
 }
 
