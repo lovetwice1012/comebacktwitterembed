@@ -10,6 +10,8 @@ const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
 const { createQueue } = require('../../src/automation/queue');
 const entitlements = require('../../src/automation/entitlements');
 const { encodeFrame } = require('../../src/automation/chrome-mcs-framing');
+// Synthetic device credentials must never reach the external check-in service.
+const offlineCheckin = async () => ({ intervalSeconds: 172800 });
 function vint(n) { const out = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; out.push(b); } while (n); return Buffer.from(out); }
 function bytes(n, v) { const body = Buffer.isBuffer(v) ? v : Buffer.from(v); return Buffer.concat([vint(n * 8 + 2), vint(body.length), body]); }
 const pair = (k, v) => bytes(7, Buffer.concat([bytes(1, k), bytes(2, v)]));
@@ -51,7 +53,7 @@ test('Chrome worker receives, commits and routes encrypted MCS data with the exi
         const payload = { notificationType: 'tweet', url: 'https://x.com/synthetic/status/123', author: { handle: 'synthetic', id: '123' }, text: 'fixture' };
         const cipher = await encrypted(file, payload); let socket, received;
         const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
-            requestTimeoutMs: 3000, createChromeSocket: () => socket = new FakeSocket(db) });
+            requestTimeoutMs: 3000, chromeCheckin: offlineCheckin, createChromeSocket: () => socket = new FakeSocket(db) });
         const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
             pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, 'mcs-123'),
             bytes(21, Buffer.from(cipher.data, 'base64url'))]);
@@ -79,7 +81,7 @@ test('Chrome worker fences ACK after a committed receipt if its lease is lost', 
             recordMcsFrame: async (...args) => { const row = await base.recordMcsFrame(...args); failNext = true; return row; },
             assertLease: async (...args) => { if (failNext) throw Object.assign(new Error('lease lost'), { code: 'X_PUSH_LEASE_LOST' }); return base.assertLease(...args); } };
         const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
-            rolloutMode: 'public', requestTimeoutMs: 3000, store, createChromeSocket: () => socket = new FakeSocket(db) });
+            rolloutMode: 'public', requestTimeoutMs: 3000, store, chromeCheckin: offlineCheckin, createChromeSocket: () => socket = new FakeSocket(db) });
         await assert.rejects(gateway.run({ ...subscription, workerId: 'chrome-worker',
             onSession: () => socket.emit('data', encodeFrame(8, message)) }), e => e.code === 'X_PUSH_LEASE_LOST');
         assert.equal(socket.writes.filter(wire => wire[0] === 7).length, 0);
@@ -115,7 +117,7 @@ for (const [browser, makeFile] of [['Chrome', chromeFixture], ['Brave', braveFix
                 return super.write(wire, done);
             }
         }
-        const options = { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 3000 };
+        const options = { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 3000, chromeCheckin: offlineCheckin };
         const first = createXPushGateway(db, { ...options, createChromeSocket: () => firstSocket = new FailedAckSocket(db) });
         await assert.rejects(first.run({ ...subscription, workerId: 'first-worker',
             onSession: () => firstSocket.emit('data', encodeFrame(8, message)), onReceived: () => firstCallbacks++ }), { code: failure === 'write-error' ? 'X_PUSH_SOCKET_FAILED' : 'X_PUSH_SOCKET_CLOSED' });
@@ -247,7 +249,7 @@ test('a provider loss notice is recorded before ACK and later encrypted posts st
             pause() {} resume() {} destroy() { this.destroyed = true; }
         }
         const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
-            requestTimeoutMs: 3000, createChromeSocket: () => socket = new ControlSocket() });
+            requestTimeoutMs: 3000, chromeCheckin: offlineCheckin, createChromeSocket: () => socket = new ControlSocket() });
         await gateway.run({ ...subscription, workerId: 'control-test', signal: controller.signal,
             onSession: () => socket.emit('data', encodeFrame(8, control)), onReceived: value => { received = value; controller.abort(); } });
         assert.deepEqual(received.payload, payload); assert.equal(acks, 2);
