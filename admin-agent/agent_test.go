@@ -130,6 +130,16 @@ func TestJournalStateLimitHasSafeDefault(t *testing.T) {
 		t.Fatalf("configured journal cap was ignored: %d", got)
 	}
 }
+
+func TestJournalStorageWarningThreshold(t *testing.T) {
+	for _, tc := range []struct{ limit, want int64 }{
+		{100, 90}, {161061273600, 144955146240}, {1, 1}, {9223372036854775807, 8301034833169298227},
+	} {
+		if got := journalStorageWarningThreshold(tc.limit); got != tc.want {
+			t.Fatalf("limit %d: got %d, want %d", tc.limit, got, tc.want)
+		}
+	}
+}
 func TestAuthenticationActorAndCookieCSRF(t *testing.T) {
 	a := testApp(t)
 	for _, actor := range []string{"wrong"} {

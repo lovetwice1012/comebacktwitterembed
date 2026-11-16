@@ -79,6 +79,8 @@ External witness probes `ADMIN_WITNESS_TARGET` every 15 seconds, confirms after 
 
 Journal collection advances per-entry cursors only after durable event persistence, in bounded 50-row/512 KiB batches. Bot, MySQL, nginx, management core, analysis and kernel streams retain boot IDs and continue across boots when the host retains persistent journals. Initial collection starts five minutes before installation. At the configured SQLite state cap, the collector reports a storage pause without advancing the cursor; it resumes when sufficient capacity is configured. Entries skipped by an older collector version are not recovered by this change, and rotated-away journals cannot be reconstructed. Cursor state and collection errors are visible in health. The forward-follow collector uses the documented [journalctl cursor and follow flags](https://www.freedesktop.org/software/systemd/man/255/journalctl.html).
 
+The management monitor raises a `management.journal.capacity` incident when the SQLite state reaches 90% of the journal collection limit. The limit counts the main database and its WAL and shared-memory files, including non-journal records. This warning does not delete or rotate any data; review disk growth and retained history before changing the limit.
+
 This change prevents further cursor advancement while collection is paused; it
 does not lower the existing database size, raise the configured limit, or
 backfill entries already skipped. A state database already above the configured

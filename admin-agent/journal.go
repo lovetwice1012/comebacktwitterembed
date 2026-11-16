@@ -24,6 +24,11 @@ func journalStateLimit(cfg Config) int64 {
 	return 2 << 30
 }
 
+// Integer arithmetic avoids overflow for large configured limits.
+func journalStorageWarningThreshold(limit int64) int64 {
+	return limit - limit/10
+}
+
 func (a *App) reportJournalPause(ctx context.Context, source, reason string, cursorPresent bool, rawEventsStored any) {
 	stateCtx, cancel := context.WithTimeout(ctx, journalStoreTimeout)
 	defer cancel()

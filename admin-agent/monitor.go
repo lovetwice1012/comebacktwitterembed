@@ -378,6 +378,18 @@ func (a *App) monitorOnce(parent context.Context) {
 			a.good("management.storage.pressure", Object{"freeBytes": free, "scope": "Management storage capacity"})
 		}
 	}
+	// The journal collector's cap applies to the complete SQLite state, not
+	// just journal rows. Warn before reaching it even when the filesystem itself
+	// still has ample free space; this check never deletes historical data.
+	if size, err := a.store.stateBytes(); err == nil {
+		limit := journalStateLimit(a.cfg)
+		evidence := Object{"stateBytes": size, "stateLimitBytes": limit, "thresholdBytes": journalStorageWarningThreshold(limit), "eventIds": []string{eventID}, "automaticDeletion": false}
+		if size >= journalStorageWarningThreshold(limit) {
+			a.detect("management.journal.capacity", "管理記録の保存上限が近づいています", evidence, p)
+		} else {
+			a.good("management.journal.capacity", evidence)
+		}
+	}
 	if p.AutoPauseReports && !plannedOCIAbsence(a.cfg, p, time.Now()) {
 		a.maybePauseReports(snapshot, p, eventID)
 	} else if plannedOCIAbsence(a.cfg, p, time.Now()) {
@@ -453,11 +465,11 @@ func (a *App) maybeRepairUnverifiedBot(ctx context.Context, snapshot Object, p P
 		return
 	}
 	_, _, _ = a.store.enqueue("service.restart", Object{
-		"expectedInvocationId": str(unit["InvocationID"]),
-		"reason": "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat and recent successful independent DB diagnosis",
-		"observedWorkloadPID": identity["pid"],
+		"expectedInvocationId":   str(unit["InvocationID"]),
+		"reason":                 "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat and recent successful independent DB diagnosis",
+		"observedWorkloadPID":    identity["pid"],
 		"observedWorkloadReason": identity["reason"],
-		"policyRevision": p.Revision,
+		"policyRevision":         p.Revision,
 	}, "unverified-repair:"+str(unit["InvocationID"]), a.cfg.Owner, "automation")
 }
 
