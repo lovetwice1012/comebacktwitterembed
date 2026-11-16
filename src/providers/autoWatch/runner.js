@@ -34,8 +34,19 @@ function integer(value, fallback, minimum = 0, maximum = Number.MAX_SAFE_INTEGER
 }
 
 function parseCursor(raw) {
+    if (raw === null || raw === undefined || raw === '') return { seenContentIds: [] };
     try {
         const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (value === null) return { seenContentIds: [] };
+        if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid discovery cursor');
+        for (const key of ['seenContentIds', 'deferredObservations', 'deferredItems']) {
+            if (Object.hasOwn(value, key) && !Array.isArray(value[key])) throw new Error('Invalid discovery cursor field');
+        }
+        if (value.seenContentIds?.some(id => !(typeof id === 'string' && id.length > 0 && id.length <= 255)
+            && !(Number.isSafeInteger(id) && id >= 0))) throw new Error('Invalid seen-content identifier');
+        if (value.baselineMaxNumericContentId != null && value.baselineMaxNumericContentId !== ''
+            && (!(typeof value.baselineMaxNumericContentId === 'string' || Number.isSafeInteger(value.baselineMaxNumericContentId))
+                || !/^\d{1,20}$/.test(String(value.baselineMaxNumericContentId)))) throw new Error('Invalid numeric baseline');
         const seenContentIds = Array.isArray(value?.seenContentIds)
             ? value.seenContentIds.map(String).filter(Boolean).slice(0, MAX_CURSOR_IDS)
             : [];
@@ -60,20 +71,29 @@ function parseCursor(raw) {
             cursor.baselineMaxNumericContentId = String(value.baselineMaxNumericContentId);
         }
         return cursor;
-    } catch (error) {
-        if (typeof raw === 'string' && raw.includes('"deferredItems"') || raw && typeof raw === 'object' && Object.hasOwn(raw, 'deferredItems')) {
-            throw Object.assign(new Error('The durable discovery backlog could not be read.', { cause: error }), { code: 'AUTO_WATCH_INVALID_BACKLOG' });
+    } catch {
+        if (typeof raw === 'string' && /"deferred(?:Items|Observations)"/.test(raw)
+            || raw && typeof raw === 'object' && (Object.hasOwn(raw, 'deferredItems') || Object.hasOwn(raw, 'deferredObservations'))) {
+            throw Object.assign(new Error('The durable discovery backlog could not be read.'), { code: 'AUTO_WATCH_INVALID_BACKLOG' });
         }
-        return { seenContentIds: [] };
+        // Treating an unreadable checkpoint as empty can re-deliver old items
+        // or permanently lose queued observations. Preserve it for recovery.
+        throw Object.assign(new Error('The discovery cursor could not be read.'), { code: 'AUTO_WATCH_INVALID_CURSOR' });
     }
 }
 
 function normalizeItems(items) {
+    if (items == null) return [];
+    if (!Array.isArray(items)) throw Object.assign(new Error('The provider returned invalid observation items.'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
     const ids = new Set();
-    return (Array.isArray(items) ? items : []).filter(item => {
-        const id = String(item?.contentId || '');
-        const url = String(item?.url || '');
-        if (!id || !url || ids.has(id)) return false;
+    return items.filter(item => {
+        const rawId = item?.contentId;
+        const validId = typeof rawId === 'string' && rawId.length > 0 && rawId.length <= 255
+            || Number.isSafeInteger(rawId) && rawId > 0;
+        const id = validId ? String(rawId) : '';
+        if (!id || typeof item?.url !== 'string' || !item.url.trim())
+            throw Object.assign(new Error('The provider returned an incomplete observation item.'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+        if (ids.has(id)) return false;
         ids.add(id);
         return true;
     });
@@ -133,7 +153,16 @@ async function processSource(source, context) {
     // A complete durable observation is already independent of upstream health
     // and request budgets. Drain it before attempting any new remote operation.
     let durableCursor;
-    try { durableCursor = parseCursor(source.cursor_json); }
+    try {
+        // A new source legitimately has no checkpoint. An initialized source
+        // does not: treating its missing checkpoint as empty would replay its
+        // visible history as new notifications.
+        if (source.initialized_at_ms && (source.cursor_json == null
+            || typeof source.cursor_json === 'string' && /^\s*(?:null)?\s*$/.test(source.cursor_json))) {
+            throw Object.assign(new Error('The initialized source has no discovery cursor.'), { code: 'AUTO_WATCH_INVALID_CURSOR' });
+        }
+        durableCursor = parseCursor(source.cursor_json);
+    }
     catch (error) {
         await store.failSource(source, { error, nextCheckAtMs: sourceRetryAt(source, now, error), checkedAtMs: now });
         recordError(error, { errorType: 'auto_watch_source_failed', source: 'autoWatchMonitor.processSource', providerId: source.provider_id, sourceId: source.id });
@@ -158,6 +187,8 @@ async function processSource(source, context) {
         const result = await fetchSource(needsFullObservation
             ? { ...source, etag: null, last_modified: null } : source, { config, fetch, isolate: context.isolateFetch });
         await store.recordProviderRateLimit(source.provider_id, result.rateLimit, now);
+        if (!result.notModified && !Array.isArray(result.items))
+            throw Object.assign(new Error('The provider returned no valid observation list.'), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
         const observed = normalizeItems(result.items);
         const baselineItems = normalizeItems(result.baselineItems);
         const baselineIds = new Set(baselineItems.map(item => String(item.contentId)));

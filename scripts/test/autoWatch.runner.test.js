@@ -54,6 +54,64 @@ test('first guest observation seeds the cursor without posting historical items'
     assert.deepEqual(store.calls.complete[0].cursor.seenContentIds, ['old-1', 'old-2']);
 });
 
+test('unreadable discovery cursors preserve history and fail before fetching or admitting items', async () => {
+    for (const [cursor, code] of [
+        [null, 'AUTO_WATCH_INVALID_CURSOR'], ['', 'AUTO_WATCH_INVALID_CURSOR'], ['null', 'AUTO_WATCH_INVALID_CURSOR'],
+        ['{"seenContentIds":', 'AUTO_WATCH_INVALID_CURSOR'],
+        [JSON.stringify({ seenContentIds: 'not-an-array' }), 'AUTO_WATCH_INVALID_CURSOR'],
+        [JSON.stringify({ seenContentIds: null }), 'AUTO_WATCH_INVALID_CURSOR'],
+        [JSON.stringify({ seenContentIds: ['old', { invalid: true }] }), 'AUTO_WATCH_INVALID_CURSOR'],
+        [JSON.stringify({ seenContentIds: ['old'], baselineMaxNumericContentId: 'invalid' }), 'AUTO_WATCH_INVALID_CURSOR'],
+        [JSON.stringify({ seenContentIds: ['old'], deferredObservations: 'unreadable' }), 'AUTO_WATCH_INVALID_BACKLOG'],
+        [JSON.stringify({ seenContentIds: ['old'], deferredObservations: [['pending', -1]] }), 'AUTO_WATCH_INVALID_BACKLOG'],
+        [JSON.stringify({ seenContentIds: ['old'], deferredItems: 'unreadable' }), 'AUTO_WATCH_INVALID_BACKLOG'],
+        [JSON.stringify({ seenContentIds: ['old'], deferredItems: null }), 'AUTO_WATCH_INVALID_BACKLOG'],
+    ]) {
+        const item = source({ initialized_at_ms: 1, cursor_json: cursor }), store = baseStore([item]);
+        let fetched = 0, failure;
+        store.failSource = async (_source, value) => { failure = value; };
+        const result = await tick({ now: 1000000, store, fetchSource: async () => { fetched++; return { items: [] }; } });
+        assert.equal(result.sources[0].status, 'failed'); assert.equal(result.sources[0].errorCode, code);
+        assert.equal(failure.error.code, code); assert.equal(fetched, 0);
+        assert.equal(store.calls.complete.length, 0); assert.equal(store.calls.create.length, 0); assert.equal(item.cursor_json, cursor);
+    }
+    for (const value of [null, undefined, '', '{}', 'null']) assert.deepEqual(_internal.parseCursor(value), { seenContentIds: [] });
+    assert.deepEqual(_internal.parseCursor('{"seenContentIds":["old"]}').seenContentIds, ['old']);
+});
+
+test('incomplete provider items cannot commit validators or lose later recoverable notifications', async () => {
+    const cursor = JSON.stringify({ seenContentIds: ['old'], admissionVersion: 1 });
+    for (const invalid of [undefined, { not: 'an array' }, [{ contentId: 'new', url: 'https://example.test/new' }, { contentId: 'missing-url' }],
+        [{ contentId: { corrupted: true }, url: 'https://example.test/new' }], [{ contentId: 'new', url: { corrupted: true } }]]) {
+        const item = source({ initialized_at_ms: 1, cursor_json: cursor, etag: 'old-etag' }), store = baseStore([item]);
+        let failure;
+        store.failSource = async (_source, value) => { failure = value; };
+        const bad = await tick({ now: 1000000, store, fetchSource: async () => ({ items: invalid, etag: 'new-etag', state: {} }) });
+        assert.equal(bad.sources[0].errorCode, 'AUTO_WATCH_INVALID_RESPONSE');
+        assert.equal(failure.error.code, 'AUTO_WATCH_INVALID_RESPONSE');
+        assert.equal(store.calls.complete.length, 0); assert.equal(store.calls.create.length, 0); assert.equal(item.etag, 'old-etag');
+        const good = await tick({ now: 1060000, store, fetchSource: async () => ({ items: [{ contentId: 'new', url: 'https://example.test/new' }], etag: 'new-etag', state: {} }) });
+        assert.equal(good.sources[0].newItemCount, 1);
+        assert.deepEqual(store.calls.create[0].map(value => value.contentId), ['new']);
+    }
+});
+
+test('unreadable source state cannot silently reset a monitoring baseline', async () => {
+    const { fetchSource } = require('../../src/providers/autoWatch');
+    const { parseState } = require('../../src/providers/autoWatch/_shared');
+    for (const raw of ['{"youtubeTabs":', '{"private":"FIXTURE_PRIVATE_SENTINEL', '[]', '"unexpected"', 42]) {
+        const item = source({ initialized_at_ms: 1, cursor_json: '{"seenContentIds":["old"]}', state_json: raw, etag: 'old-etag' });
+        const store = baseStore([item]); let fetched = 0, failure;
+        store.failSource = async (_source, value) => { failure = value; };
+        const result = await tick({ now: 1000000, store, fetchSource: request => fetchSource(request, { fetch: async () => { fetched++; throw new Error('unexpected fetch'); } }) });
+        assert.equal(result.sources[0].errorCode, 'AUTO_WATCH_INVALID_STATE');
+        assert.equal(failure.error.code, 'AUTO_WATCH_INVALID_STATE'); assert.equal(fetched, 0);
+        assert.equal(JSON.stringify(require('../../src/adminSupport/telemetry').errorData(failure.error)).includes('FIXTURE_PRIVATE_SENTINEL'), false);
+        assert.equal(store.calls.complete.length, 0); assert.equal(store.calls.create.length, 0); assert.equal(item.state_json, raw);
+    }
+    for (const raw of [null, undefined, '', '{}', 'null']) assert.deepEqual(parseState(raw), {});
+});
+
 test('new-content scheduler records only an aggregate delay for a due source', async () => {
     const metric = require('../../src/adminSupport/databaseMetrics').sourceLag.auto, before = metric.snapshot().count;
     const store = baseStore([source({ next_check_at_ms: 1000 })]);

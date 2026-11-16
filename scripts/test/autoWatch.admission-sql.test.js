@@ -42,6 +42,25 @@ test('SQL partial source admission preserves validators, observation time, faile
                 return { items, state: {}, etag: 'v2', lastModified: 'date2' };
             } });
         };
+        const damaged = '{"seenContentIds":';
+        await db.queryDatabase('UPDATE auto_watch_sources SET cursor_json=? WHERE id=?', [damaged, row.source_id]);
+        assert.equal((await run()).errorCode, 'AUTO_WATCH_INVALID_CURSOR');
+        const retained = (await db.queryDatabase('SELECT cursor_json,etag,last_modified,last_error_code FROM auto_watch_sources WHERE id=?', [row.source_id]))[0];
+        assert.equal(retained.cursor_json, damaged); assert.equal(retained.etag, 'v1'); assert.equal(retained.last_modified, 'date1');
+        assert.equal(retained.last_error_code, 'AUTO_WATCH_INVALID_CURSOR');
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM auto_watch_items'))[0].n), 0);
+        await db.queryDatabase('UPDATE auto_watch_sources SET cursor_json=? WHERE id=?', ['{"seenContentIds":[]}', row.source_id]);
+        const damagedState = '{"youtubeTabs":';
+        await db.queryDatabase('UPDATE auto_watch_sources SET state_json=?,lease_token=?,lease_expires_at_ms=? WHERE id=?', [damagedState, randomUUID(), Date.now() + 60000, row.source_id]);
+        const badStateSource = (await db.queryDatabase('SELECT * FROM auto_watch_sources WHERE id=?', [row.source_id]))[0];
+        let requests = 0;
+        const rejected = await runner.processSource(badStateSource, { now, store, config: {}, sourceCounts: new Map(),
+            fetchSource: request => require('../../src/providers/autoWatch').fetchSource(request, { fetch: async () => { requests++; throw new Error('unexpected request'); } }) });
+        assert.equal(rejected.errorCode, 'AUTO_WATCH_INVALID_STATE'); assert.equal(requests, 0);
+        const retainedState = (await db.queryDatabase('SELECT state_json,etag,last_modified,last_error_code FROM auto_watch_sources WHERE id=?', [row.source_id]))[0];
+        assert.equal(retainedState.state_json, damagedState); assert.equal(retainedState.etag, 'v1'); assert.equal(retainedState.last_modified, 'date1');
+        assert.equal(retainedState.last_error_code, 'AUTO_WATCH_INVALID_STATE');
+        await db.queryDatabase('UPDATE auto_watch_sources SET state_json=? WHERE id=?', ['{}', row.source_id]);
         assert.equal((await run()).deferredItemCount, 5);
         const checkpoint = (await db.queryDatabase('SELECT cursor_json,etag,last_modified FROM auto_watch_sources WHERE id=?', [row.source_id]))[0];
         assert.equal(checkpoint.etag, null); assert.equal(checkpoint.last_modified, null);

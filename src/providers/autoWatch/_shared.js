@@ -197,11 +197,16 @@ function dateMs(value) {
 
 function parseState(raw) {
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    if (raw === null || raw === undefined || raw === '') return {};
     try {
-        const value = JSON.parse(raw || '{}');
-        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (value === null) return {};
+        if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid source state');
+        return value;
     } catch {
-        return {};
+        // Replacing an unreadable state with an empty object can silently
+        // re-baseline optional feeds and discard new posts.
+        throw monitorError('AUTO_WATCH_INVALID_STATE', 'The saved monitoring state could not be read.');
     }
 }
 
