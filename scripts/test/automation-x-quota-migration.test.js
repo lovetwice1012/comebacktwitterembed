@@ -60,13 +60,21 @@ test('admin diagnostics retain corrupt registration IDs without leaking settings
     }};
     await assert.rejects(createXMonitorQuota(failed).adminSummary(admin),cause=>cause===outage);
     assert.match(db.schema,/^cbte_automation_test_[0-9a-f]{20}$/);
-    await db.withDatabaseTransaction(async query=>{
-        // Simulate corrupt storage only in this guarded fixture connection.
-        // Production CHECK constraints and policies remain unchanged.
-        await query('SET SESSION check_constraint_checks=OFF');
-        try {await query('UPDATE automation_push_pool_policy SET free_pool_limit=2000000000,supporter_pool_limit=2000000000 WHERE id=1');}
-        finally {await query('SET SESSION check_constraint_checks=ON');}
-    });
+    const [{version}]=await db.queryDatabase('SELECT VERSION() AS version');
+    if (/mariadb/i.test(version)) {
+        await db.withDatabaseTransaction(async query=>{
+            await query('SET SESSION check_constraint_checks=OFF');
+            try {await query('UPDATE automation_push_pool_policy SET free_pool_limit=2000000000,supporter_pool_limit=2000000000 WHERE id=1');}
+            finally {await query('SET SESSION check_constraint_checks=ON');}
+        });
+    } else {
+        // MySQL cannot disable CHECK per session. Drop only the temporary
+        // fixture table's checks; this random schema is dropped after the test.
+        const checks=await db.queryDatabase("SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=? AND TABLE_NAME='automation_push_pool_policy' AND CONSTRAINT_TYPE='CHECK'",[db.schema]);
+        assert.equal(checks.length,3);
+        for(const {name} of checks) await db.queryDatabase(`ALTER TABLE automation_push_pool_policy DROP CHECK ${require('mysql').escapeId(name)}`);
+        await db.queryDatabase('UPDATE automation_push_pool_policy SET free_pool_limit=2000000000,supporter_pool_limit=2000000000 WHERE id=1');
+    }
     const invalidCapacity=await quota.summary(owner);
     assert.equal(invalidCapacity.pools.free.limit,0);assert.equal(invalidCapacity.pools.supporter.limit,0);
     assert.equal(invalidCapacity.x.available,0);
