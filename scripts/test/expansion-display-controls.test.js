@@ -39,8 +39,25 @@ test('final dispatcher filtering understands personal action IDs and global all 
     compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports', '__dirname'], { filename })(
         id => id === './providers/_provider_settings' ? { getSetting: async () => visibility } : actualRequire(id), mod, mod.exports, require('node:path').dirname(filename));
     const rows = () => [{ type: 1, components: [{ type: 2, custom_id: 'personal:save:abc' }, { type: 2, custom_id: 'personal:remind:abc' }, { type: 2, url: 'https://example.test/' }] }];
-    const filtered = await mod.exports.checkComponentIncludesDisabledButtonAndIfFindDeleteIt(rows(), 'g', 'booth');
+    const source = rows(), before = structuredClone(source);
+    const filtered = await mod.exports.checkComponentIncludesDisabledButtonAndIfFindDeleteIt(source, 'g', 'booth');
     assert.equal(filtered[0].components.length, 2);
+    assert.deepEqual(source, before, 'filtering a reply must not mutate the source message');
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('personal:save:abc').setLabel('Save').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('personal:remind:abc').setLabel('Remind').setStyle(ButtonStyle.Primary));
+    const originalRow = row.toJSON();
+    const copy = await mod.exports.checkComponentIncludesDisabledButtonAndIfFindDeleteIt([row], 'g', 'booth');
+    assert.deepEqual(row.toJSON(), originalRow);
+    assert.deepEqual(copy[0].toJSON().components.map(button => button.custom_id), ['personal:remind:abc']);
+    const { Client, Message } = require('discord.js');
+    const message = new Message(new Client({ intents: [] }), { id: '111111111111111111', channel_id: '222222222222222222',
+        author: { id: '333333333333333333', username: 'fixture', discriminator: '0' }, content: '', embeds: [], attachments: [], components: [originalRow] });
+    const beforeMessage = message.components[0].toJSON();
+    const filteredMessage = await mod.exports.checkComponentIncludesDisabledButtonAndIfFindDeleteIt(message.components, 'g', 'booth');
+    assert.deepEqual(message.components[0].toJSON(), beforeMessage);
+    assert.deepEqual(filteredMessage[0].toJSON().components.map(button => button.custom_id), ['personal:remind:abc']);
     visibility = { all: true };
     assert.deepEqual(await mod.exports.checkComponentIncludesDisabledButtonAndIfFindDeleteIt(rows(), 'g', 'booth'), []);
 });

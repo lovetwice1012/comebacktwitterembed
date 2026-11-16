@@ -99,11 +99,11 @@ async function fixture({ quote = false, nonImage = null, hideEmbeddedAttachments
     return { db, storage, item, quote: prepared.grids[1], quoteUrls, interaction, first, second, messages, urls, deps, serverByMessage, editRequests };
 }
 
-async function perform(f, moduleName, translateOriginal = false, db = f.db) {
+async function perform(f, moduleName, translateOriginal = false, db = f.db, options = {}) {
     const settings = require('../../src/settings');
-    const filter = mock.method(settings, 'checkComponentIncludesDisabledButtonAndIfFindDeleteIt', async value => value);
+    const filter = options.realFilter ? null : mock.method(settings, 'checkComponentIncludesDisabledButtonAndIfFindDeleteIt', async value => value);
     const providerSettings = require('../../src/providers/_provider_settings');
-    const translation = mock.method(providerSettings, 'getSetting', async () => translateOriginal);
+    const translation = mock.method(providerSettings, 'getSetting', async (_provider, key) => key === 'button_invisible' ? (options.invisible || {}) : translateOriginal);
     const fetcher = require('../../src/providerFetch');
     const fetch = mock.method(fetcher, 'withDeadline', () => async () => ({ ok: true, text: async () => 'translated text' }));
     const modulePath = require.resolve(`../../src/components/${moduleName}`);
@@ -116,7 +116,7 @@ async function perform(f, moduleName, translateOriginal = false, db = f.db) {
         await cards.withMessageLock(f.interaction, group => handler.handle(f.interaction, { buttons, ...group }), db,
             { action: moduleName, buttons, freshAccess: f.deps.freshAccess, getSettings: f.deps.getSettings, fetchTwitterMedia: f.deps.fetchTwitterMedia,
                 operationNow: f.deps.operationNow });
-    } finally { delete require.cache[modulePath]; filter.mock.restore(); translation.mock.restore(); fetch.mock.restore(); }
+    } finally { delete require.cache[modulePath]; filter?.mock.restore(); translation.mock.restore(); fetch.mock.restore(); }
 }
 
 test('gallery lookup uses its scoped locator index', { timeout: 60000 }, async () => {
@@ -571,6 +571,21 @@ test('editing the original translation preserves all 13 image references for a l
         await perform(f, 'translate', true);
         assert.equal(f.first.embeds[0].description, 'translated text');
         assert.equal(cards.gridIdFromMessage(f.first), f.item.id);
+        const row = await f.storage.get(f.item.id, gid, cid);
+        assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, row), f.urls);
+    } finally { await f.db.close(); }
+});
+
+test('hidden reply buttons do not mutate the source or break translation of a split post', { timeout: 60000 }, async () => {
+    const f = await fixture();
+    try {
+        let reply;
+        f.interaction.editReply = async value => { reply = value; };
+        const beforeComponents = JSON.stringify(f.first.components);
+        await perform(f, 'translate', true, f.db, { realFilter: true, invisible: { delete: true } });
+        assert.equal(f.first.embeds[0].description, 'translated text');
+        assert.equal(JSON.stringify(f.first.components), beforeComponents);
+        assert(!reply.components.flatMap(row => row.components).some(button => (button.custom_id || button.customId) === 'delete'));
         const row = await f.storage.get(f.item.id, gid, cid);
         assert.deepEqual(await grid._internal.sourceImageUrls(f.interaction, row), f.urls);
     } finally { await f.db.close(); }

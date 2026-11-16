@@ -1043,8 +1043,11 @@ async function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components,
         });
 
         if (filteredComponents.length > 0) {
-            component.components = filteredComponents;
-            acc.push(component);
+            // Rows can be the live Discord message's cached components.
+            // Filtering a reply must never mutate that source snapshot.
+            const copy = Object.assign(Object.create(Object.getPrototypeOf(component)), component);
+            copy.components = filteredComponents;
+            acc.push(copy);
         }
         return acc;
     }, []);
