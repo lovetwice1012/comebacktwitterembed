@@ -724,6 +724,24 @@ test('instagram profile login redirects cannot masquerade as the requested accou
     assert(requests.some(request => request.includes('/api/v1/users/web_profile_info/')));
 });
 
+test('instagram generic HTML without profile identity falls back to verified profile data', async () => {
+    const requests = [];
+    const provider = loadInstagramProviderWithFetch(async url => {
+        requests.push(String(url));
+        if (String(url) === 'https://www.instagram.com/artist.profile/') return {
+            ok: true, status: 200, url: String(url), text: async () => profileHtml({ title: 'Instagram' }),
+        };
+        if (String(url).includes('/api/v1/users/web_profile_info/')) return {
+            ok: true, status: 200, text: async () => JSON.stringify({ data: { user: { username: 'artist.profile', full_name: 'Correct' } } }),
+        };
+        throw new Error('unexpected fixture request');
+    });
+    const url = 'https://www.instagram.com/artist.profile/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, 'Correct (@artist.profile)');
+    assert(requests.some(request => request.includes('/api/v1/users/web_profile_info/')));
+});
+
 test('instagram extract: profile links retry alternate profile API candidates', async () => {
     const requestedUrls = [];
     const provider = loadInstagramProviderWithFetch(async (url) => {

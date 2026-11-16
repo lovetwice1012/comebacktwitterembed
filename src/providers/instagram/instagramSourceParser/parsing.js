@@ -664,22 +664,29 @@ function normalizeProfileTitle(title, fallbackUsername) {
     const clean = stripHtml(title)
         .replace(/\s+\u2022\s+Instagram.*$/i, '')
         .trim();
-    if (!clean) return { username: fallbackUsername, fullName: '' };
+    if (!clean) return { username: fallbackUsername, fullName: '', explicitUsername: false };
 
     const usernameMatch = clean.match(/\(@([A-Za-z0-9._]{1,30})\)\s*$/);
     const username = usernameMatch?.[1] || fallbackUsername;
     const fullName = usernameMatch
         ? clean.slice(0, usernameMatch.index).trim()
         : clean.replace(new RegExp(`^@?${escapeRegExp(fallbackUsername)}$`, 'i'), '').trim();
-    return { username, fullName };
+    return { username, fullName, explicitUsername: !!usernameMatch };
 }
 
 function normalizeProfileHtmlData(username, html) {
+    if (typeof username !== 'string' || !username.trim()) return null;
     const ogTitle = getMetaContent(html, 'og:title');
     const ogDescription = getMetaContent(html, 'og:description');
     const seoDescription = getMetaContent(html, 'description');
     const profilePicUrl = normalizeCdnUrl(getMetaContent(html, 'og:image'));
     const titleData = normalizeProfileTitle(ogTitle, username);
+    const pageUrl = getMetaContent(html, 'og:url');
+    let canonical;
+    try { if (pageUrl && new URL(pageUrl).protocol === 'https:') canonical = parseInstagramUrl(pageUrl); } catch { /* Invalid canonical URL is rejected below. */ }
+    const canonicalMatches = canonical?.kind === 'profile' && canonical.username.toLowerCase() === username.toLowerCase();
+    if (pageUrl && !canonicalMatches || titleData.username.toLowerCase() !== username.toLowerCase()
+        || !titleData.explicitUsername && !canonicalMatches) return null;
     const counts = parseProfileCounts(seoDescription || ogDescription);
     const bioMatch = String(seoDescription || '').match(/\bon Instagram:\s*"([\s\S]*)"\s*$/i);
     const biography = bioMatch ? bioMatch[1].trim() : '';

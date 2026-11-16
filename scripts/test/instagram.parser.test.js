@@ -111,6 +111,15 @@ test('instagram source parser: oEmbed and profile sources retain their normalize
     assert.equal(profile.posts, '12');
 });
 
+test('instagram profile HTML requires matching title or canonical identity', () => {
+    const body = '<meta property="og:title" content="Artist"><meta property="og:description" content="profile">';
+    assert.equal(parser.normalizeProfileHtmlData('artist', body), null);
+    const valid = parser.normalizeProfileHtmlData('artist', body + '<meta property="og:url" content="https://www.instagram.com/artist/">');
+    assert.equal(valid.username, 'artist');
+    assert.equal(parser.normalizeProfileHtmlData('artist', body + '<meta property="og:url" content="https://www.instagram.com/other/">'), null);
+    assert.equal(parser.normalizeProfileHtmlData('artist', body + '<meta property="og:url" content="http://www.instagram.com/artist/">'), null);
+});
+
 test('instagram source parser: URL identity retains route normalization and selected media index', () => {
     const parsed = parser.parseInstagramUrl('https://www.instagram.com/artist/reels/CODE/2?img_index=3');
     assert.deepEqual(parsed, { kind: 'media', route: 'reel', shortcode: 'CODE', mediaIndex: 2 });
