@@ -134,3 +134,12 @@ test('streaming JSON keeps rate limit errors, with malformed and incomplete bodi
     await assert.rejects(acquire('pixiv', '123', streamedResponse('{"ignored":"', '","error":false,"body":{"illusts":{}}}')), { code: 'AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE' });
     await assert.rejects(acquire('github', 'octocat', streamedResponse('[{"ignored":"', '","id":"event-1"}')), { code: 'AUTO_WATCH_INVALID_RESPONSE' });
 });
+
+test('GitHub observations reject incomplete events instead of committing an incomplete ETag checkpoint', async () => {
+    const valid = { id: '1', type: 'PushEvent', repo: { name: 'octocat/project' } };
+    for (const broken of [{ type: 'PushEvent', repo: { name: 'octocat/project' } }, { id: '2', type: 'PushEvent' }, null]) {
+        const body = JSON.stringify([valid, broken]);
+        await assert.rejects(acquire('github', 'octocat', streamedResponse('', body, { repeats: 0, headers: { etag: 'new-etag' } })),
+            { code: 'AUTO_WATCH_INVALID_RESPONSE' });
+    }
+});

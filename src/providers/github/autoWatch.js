@@ -63,15 +63,21 @@ async function fetch(source, context) {
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
     if (!Array.isArray(response.body)) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'GitHub did not return an event list.');
-    const items = dedupeItems((Array.isArray(response.body) ? response.body : []).map(event => ({
-        contentId: event?.id,
-        url: eventUrl(event),
-        publishedAtMs: dateMs(event?.created_at),
-        title: event?.type || null,
-        kind: event?.type || undefined,
-        author: event?.actor?.login || undefined,
-        body: typeof event?.payload?.release?.body === 'string' ? event.payload.release.body : undefined,
-    })));
+    const items = dedupeItems(response.body.map(event => {
+        const id = event?.id, url = eventUrl(event);
+        const validId = typeof id === 'string' && id.trim().length > 0 && id.length <= 255
+            || Number.isSafeInteger(id) && id > 0;
+        // Dropping a partial record would let the new ETag hide it forever.
+        if (!validId || !url) throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'GitHub returned an incomplete event.');
+        return {
+            contentId: id, url,
+            publishedAtMs: dateMs(event?.created_at),
+            title: event?.type || null,
+            kind: event?.type || undefined,
+            author: event?.actor?.login || undefined,
+            body: typeof event?.payload?.release?.body === 'string' ? event.payload.release.body : undefined,
+        };
+    }));
     return { items, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
 }
 
