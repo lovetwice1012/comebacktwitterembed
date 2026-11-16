@@ -33,6 +33,17 @@ func (a *App) reportJournalPause(ctx context.Context, source, reason string, cur
 	})
 }
 
+func (a *App) reportJournalStoragePause(ctx context.Context, source string, cursorPresent, started bool, size, limit int64) {
+	stateCtx, cancel := context.WithTimeout(ctx, journalStoreTimeout)
+	defer cancel()
+	_ = a.store.setSettingContext(stateCtx, "journal_health_"+source, Object{
+		"state": "paused", "available": false, "reason": "storage_limit", "observedAt": now(),
+		"cursorPresent": cursorPresent, "cursorAdvanced": false, "rawEventsStored": false,
+		"journalctlStarted": started, "storageLimited": true, "stateBytes": size,
+		"stateLimitBytes": limit, "rawEventsAvailableVia": "journalctl",
+	})
+}
+
 func (a *App) journalHealth() Object {
 	collectors := Object{}
 	for _, source := range []string{"bot", "database", "kernel", "nginx", "core", "analysis"} {
@@ -138,6 +149,18 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 		}
 		args = append(args, "--since", since)
 	}
+	// Avoid repeatedly launching six journalctl processes to read the same
+	// undeliverable entries while storage is already known to be at its cap.
+	stateBytes, sizeErr := a.store.stateBytes()
+	if sizeErr != nil {
+		a.reportJournalPause(ctx, source, "storage_size_unavailable", cursor != "", false)
+		return
+	}
+	stateLimit := journalStateLimit(a.cfg)
+	if stateBytes >= stateLimit {
+		a.reportJournalStoragePause(ctx, source, cursor != "", false, stateBytes, stateLimit)
+		return
+	}
 	child, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	cmd := command(child, "journalctl", args...)
@@ -159,15 +182,22 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 	events := []Object{}
 	lastCursor, lastAt := "", ""
 	bytes := 0
+	malformed := false
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		var item Object
 		if json.Unmarshal(line, &item) != nil {
-			continue
+			// Advancing beyond a line we could not interpret would silently
+			// discard it. Keep the last confirmed cursor and report the pause.
+			malformed = true
+			cancel()
+			break
 		}
 		c := first(item, "__CURSOR")
 		if c == "" {
-			continue
+			malformed = true
+			cancel()
+			break
 		}
 		stamp := now()
 		if micros, e := strconv.ParseInt(first(item, "__REALTIME_TIMESTAMP"), 10, 64); e == nil {
@@ -186,12 +216,11 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 	endedByDeadline := child.Err() != nil
 	cancel()
 	_ = cmd.Wait()
-	stateBytes, sizeErr := a.store.stateBytes()
+	stateBytes, sizeErr = a.store.stateBytes()
 	if sizeErr != nil {
 		a.reportJournalPause(ctx, source, "storage_size_unavailable", cursor != "", false)
 		return
 	}
-	stateLimit := journalStateLimit(a.cfg)
 	storageLimited := stateBytes >= stateLimit
 	if len(events) > 0 && !storageLimited {
 		storeCtx, cancelStore := context.WithTimeout(ctx, journalStoreTimeout)
@@ -211,20 +240,19 @@ func (a *App) collectJournalBatchWith(ctx context.Context, source string, comman
 	}
 	state := Object{"available": true, "observedAt": now(), "recordsInBatch": len(events), "lastEventAt": lastAt, "cursorPresent": !storageLimited && lastCursor != "" || cursor != "", "initialLookbackMinutes": 5, "batchLimit": journalBatchEventLimit, "batchByteLimit": journalBatchByteLimit, "stateBytes": stateBytes, "stateLimitBytes": stateLimit, "rawEventsStored": !storageLimited}
 	if storageLimited {
-		state["state"] = "paused"
-		// available describes collection, not merely whether journalctl starts.
-		// Expose the latter separately without claiming that all history exists.
-		state["available"] = false
-		state["journalctlStarted"] = true
-		state["reason"] = "storage_limit"
-		state["storageLimited"] = true
-		state["cursorAdvanced"] = false
-		state["lastEventPersisted"] = false
-		state["rawEventsAvailableVia"] = "journalctl"
+		a.reportJournalStoragePause(ctx, source, cursor != "", true, stateBytes, stateLimit)
+		return
 	}
 	if len(events) == 0 && stderr.b.Len() > 0 {
 		state["available"] = false
 		state["error"] = stderr.b.String()
+	}
+	if malformed {
+		state["state"] = "paused"
+		state["available"] = false
+		state["reason"] = "invalid_journal_entry"
+		state["cursorAdvanced"] = lastCursor != ""
+		state["unverifiedEntryRetained"] = true
 	}
 	if readErr != nil && !endedByDeadline {
 		state["available"] = false

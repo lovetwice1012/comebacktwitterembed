@@ -19,6 +19,30 @@ func TestJournalCursorHelperProcess(t *testing.T) {
 	if os.Getenv("CBTE_TEST_JOURNAL_HELPER") != "1" {
 		return
 	}
+	if raw := os.Getenv("CBTE_TEST_JOURNAL_RAW_LINES"); raw != "" {
+		var lines []string
+		if err := json.Unmarshal([]byte(raw), &lines); err != nil {
+			os.Exit(2)
+		}
+		after := ""
+		for i, value := range os.Args {
+			if value == "--after-cursor" && i+1 < len(os.Args) {
+				after = os.Args[i+1]
+			}
+		}
+		start := 0
+		for i, line := range lines {
+			var entry Object
+			if json.Unmarshal([]byte(line), &entry) == nil && after != "" && first(entry, "__CURSOR") == after {
+				start = i + 1
+				break
+			}
+		}
+		for _, line := range lines[start:] {
+			fmt.Println(line)
+		}
+		os.Exit(0)
+	}
 	var entries []Object
 	if err := json.Unmarshal([]byte(os.Getenv("CBTE_TEST_JOURNAL_ENTRIES")), &entries); err != nil {
 		os.Exit(2)
@@ -40,6 +64,39 @@ func TestJournalCursorHelperProcess(t *testing.T) {
 		fmt.Println(encode(entry))
 	}
 	os.Exit(0)
+}
+
+func TestJournalMalformedEntriesDoNotAdvancePastUnverifiedData(t *testing.T) {
+	for _, invalid := range []string{"{bad json", `{"MESSAGE":"cursor missing"}`} {
+		t.Run(invalid, func(t *testing.T) {
+			a := testApp(t)
+			a.cfg.JournalStateMaxBytes = 1 << 40
+			if err := a.store.setSetting("journal_cursor_bot", "prior"); err != nil {
+				t.Fatal(err)
+			}
+			lines := []string{encode(Object{"__CURSOR": "first", "MESSAGE": "valid"}), invalid, encode(Object{"__CURSOR": "later", "MESSAGE": "must not pass"})}
+			calls := 0
+			command := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+				calls++
+				cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=^TestJournalCursorHelperProcess$", "--"}, args...)...)
+				cmd.Env = append(os.Environ(), "CBTE_TEST_JOURNAL_HELPER=1", "CBTE_TEST_JOURNAL_RAW_LINES="+encode(lines))
+				return cmd
+			}
+			for i := 0; i < 2; i++ {
+				a.collectJournalBatchWith(context.Background(), "bot", command)
+				if cursor, count := journalCursor(t, a), journalCount(t, a); cursor != "first" || count != 1 {
+					t.Fatalf("invalid line was skipped: cursor=%q count=%d", cursor, count)
+				}
+				var health Object
+				if err := a.store.getSetting("journal_health_bot", &health); err != nil || health["available"] != false || health["reason"] != "invalid_journal_entry" {
+					t.Fatalf("missing failure report: %#v %v", health, err)
+				}
+			}
+			if calls != 2 {
+				t.Fatalf("unexpected collector calls: %d", calls)
+			}
+		})
+	}
 }
 
 func fakeJournal(t *testing.T, entries []Object, calls *int) func(context.Context, string, ...string) *exec.Cmd {
@@ -94,7 +151,7 @@ func TestJournalStoragePausePreservesCursorAndResumesWithoutDuplicates(t *testin
 	if err := a.store.getSetting("journal_health_bot", &health); err != nil {
 		t.Fatal(err)
 	}
-	if health["state"] != "paused" || health["available"] != false || health["journalctlStarted"] != true || health["reason"] != "storage_limit" || health["storageLimited"] != true || health["cursorAdvanced"] != false {
+	if health["state"] != "paused" || health["available"] != false || health["journalctlStarted"] != false || health["reason"] != "storage_limit" || health["storageLimited"] != true || health["cursorAdvanced"] != false || calls != 0 {
 		t.Fatalf("storage pause was not visible: %#v", health)
 	}
 	response := request(t, a, "GET", "/v1/health", nil)
@@ -102,7 +159,7 @@ func TestJournalStoragePausePreservesCursorAndResumesWithoutDuplicates(t *testin
 		t.Fatalf("health endpoint failed during a collection pause: %d", response.Code)
 	}
 	visible := nested(nested(object(t, response), "journalCollectors"), "bot")
-	if visible["available"] != false || visible["state"] != "paused" || visible["journalctlStarted"] != true {
+	if visible["available"] != false || visible["state"] != "paused" || visible["journalctlStarted"] != false {
 		t.Fatalf("health API misrepresented the paused collector: %#v", visible)
 	}
 	// Other event producers remain independent from the journal-only limit.
@@ -115,7 +172,7 @@ func TestJournalStoragePausePreservesCursorAndResumesWithoutDuplicates(t *testin
 		t.Fatalf("resume did not persist the backlog: cursor=%q count=%d", cursor, count)
 	}
 	a.collectJournalBatchWith(context.Background(), "bot", command)
-	if cursor, count := journalCursor(t, a), journalCount(t, a); cursor != "second" || count != 2 || calls != 3 {
+	if cursor, count := journalCursor(t, a), journalCount(t, a); cursor != "second" || count != 2 || calls != 2 {
 		t.Fatalf("replay duplicated an event: cursor=%q count=%d calls=%d", cursor, count, calls)
 	}
 }
@@ -143,11 +200,14 @@ func TestJournalFirstRunPauseKeepsInitialLookbackFixed(t *testing.T) {
 	if err := a.store.getSetting("journal_cursor_bot", &cursor); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("a paused first run wrote a cursor: %q %v", cursor, err)
 	}
-	if len(boundaries) != 2 || boundaries[0] == "" || boundaries[0] != boundaries[1] || start != boundaries[0] || journalCount(t, a) != 0 {
+	if len(boundaries) != 0 || start == "" || journalCount(t, a) != 0 {
 		t.Fatalf("initial lookback moved while paused: boundaries=%v stored=%q", boundaries, start)
 	}
 	a.cfg.JournalStateMaxBytes = 1 << 40
 	a.collectJournalBatchWith(context.Background(), "bot", command)
+	if len(boundaries) != 1 || boundaries[0] != start {
+		t.Fatalf("resumed collection did not use the fixed boundary: boundaries=%v stored=%q", boundaries, start)
+	}
 	if got := journalCursor(t, a); got != "second" || journalCount(t, a) != 2 {
 		t.Fatalf("first-run backlog did not resume: cursor=%q count=%d", got, journalCount(t, a))
 	}
@@ -198,7 +258,7 @@ func TestJournalReadAndSizeFailuresNeverAdvanceCursor(t *testing.T) {
 		if err := a.store.getSetting("journal_health_bot", &health); err != nil {
 			t.Fatal(err)
 		}
-		if cursor, count := journalCursor(t, a), journalCount(t, a); calls != 1 || cursor != "prior" || count != 0 || health["reason"] != "storage_size_unavailable" {
+		if cursor, count := journalCursor(t, a), journalCount(t, a); calls != 0 || cursor != "prior" || count != 0 || health["reason"] != "storage_size_unavailable" {
 			t.Fatalf("unknown storage size was accepted: calls=%d cursor=%q count=%d health=%#v", calls, cursor, count, health)
 		}
 	})
