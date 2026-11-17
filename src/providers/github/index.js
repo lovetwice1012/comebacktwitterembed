@@ -30,15 +30,23 @@ function externalMediaUrlsFromStep(step) {
     return urls;
 }
 
-/** @type {import('../_types').Extractor} */
-async function extract(message, url, settings) {
-    settings = settings || {};
+const PREFETCHED_GITHUB = Symbol('prefetched github');
+async function prefetch(url, s) {
+    s = s || {};
     const parsed = parseGitHubUrl(url);
+    return { parsed, data: parsed ? await fetchGitHubData(parsed, s) : null };
+}
+
+/** @type {import('../_types').Extractor} */
+async function extract(message, url, settings, opts) {
+    const prefetched = opts?.[PREFETCHED_GITHUB];
+    settings = settings || {};
+    const parsed = prefetched ? prefetched.parsed : parseGitHubUrl(url);
     if (!parsed) return null;
 
     let data;
     try {
-        data = await fetchGitHubData(parsed, settings);
+        data = prefetched ? prefetched.data : await fetchGitHubData(parsed, settings);
     } catch (err) {
         recordProviderError('github', err, message, url, { endpointKey: 'github/rest' });
         console.log(err);
@@ -133,6 +141,9 @@ const githubProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchSettings: true,
+    prefetchOption: PREFETCHED_GITHUB,
 };
 
 module.exports = githubProvider;

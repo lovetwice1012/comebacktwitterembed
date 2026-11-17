@@ -26,8 +26,17 @@ function containsBannedWord(text, bannedWords) {
     return bannedWords.some(word => word && text.includes(word));
 }
 
+const PREFETCHED_AMAZON = Symbol('prefetched amazon');
+async function prefetch(url, s) {
+    const parsed = parseAmazonUrl(url);
+    if (!parsed || normalizeAmazonExtractTargets(s).length === 0 || !shouldExtractAmazonParsed(parsed, s)) return { skip: true };
+    try { return { page: await fetchAmazonPage(url, undefined, s.defaultLanguage) }; }
+    catch (error) { if (!parsed.id) throw error; return { page: null }; }
+}
+
 /** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_AMAZON];
     s = s || {};
     const initialParsed = parseAmazonUrl(url);
     if (!initialParsed) return null;
@@ -37,9 +46,9 @@ async function extract(message, url, s) {
     let parsed = initialParsed;
     let html = '';
     try {
-        const page = await fetchAmazonPage(url, undefined, s.defaultLanguage);
-        html = page.html;
-        const resolvedParsed = parseAmazonUrl(page.finalUrl);
+        const page = prefetched ? prefetched.page : await fetchAmazonPage(url, undefined, s.defaultLanguage);
+        html = page?.html || '';
+        const resolvedParsed = page ? parseAmazonUrl(page.finalUrl) : null;
         if (resolvedParsed?.id) {
             parsed = {
                 ...resolvedParsed,
@@ -140,6 +149,9 @@ const amazonProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchSettings: true,
+    prefetchOption: PREFETCHED_AMAZON,
 };
 
 module.exports = amazonProvider;

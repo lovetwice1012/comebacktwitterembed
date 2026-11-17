@@ -546,3 +546,12 @@ test('pixiv extract: hash page selector shows that single image', async () => {
     assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p1_master1200.jpg');
     assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '2 / 3');
 });
+
+test('pixiv prefetch reuses artwork data and current deletion settings', async () => {
+    let calls = 0; const fake = createPixivFetch(1);
+    const provider = loadPixivProviderWithFetch(async url => { calls++; return fake(url); });
+    const url = 'https://www.pixiv.net/artworks/123456', settings = { deletemessageifonlypostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage({ content: url }), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+});

@@ -462,8 +462,13 @@ async function runSendStepsNow(message, steps, trackingContext) {
             telemetry.event('discord_send', 'started', attempt);
             try {
                 let outputPayload = payload;
+                // discord.js resolves URL files into memory before sending.
+                // Reserve the same bounded media slot for Vx and saved posts as
+                // for Fx, and retain it until Discord completes the upload.
+                if (providerId === 'twitter' && payload.files?.length && !twitterMediaLease) {
+                    await acquireTwitterMediaBatch(); twitterMediaLease = true;
+                }
                 if (providerId === 'twitter' && step.safeTwitterMedia === true && payload.files?.length) {
-                    if (!twitterMediaLease) { await acquireTwitterMediaBatch(); twitterMediaLease = true; }
                     const alreadyVerified = payload.files.every(file => file && typeof file === 'object' && verifiedTwitterFiles.has(file));
                     preparedTwitterFiles = alreadyVerified ? payload.files : await prepareTwitterFiles(payload.files);
                     for (const file of preparedTwitterFiles) verifiedTwitterFiles.add(file);

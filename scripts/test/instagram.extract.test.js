@@ -933,3 +933,13 @@ test('instagram client: profile API backoff stays local and resets with the cach
     await assert.rejects(rateLimited.fetchProfileData('artist'), { status: 429 });
     assert.equal(rateLimitedCalls, 2);
 });
+
+test('instagram prefetch reuses Reel metadata and keeps current deletion settings', async () => {
+    let calls = 0;
+    const provider = loadInstagramProviderWithFetch(async url => { calls++; return { ok: true, text: async () => String(url).includes('/embed/') ? reelVideoHtml() : reelPoster() }; });
+    const url = 'https://www.instagram.com/reel/Ddmd-UrRH2B/';
+    const result = await provider.prefetch(url), before = calls;
+    const steps = await provider.extract(createMessage(url), url, { deletemessageifonlypostedtweetlink: true }, { [provider.prefetchOption]: result });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+    assert.equal(steps[0].files[0].attachment, 'https://example.com/Ddmd-UrRH2B.mp4?sig=fixture');
+});

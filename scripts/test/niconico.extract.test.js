@@ -232,3 +232,12 @@ test('niconico parse: rejects non-niconico urls', () => {
     const provider = require('../../src/providers/niconico');
     assert.equal(provider._internal.parseNiconicoUrl('https://example.com/watch/sm9'), null);
 });
+
+test('niconico prefetch reuses source and keeps current deletion settings', async () => {
+    let calls = 0;
+    const provider = loadNiconicoProviderWithFetch(async () => { calls++; return okJson(watchResponse()); });
+    const url = 'https://www.nicovideo.jp/watch/sm9';
+    const result = await provider.prefetch(url), before = calls;
+    const steps = await provider.extract(createMessage(url), url, { deletemessageifonlypostedtweetlink: true }, { [provider.prefetchOption]: result });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+});

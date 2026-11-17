@@ -666,3 +666,24 @@ test('a different first provider can prefetch an eligible X URL without reorderi
     });
     assert.deepEqual(events.filter(event => event.startsWith('send:')), ['send:first', 'send:second']);
 });
+
+test('settings-sensitive prefetch is discarded after a configuration edit', async () => {
+    let activeSettings = { enabled: true, defaultLanguage: 'en' }, release, begin;
+    const started = new Promise(resolve => { begin = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const first = { id: 'first', extract: async () => { await started; activeSettings = { enabled: true, defaultLanguage: 'ja' }; release(); return []; } };
+    const calls = [], symbol = Symbol('settings-sensitive');
+    const second = { id: 'second', prefetchOption: symbol, prefetchSettings: true,
+        prefetch: async (_url, settings) => { assert.equal(settings.defaultLanguage, 'en'); begin(); await gate; return { stale: true }; },
+        extract: async (_message, _url, settings, options) => { calls.push({ language: settings.defaultLanguage, options }); return []; } };
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value }, loader: { extractAllUrls: () => [{ provider: first, url: 'https://example.test/first' }, { provider: second, url: 'https://example.test/second' }] },
+        providerSettings: { getProviderSettings: async provider => provider === first ? { enabled: true } : activeSettings },
+        dispatcher: { runSendSteps: () => assert.fail('unexpected send') },
+        errorTracking: { recordMetric: () => {}, recordAnalyticsEvent: () => {}, recordError: error => { throw error; } },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient(); register(client);
+        await listeners[1]({ id: 'settings-change-prefetch', guild: { id: 'guild' }, channel: { id: 'channel' }, author: { id: 'user' }, member: { roles: { cache: new Map() } }, content: 'https://example.test/first https://example.test/second' });
+    });
+    assert.deepEqual(calls, [{ language: 'ja', options: undefined }]);
+});

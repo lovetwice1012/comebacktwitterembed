@@ -310,7 +310,11 @@ function register(client) {
                                     const member = await getMessageMember(message);
                                     if (!member || ifUserHasRole(member, disabled.role)) return null;
                                 }
-                                return { value: await next.provider.prefetch(next.url), at: Date.now() };
+                                // Some source requests depend on the plan's language or
+                                // provider settings. Never reuse them after a setting edit.
+                                const settingsHash = next.provider.prefetchSettings ? require('../adminSupport/inspect').hash(settings) : null;
+                                const snapshot = next.provider.prefetchSettings ? structuredClone(settings) : undefined;
+                                return { value: await next.provider.prefetch(next.url, snapshot), settingsHash, at: Date.now() };
                             }).catch(() => null));
                         pendingPrefetch = ticket;
                     }
@@ -322,7 +326,8 @@ function register(client) {
                         if (prepared) {
                             try { prefetched = await prepared.promise; } finally { prepared.release(); }
                         }
-                        const usable = prepared?.url === url && prefetched?.value && Date.now() - prefetched.at < 5000;
+                        const usable = prepared?.url === url && prefetched?.value && Date.now() - prefetched.at < 5000
+                            && (!provider.prefetchSettings || prefetched.settingsHash === require('../adminSupport/inspect').hash(providerSettings));
                         steps = usable
                             ? await provider.extract(message, url, providerSettings, { [provider.prefetchOption]: prefetched.value })
                             : await provider.extract(message, url, providerSettings);

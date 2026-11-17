@@ -110,7 +110,7 @@ async function fetchTwitterMedia(raw, options = {}) {
                 if (length && (!/^\d+$/.test(length) || Number(length) > maxBytes)) throw error('TWITTER_MEDIA_TOO_LARGE');
                 const chunks = []; let total = 0;
                 for await (const chunk of response.body) {
-                    const buffer = Buffer.from(chunk); total += buffer.length;
+                    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); total += buffer.length;
                     if (total > maxBytes) throw error('TWITTER_MEDIA_TOO_LARGE');
                     chunks.push(buffer);
                 }

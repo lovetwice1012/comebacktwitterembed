@@ -701,3 +701,11 @@ test('amazon extract: zero remains a price and malformed offers do not create a 
         assert.equal(result[0].analytics.metrics.price, value === 0 ? 0 : undefined);
     }
 });
+
+test('amazon prefetch reuses product page and current deletion settings', async () => {
+    let calls = 0; const provider = loadAmazonProviderWithFetch(async url => { calls++; return okHtml(productJsonLdHtml(), url); });
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW', settings = { deletemessageifonlypostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage(url), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true); assert.equal(steps[0].embeds[0].title, 'Echo Dot smart speaker');
+});

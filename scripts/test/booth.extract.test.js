@@ -612,3 +612,20 @@ test('booth _sale: extractSalePeriod picks variation-level period when top-level
 });
 
 
+
+test('booth item prefetch reuses metadata with current deletion settings', async () => {
+    let calls = 0; const provider = loadBoothProviderWithFetch(async () => { calls++; return { ok: true, json: async () => createInfo(3) }; });
+    const url = 'https://shop.booth.pm/items/123456', settings = { deletemessageifonlypostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage(url), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true); assert.equal(steps[0].embeds[0].title, 'sample item');
+});
+
+test('booth shop root prefetch preserves presentation and uses no second lookup', async () => {
+    let calls = 0;
+    const provider = loadBoothProviderWithFetch(async () => { calls++; return { ok: true, url: 'https://shop.booth.pm/', text: async () => '<meta content="https://shop.booth.pm/" property="og:url"><meta property="og:title" content="Example Shop">' }; });
+    const url = 'https://shop.booth.pm/', settings = { alwaysreplyifpostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage(url), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].send, 'reply-source'); assert.equal(steps[0].embeds[0].title, 'Example Shop');
+});

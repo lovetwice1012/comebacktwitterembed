@@ -484,3 +484,11 @@ test('steam prices: app HTML fallback localizes requests and ignores cheaper DLC
     assert.equal(fieldValue(step.embeds[0], '価格'), new Intl.NumberFormat('ja', { style: 'currency', currency: 'EUR' }).format(9.75));
     assert.equal(step.analytics.metrics.price, 9.75);
 });
+
+test('steam app prefetch reuses data and preserves current deletion settings', async () => {
+    let calls = 0; const provider = loadSteamProviderWithFetch(async () => { calls++; return okJson(appDetailsPayload()); });
+    const url = 'https://store.steampowered.com/app/730/', settings = { deletemessageifonlypostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage(url), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true); assert.equal(steps[0].embeds[0].title, 'Counter-Strike 2');
+});

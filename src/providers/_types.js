@@ -72,7 +72,8 @@
  * @property {RegExp} urlPattern          本文中の URL を検出する g 付き正規表現
  * @property {RegExp} [cleanPattern]      `<URL>` / `||URL||` 除去用 (省略時は urlPattern から自動生成)
  * @property {Extractor} extract          メイン extractor (この 1 関数だけが必須インターフェース)
- * @property {(url: string) => Promise<any>} [prefetch] Side-effect-free source acquisition for ordered expansion.
+ * @property {(url: string, settings?: object) => Promise<any>} [prefetch] Side-effect-free source acquisition for ordered expansion.
+ * @property {boolean} [prefetchSettings] Bind speculation to an unchanged settings snapshot.
  * @property {symbol} [prefetchOption] Private extractor option carrying prefetched source data.
  * @property {Array<string|object>|object} [settings] GUI-editable provider-specific settings.
  */

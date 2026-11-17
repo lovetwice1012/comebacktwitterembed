@@ -738,3 +738,18 @@ test('youtube extract: hidden stats retain native analytics and reloaded clients
     assert.equal(firstResult[0].analytics.metrics.views, 1234567);
     assert.equal(secondResult[0].analytics.metrics.views, 42);
 });
+
+test('youtube prefetch reuses the source while applying current reply and deletion settings', async () => {
+    let count = 0;
+    const provider = loadYouTubeProviderWithFetch(async () => { count++; return okJson(videoInfo()); });
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const prefetched = await provider.prefetch(url);
+    const fetched = count;
+    const steps = await provider.extract(createMessage(url), url, {
+        alwaysreplyifpostedtweetlink: true, deletemessageifonlypostedtweetlink: true,
+    }, { [provider.prefetchOption]: prefetched });
+    assert.equal(count, fetched);
+    assert.equal(steps[0].send, 'reply-source');
+    assert.equal(steps[0].deleteSource, true);
+    assert.match(steps[0].embeds[0].title, /Example Video/);
+});

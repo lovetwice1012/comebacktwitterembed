@@ -638,3 +638,17 @@ test('github urlPattern and parser: match supported URLs and reject reserved/non
         'mobile/v1.0.0'
     );
 });
+
+test('github prefetch reuses repository data and preserves current deletion settings', async () => {
+    let calls = 0;
+    const provider = loadGitHubProviderWithFetch(async url => {
+        calls++;
+        if (String(url).includes('/stats/') || String(url).includes('/commits?')) return okJson([]);
+        if (String(url).endsWith('/languages')) return okJson({ JavaScript: 1 });
+        return okJson({ full_name: 'openai/codex', html_url: 'https://github.com/openai/codex', description: 'Example', owner: { login: 'openai' }, default_branch: 'main' });
+    });
+    const url = 'https://github.com/openai/codex', settings = { deletemessageifonlypostedtweetlink: true };
+    const value = await provider.prefetch(url, settings), before = calls;
+    const steps = await provider.extract(createMessage(url), url, settings, { [provider.prefetchOption]: value });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+});

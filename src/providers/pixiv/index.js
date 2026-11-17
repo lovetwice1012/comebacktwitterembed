@@ -503,17 +503,25 @@ function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls
 
 // ---- extract --------------------------------------------------------------
 
+const PREFETCHED_PIXIV = Symbol('prefetched pixiv');
+async function prefetch(url, s) {
+    s = s || {};
+    const parsed = parsePixivUrl(url, pickLanguage(s.defaultLanguage ?? 'en'));
+    return { parsed, data: parsed ? await fetchPixivInfo(parsed.id, parsed.language, parsed.index) : null };
+}
+
 /** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_PIXIV];
     s = s || {};
     const guildLang = s.defaultLanguage ?? 'en';
 
-    const parsed = parsePixivUrl(url, pickLanguage(guildLang));
+    const parsed = prefetched ? prefetched.parsed : parsePixivUrl(url, pickLanguage(guildLang));
     if (!parsed) return null;
 
     let info;
     try {
-        info = await fetchPixivInfo(parsed.id, parsed.language, parsed.index);
+        info = prefetched ? prefetched.data : await fetchPixivInfo(parsed.id, parsed.language, parsed.index);
     } catch (err) {
         recordProviderError('pixiv', err, message, url, { endpointKey: 'pixiv/ajax/illust' });
         console.log(err);
@@ -707,5 +715,8 @@ const pixivProvider = {
     ],
     // cleanPattern は省略 → loader が urlPattern から自動生成 (<...> / ||...|| 除去)
     extract,
+    prefetch,
+    prefetchSettings: true,
+    prefetchOption: PREFETCHED_PIXIV,
 };
 module.exports = pixivProvider;

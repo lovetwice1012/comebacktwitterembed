@@ -471,8 +471,16 @@ function addImageCountField(embed, shownCount, totalCount, lang, s) {
     addField(embed.fields, tr(STR.imagesField, lang), `${shownCount} / ${totalCount}`);
 }
 
+const PREFETCHED_TIKTOK = Symbol('prefetched tiktok');
+async function prefetch(url) {
+    const resolved = await resolveTikTokUrl(url);
+    if (!resolved?.id) return { resolved, data: null };
+    return { resolved, data: resolved.kind === 'profile' ? await fetchProfileData(resolved.id) : await fetchVideoData(resolved.id) };
+}
+
 /** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_TIKTOK];
     s = s || {};
     const guildId = message.guild.id;
     const guildLang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
@@ -481,9 +489,9 @@ async function extract(message, url, s) {
     let resolved;
     let data;
     try {
-        resolved = await resolveTikTokUrl(url);
+        resolved = prefetched ? prefetched.resolved : await resolveTikTokUrl(url);
         if (!resolved?.id) return null;
-        data = resolved.kind === 'profile'
+        data = prefetched ? prefetched.data : resolved.kind === 'profile'
             ? await fetchProfileData(resolved.id)
             : await fetchVideoData(resolved.id);
     } catch (err) {
@@ -623,6 +631,8 @@ const tiktokProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_TIKTOK,
 };
 
 module.exports = tiktokProvider;

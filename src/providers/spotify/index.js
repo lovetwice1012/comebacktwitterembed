@@ -275,10 +275,17 @@ function buildButtons(lang, canonicalUrl, hasImage) {
     return rows;
 }
 
-/** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
-    s = s || {};
+const PREFETCHED_SPOTIFY = Symbol('prefetched spotify');
+async function prefetch(url) {
     const parsed = parseSpotifyUrl(url);
+    return { parsed, data: parsed ? await fetchSpotifyInfo(parsed.type, parsed.id) : null };
+}
+
+/** @type {import('../_types').Extractor} */
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_SPOTIFY];
+    s = s || {};
+    const parsed = prefetched ? prefetched.parsed : parseSpotifyUrl(url);
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
@@ -286,7 +293,7 @@ async function extract(message, url, s) {
 
     let item;
     try {
-        item = await fetchSpotifyInfo(parsed.type, parsed.id);
+        item = prefetched ? prefetched.data : await fetchSpotifyInfo(parsed.type, parsed.id);
     } catch (err) {
         recordProviderError('spotify', err, message, url, { endpointKey: 'spotify/embed-or-oembed' });
         console.log(err);
@@ -415,6 +422,8 @@ const spotifyProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_SPOTIFY,
 };
 
 module.exports = spotifyProvider;

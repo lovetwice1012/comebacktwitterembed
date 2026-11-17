@@ -311,15 +311,22 @@ function buildStep(embed, message, url, s, lang, mediaUrls = [], analytics = nul
     return step;
 }
 
-/** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
-    s = s || {};
+const PREFETCHED_NICONICO = Symbol('prefetched niconico');
+async function prefetch(url) {
     const parsed = parseNiconicoUrl(url);
+    return { parsed, data: parsed ? await fetchWatchData(parsed.id) : null };
+}
+
+/** @type {import('../_types').Extractor} */
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_NICONICO];
+    s = s || {};
+    const parsed = prefetched ? prefetched.parsed : parseNiconicoUrl(url);
     if (!parsed) return null;
 
     try {
         const lang = normalizeLang(s);
-        const watchData = await fetchWatchData(parsed.id);
+        const watchData = prefetched ? prefetched.data : await fetchWatchData(parsed.id);
         const embed = buildVideoEmbed(watchData, parsed, message, s);
         const mediaUrl = thumbnailUrl(watchData?.video?.thumbnail);
         const playable = Boolean(watchData?.client?.watchId && watchData?.client?.watchTrackId
@@ -361,6 +368,8 @@ const niconicoProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_NICONICO,
 };
 
 module.exports = niconicoProvider;

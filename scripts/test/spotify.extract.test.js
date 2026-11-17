@@ -443,3 +443,12 @@ test('spotify urlPattern: matches track, album, and artist links', () => {
         'https://open.spotify.com/artist/art456',
     ]);
 });
+
+test('spotify prefetch reuses metadata with current deletion settings', async () => {
+    let calls = 0;
+    const provider = loadSpotifyProviderWithFetch(async () => { calls++; return { ok: true, text: async () => nextDataHtml(createTrackEntity()) }; });
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const result = await provider.prefetch(url), before = calls;
+    const steps = await provider.extract(createMessage(url), url, { deletemessageifonlypostedtweetlink: true }, { [provider.prefetchOption]: result });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+});

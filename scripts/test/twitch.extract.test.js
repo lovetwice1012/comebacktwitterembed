@@ -412,3 +412,11 @@ test('twitch internals parse supported twitch urls', () => {
     );
     assert.equal(provider._internal.parseTwitchChannelUrl('https://www.twitch.tv/directory'), null);
 });
+
+test('twitch channel prefetch reuses metadata and preserves deletion settings', async () => {
+    const calls = [], provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls));
+    const url = 'https://www.twitch.tv/killin9hit';
+    const result = await provider.prefetch(url), before = calls.length;
+    const steps = await provider.extract(createMessage(url), url, { deletemessageifonlypostedtweetlink: true }, { [provider.prefetchOption]: result });
+    assert.equal(calls.length, before); assert.equal(steps[0].deleteSource, true);
+});

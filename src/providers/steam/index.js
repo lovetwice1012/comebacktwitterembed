@@ -734,17 +734,25 @@ async function resolveSteamInfo(parsed, settings) {
     };
 }
 
-/** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+const PREFETCHED_STEAM = Symbol('prefetched steam');
+async function prefetch(url, s) {
     s = s || {};
-    const initialParsed = parseSteamUrl(url);
+    const parsed = parseSteamUrl(url);
+    return { parsed, data: parsed ? await resolveSteamInfo(parsed, s) : null };
+}
+
+/** @type {import('../_types').Extractor} */
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_STEAM];
+    s = s || {};
+    const initialParsed = prefetched ? prefetched.parsed : parseSteamUrl(url);
     if (!initialParsed) return null;
 
     const lang = normalizeLanguage(s);
     let parsed;
     let info;
     try {
-        const resolved = await resolveSteamInfo(initialParsed, s);
+        const resolved = prefetched ? prefetched.data : await resolveSteamInfo(initialParsed, s);
         parsed = resolved.parsed;
         info = resolved.info;
     } catch (err) {
@@ -820,6 +828,9 @@ const steamProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchSettings: true,
+    prefetchOption: PREFETCHED_STEAM,
 };
 
 module.exports = steamProvider;

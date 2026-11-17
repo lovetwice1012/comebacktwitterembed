@@ -49,6 +49,14 @@ function splitMediaSteps(step) {
 }
 
 const { resolveShareUrl, resolveParsedUrl, fetchProfileData, fetchInstagramData, clearCache } = createInstagramClient(fetch);
+const PREFETCHED_INSTAGRAM = Symbol('prefetched instagram');
+
+async function prefetch(url) {
+    const parsed = await resolveParsedUrl(parseInstagramUrl(url));
+    if (!parsed || (parsed.kind !== 'media' && parsed.kind !== 'profile')) return { parsed, data: null };
+    const data = parsed.kind === 'profile' ? await fetchProfileData(parsed.username) : await fetchInstagramData(parsed);
+    return { parsed, data };
+}
 
 function containsBannedWord(text, bannedWords) {
     if (!Array.isArray(bannedWords) || bannedWords.length === 0) return false;
@@ -61,8 +69,9 @@ async function extract(message, url, s, opts) {
     opts = opts || {};
     const lang = toApiLocaleFamily(s.defaultLanguage);
 
+    const prefetched = opts[PREFETCHED_INSTAGRAM];
     let parsed;
-    try { parsed = await resolveParsedUrl(parseInstagramUrl(url)); }
+    try { parsed = prefetched ? prefetched.parsed : await resolveParsedUrl(parseInstagramUrl(url)); }
     catch (err) {
         recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/share' });
         return buildFailureResponse('instagram', url, s, err);
@@ -75,7 +84,7 @@ async function extract(message, url, s, opts) {
     if (parsed.kind === 'profile') {
         let profile;
         try {
-            profile = await fetchProfileData(parsed.username);
+            profile = prefetched ? prefetched.data : await fetchProfileData(parsed.username);
         } catch (err) {
             console.warn('[instagram] profile lookup failed:', err?.code || (Number.isInteger(err?.status) ? `HTTP_${err.status}` : 'INSTAGRAM_UPSTREAM_ERROR'));
             recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/profile' });
@@ -109,7 +118,7 @@ async function extract(message, url, s, opts) {
 
     let data;
     try {
-        data = await fetchInstagramData(parsed);
+        data = prefetched ? prefetched.data : await fetchInstagramData(parsed);
     } catch (err) {
         recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/embed-or-graphql' });
         return buildFailureResponse('instagram', url, s, err);
@@ -176,6 +185,8 @@ const instagramProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_INSTAGRAM,
 };
 
 module.exports = instagramProvider;

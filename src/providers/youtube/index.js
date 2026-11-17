@@ -27,29 +27,43 @@ const {
     fetchChannelInfoFromYouTubePage,
 } = createYouTubeClient(fetch);
 const buildStep = createStepBuilder(youtubeDownloadStore);
+const PREFETCHED_YOUTUBE = Symbol('prefetched youtube');
+
+// Network acquisition only. Presentation and the download-store side effects
+// still happen during ordered extraction with the current settings.
+async function prefetch(url) {
+    const parsed = parseYouTubeUrl(url);
+    if (!parsed) return { parsed, result: null };
+    let result;
+    if (parsed.type === 'video') result = await fetchVideoInfoWithFallback(parsed.id);
+    else if (parsed.type === 'playlist') result = await fetchPlaylistInfoWithFallback(parsed.id);
+    else if (parsed.type === 'channel') result = await fetchChannelInfoWithFallback(parsed.id, parsed.resolved);
+    return { parsed, result };
+}
 
 /** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+async function extract(message, url, s, opts) {
     s = s || {};
 
-    const parsed = parseYouTubeUrl(url);
+    const prefetched = opts?.[PREFETCHED_YOUTUBE];
+    const parsed = prefetched?.parsed || parseYouTubeUrl(url);
     if (!parsed) return null;
 
     try {
         const lang = normalizeLang(s);
         let embed;
         if (parsed.type === 'video') {
-            const { json, baseUrl } = await fetchVideoInfoWithFallback(parsed.id);
+            const { json, baseUrl } = (prefetched ? prefetched.result : await fetchVideoInfoWithFallback(parsed.id));
             if (!json || json.error) return null;
             embed = buildVideoEmbed(json, parsed, baseUrl, message, s);
             return [buildStep(embed, message, url, s, lang, true, buildYouTubeAnalytics(parsed, json, url))];
         } else if (parsed.type === 'playlist') {
-            const { json, baseUrl } = await fetchPlaylistInfoWithFallback(parsed.id);
+            const { json, baseUrl } = (prefetched ? prefetched.result : await fetchPlaylistInfoWithFallback(parsed.id));
             if (!json || json.error) return null;
             embed = buildPlaylistEmbed(json, parsed, baseUrl, message, s);
             return [buildStep(embed, message, url, s, lang, false, buildYouTubeAnalytics(parsed, json, url))];
         } else if (parsed.type === 'channel') {
-            const result = await fetchChannelInfoWithFallback(parsed.id, parsed.resolved);
+            const result = prefetched ? prefetched.result : await fetchChannelInfoWithFallback(parsed.id, parsed.resolved);
             if (!result || !result.json || result.json.error) return null;
             embed = buildChannelEmbed(result.json, parsed, result.baseUrl, message, s);
             return [buildStep(embed, message, url, s, lang, false, buildYouTubeAnalytics(parsed, result.json, url))];
@@ -87,6 +101,8 @@ const youtubeProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_YOUTUBE,
 };
 
 module.exports = youtubeProvider;

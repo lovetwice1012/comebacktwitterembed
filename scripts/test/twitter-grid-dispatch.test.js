@@ -538,3 +538,18 @@ test('when a single-attempt sender cannot be verified no X multi-file post is at
     const result = await f.run([{ files: ['https://pbs.twimg.com/media/a', 'https://pbs.twimg.com/media/b'], deleteSource: true }]);
     assert.equal(posts, 0); assert.equal(result.plannedSteps, 1); assert.equal(result.outcome, 'E'); assert.deepEqual(f.post, []);
 });
+
+test('Vx attachment resolutions share the bounded media admission until send completes', async () => {
+    let release, bothStarted, sends = 0;
+    const gate = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { bothStarted = resolve; });
+    const f = fixture(async () => { const id = ++sends; if (id === 2) bothStarted(); await gate; return { id: String(id) }; }, { prepare: async step => ({ step }) });
+    const jobs = Array.from({ length: 3 }, (_, i) => f.run([{ files: [`https://video.twimg.com/ext_tw_video/${i}.mp4`] }]));
+    await ready;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(sends, 2);
+    release();
+    const results = await Promise.all(jobs);
+    assert.equal(sends, 3);
+    assert.ok(results.every(result => result.outcome === 'F'));
+});

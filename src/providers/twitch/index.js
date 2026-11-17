@@ -569,10 +569,17 @@ function appendContent(step, content) {
     step.content = [step.content, content].filter(Boolean).join('\n');
 }
 
-/** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
-    s = s || {};
+const PREFETCHED_TWITCH = Symbol('prefetched twitch');
+async function prefetch(url) {
     const parsed = parseTwitchUrl(url);
+    return { parsed, data: parsed ? parsed.kind === 'clip' ? await fetchClipInfo(parsed.slug) : await fetchChannelInfo(parsed.login) : null };
+}
+
+/** @type {import('../_types').Extractor} */
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_TWITCH];
+    s = s || {};
+    const parsed = prefetched ? prefetched.parsed : parseTwitchUrl(url);
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
@@ -580,7 +587,7 @@ async function extract(message, url, s) {
 
     let info;
     try {
-        info = parsed.kind === 'clip'
+        info = prefetched ? prefetched.data : parsed.kind === 'clip'
             ? await fetchClipInfo(parsed.slug)
             : await fetchChannelInfo(parsed.login);
     } catch (err) {
@@ -666,6 +673,8 @@ const twitchProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchOption: PREFETCHED_TWITCH,
 };
 
 module.exports = twitchProvider;

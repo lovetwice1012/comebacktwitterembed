@@ -58,9 +58,9 @@ async function fetchShop(fetch, shop, stripHtml) {
     return info;
 }
 
-async function extractShop({ fetch, message, url, settings, parsed, recordProviderError, buildFailureResponse, stripHtml }) {
+async function extractShop({ fetch, message, url, settings, parsed, recordProviderError, buildFailureResponse, stripHtml, prefetchedInfo }) {
     let info;
-    try { info = await fetchShop(fetch, parsed.shop, stripHtml); }
+    try { info = prefetchedInfo || await fetchShop(fetch, parsed.shop, stripHtml); }
     catch (err) {
         recordProviderError('booth', err, message, url, { endpointKey: 'booth/shop' });
         return buildFailureResponse('booth', url, settings, err);
@@ -82,4 +82,4 @@ async function extractShop({ fetch, message, url, settings, parsed, recordProvid
     return [step];
 }
 
-module.exports = { extractShop, _internal: { parseShop, isShopRoot } };
+module.exports = { extractShop, fetchShop, _internal: { parseShop, isShopRoot } };

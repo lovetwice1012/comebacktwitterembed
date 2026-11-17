@@ -402,19 +402,28 @@ function formatSalePeriod(period, lang) {
 
 // ---- extract --------------------------------------------------------------
 
+const PREFETCHED_BOOTH = Symbol('prefetched booth');
+async function prefetch(url, s) {
+    const parsed = parseBoothUrl(url, pickLanguage(s?.defaultLanguage ?? 'en'));
+    if (!parsed) return { parsed, data: null };
+    const data = parsed.type === 'shop' ? await require('./shop').fetchShop(fetch, parsed.shop, stripHtml) : await fetchBoothInfo(parsed);
+    return { parsed, data };
+}
+
 /** @type {import('../_types').Extractor} */
-async function extract(message, url, s) {
+async function extract(message, url, s, opts) {
+    const prefetched = opts?.[PREFETCHED_BOOTH];
     s = s || {};
     const guildLang = s.defaultLanguage ?? 'en';
     const apiLang = pickLanguage(guildLang);
 
-    const parsed = parseBoothUrl(url, apiLang);
+    const parsed = prefetched ? prefetched.parsed : parseBoothUrl(url, apiLang);
     if (!parsed) return null;
-    if (parsed.type === 'shop') return require('./shop').extractShop({ fetch, message, url, settings: s, parsed, recordProviderError, buildFailureResponse, stripHtml });
+    if (parsed.type === 'shop') return require('./shop').extractShop({ fetch, message, url, settings: s, parsed, recordProviderError, buildFailureResponse, stripHtml, prefetchedInfo: prefetched?.data });
 
     let info;
     try {
-        info = await fetchBoothInfo(parsed);
+        info = prefetched ? prefetched.data : await fetchBoothInfo(parsed);
     } catch (err) {
         recordProviderError('booth', err, message, url, { endpointKey: 'booth/items.json' });
         console.warn('[booth] item lookup failed:', err?.code || 'BOOTH_UPSTREAM_ERROR');
@@ -598,5 +607,8 @@ const boothProvider = {
         },
     ],
     extract,
+    prefetch,
+    prefetchSettings: true,
+    prefetchOption: PREFETCHED_BOOTH,
 };
 module.exports = boothProvider;

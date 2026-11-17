@@ -685,3 +685,12 @@ test('tiktok parser: rejects non-tiktok urls', () => {
     });
     assert.equal(provider._internal.parseTikTokUrl('https://example.com/@user/video/1'), null);
 });
+
+test('tiktok prefetch reuses metadata when rendering in link-only mode', async () => {
+    let calls = 0;
+    const provider = loadTikTokProviderWithFetch(async requestUrl => { calls++; assert.equal(requestUrl, 'https://www.tiktok.com/@i/video/7332187682480590112'); return { text: async () => videoPageHtml(createVideoData()) }; });
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const result = await provider.prefetch(url), before = calls;
+    const steps = await provider.extract(createMessage(url), url, { media_display_mode: 'link_only', deletemessageifonlypostedtweetlink: true }, { [provider.prefetchOption]: result });
+    assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
+});
