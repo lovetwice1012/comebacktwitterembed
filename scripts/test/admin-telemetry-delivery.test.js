@@ -27,6 +27,28 @@ test('attachments keep hashes and lengths without serializing media bytes into e
     assert.equal(bytes.length, 3 * 1024 * 1024, 'original send payload remains intact');
 });
 
+test('binary attachments never invoke Buffer.toJSON and preserve source objects, custom serializers and cycles', () => {
+    const { AttachmentBuilder } = require('discord.js');
+    const bytes = Buffer.alloc(8 * 1024 * 1024, 7);
+    Object.defineProperty(bytes, 'toJSON', { value: () => { throw new Error('binary expansion must not run'); } });
+    const custom = { toJSON() { assert.equal(this, custom); return 'original-receiver'; } };
+    const file = Object.freeze({ attachment: bytes, name: 'photo.png', custom });
+    const data = { files: [file, new AttachmentBuilder(bytes, { name: 'builder.png' })], other: { token: 'hidden' } };
+    data.self = data;
+    const result = telemetry.serializable(data);
+    for (const item of result.files) {
+        assert.equal(item.attachment.type, 'binary');
+        assert.equal(item.attachment.byteLength, bytes.length);
+        assert.equal(item.attachment.sha256, createHash('sha256').update(bytes).digest('hex'));
+    }
+    assert.equal(result.files[0].custom, 'original-receiver');
+    assert.equal(result.self, '[circular]');
+    assert.equal(result.other.token, undefined);
+    assert.equal(file.attachment, bytes);
+    assert.equal(bytes.length, 8 * 1024 * 1024);
+    assert.equal(telemetry.serializable(bytes).byteLength, bytes.length);
+});
+
 test('event limits account for receiving Go JSON escaping and preserve trace identity with explicit omissions', () => {
     for (const body of ['a'.repeat(MAX_EVENT_BYTES + 1), '<'.repeat(Math.ceil(MAX_EVENT_BYTES / 6))]) {
         const input = { event_id: 'bounded-event', kind: 'completed', trace_id: 'trace', sequence: 3, details: { body } };

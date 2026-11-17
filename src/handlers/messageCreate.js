@@ -184,6 +184,9 @@ function register(client) {
         }
     });
 
+    // Bound both in-flight and completed speculative results across messages.
+    // No queue: under load the ordinary sequential path remains available.
+    let prefetchSlots = 0;
     let lastOverloadWarningAt = -Infinity;
     const handleMessage = (message, { retry = false } = {}) => {
         // All supported URLs contain ://. Skip ordinary chat before creating
@@ -249,7 +252,13 @@ function register(client) {
             message,
         }, async () => {
             telemetry.event('queue', 'started', { waitMs: performance.now() - queuedAt, snapshot: messageWorkQueue.snapshot() });
-            for (const { provider, url, requestId, receivedStart } of matches) {
+            let pendingPrefetch = /** @type {any} */ (null);
+            try {
+            for (let matchIndex = 0; matchIndex < matches.length; matchIndex++) {
+                const { provider, url, requestId, receivedStart } = matches[matchIndex];
+                const prepared = pendingPrefetch;
+                pendingPrefetch = null;
+                try {
                 const resultState = /** @type {any} */ ({});
                 const requestStarted = receivedStart;
                 await telemetry.run({ trace_id: requestId, request_id: requestId, provider_id: provider.id, url, resultState }, async () => {
@@ -283,11 +292,40 @@ function register(client) {
                     if (!message.member && !message.webhookId) {
                         retainMessageMember(message, await getMessageMember(message));
                     }
+                    // Prefetch source data only after checking the next provider's
+                    // eligibility; Discord actions remain strictly ordered.
+                    const next = matches[matchIndex + 1];
+                    if (next && typeof next.provider.prefetch === 'function'
+                        && typeof next.provider.prefetchOption === 'symbol' && prefetchSlots < 2) {
+                        prefetchSlots++;
+                        const ticket = { url: next.url, released: false };
+                        ticket.release = () => { if (!ticket.released) { ticket.released = true; prefetchSlots--; } };
+                        ticket.promise = telemetry.run({ trace_id: next.requestId, request_id: next.requestId, provider_id: next.provider.id, url: next.url },
+                            () => Promise.resolve().then(async () => {
+                                const settings = await getProviderSettings(next.provider, message.guild.id);
+                                if (settings.enabled !== true || (message.author.bot && settings.extract_bot_message !== true && !message.webhookId)) return null;
+                                const disabled = normalizeDisableSetting(settings.disable);
+                                if (disabled.user.includes(message.author.id) || disabled.channel.includes(message.channel.id)) return null;
+                                if (!message.webhookId && disabled.role.length) {
+                                    const member = await getMessageMember(message);
+                                    if (!member || ifUserHasRole(member, disabled.role)) return null;
+                                }
+                                return { value: await next.provider.prefetch(next.url), at: Date.now() };
+                            }).catch(() => null));
+                        pendingPrefetch = ticket;
+                    }
                     let steps;
                     const startedAt = Date.now();
                     recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
                     try {
-                        steps = await provider.extract(message, url, providerSettings);
+                        let prefetched = null;
+                        if (prepared) {
+                            try { prefetched = await prepared.promise; } finally { prepared.release(); }
+                        }
+                        const usable = prepared?.url === url && prefetched?.value && Date.now() - prefetched.at < 5000;
+                        steps = usable
+                            ? await provider.extract(message, url, providerSettings, { [provider.prefetchOption]: prefetched.value })
+                            : await provider.extract(message, url, providerSettings);
                     } catch (err) {
                         await expansionTraceStore.updateExpansionTrace(requestId, {
                             state: 'failed', outcome: 'extract_exception', reasonCode: 'provider_extract_failed', error: err,
@@ -387,6 +425,15 @@ function register(client) {
                     telemetry.event('request', 'request.completed', { ...resultState }, { outcome, durationMs: performance.now() - requestStarted });
                 }
                 });
+                } finally {
+                    if (prepared && !prepared.released) prepared.promise.finally(() => prepared.release());
+                }
+            }
+            } finally {
+                if (pendingPrefetch) {
+                    const abandoned = pendingPrefetch;
+                    abandoned.promise.finally(() => abandoned.release());
+                }
             }
         })).catch(async err => {
             if (err?.code === 'WORK_QUEUE_FULL' || err?.code === 'WORK_QUEUE_EXPIRED') {

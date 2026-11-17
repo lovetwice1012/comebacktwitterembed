@@ -43,7 +43,7 @@ function extractWithFallback(payload, inputUrl = sourceUrl, primaryBody = '<html
     const message = { guild: { id: 'fixture', members: { me: { permissions: { has: () => false } } } },
         author: { id: '1', username: 'fixture' }, user: { id: '1', username: 'fixture' }, content: inputUrl,
         channel: { send: async () => { throw new Error('Discord I/O forbidden'); } } };
-    return { result: mod.exports.extract(message, inputUrl, { legacy_mode: true, defaultLanguage: 'ja' }), requests };
+    return { result: mod.exports.extract(message, inputUrl, { legacy_mode: true, defaultLanguage: 'ja' }), requests, provider: mod.exports, message };
 }
 
 test('Fx fallback preserves all 11 ordered photos and emits two valid steps', async () => {
@@ -207,4 +207,17 @@ test('X upgrades a legacy HTTP source before verifying fallback identity', async
     const { result, requests } = extractWithFallback(fx(), input);
     assert.ok((await result)?.length);
     assert(requests.some(url => url.startsWith('https://api.fxtwitter.com/')));
+});
+
+
+test('prefetched Twitter source is reused by the real extractor with current deletion settings', async () => {
+    const fixture = extractWithFallback(fx());
+    await fixture.result;
+    const data = await fixture.provider.prefetch(sourceUrl);
+    const countApi = () => fixture.requests.filter(url => url.includes('api.vxtwitter.com') || url.includes('api.fxtwitter.com')).length;
+    const before = countApi();
+    const steps = await fixture.provider.extract(fixture.message, sourceUrl, { legacy_mode: true, defaultLanguage: 'ja', deletemessageifonlypostedtweetlink: true }, { [fixture.provider.prefetchOption]: data });
+    assert.equal(countApi(), before);
+    assert.equal(steps.some(step => step.deleteSource === true), true);
+    assert.deepEqual(steps.flatMap(step => step.files || []), photos.map(photo => photo.url));
 });

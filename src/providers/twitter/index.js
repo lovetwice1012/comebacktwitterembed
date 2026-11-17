@@ -21,6 +21,7 @@ const {
 } = require('./twitterSourceParser');
 
 const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
+const PREFETCHED_TWEET = Symbol('prefetched tweet');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { isOnlyUrlMessageContent, videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
@@ -743,7 +744,7 @@ async function extract(message, url, s, opts) {
 
     let tweet;
     try {
-        tweet = await fetchTweetData(url);
+        tweet = opts[PREFETCHED_TWEET] || await fetchTweetData(url);
     } catch (err) {
         if (isExpectedNonExpandableTweetError(err)) {
             require('../../adminSupport/telemetry').markOutcome('target_constraint', 'upstream_non_expandable', { error: require('../../adminSupport/telemetry').errorData(err) });
@@ -985,6 +986,9 @@ const twitterProvider = {
         'secondary_extract_mode_video',
     ],
     extract,
+    // Fetch only source data ahead of the ordered extraction; no Discord actions.
+    prefetch: fetchTweetData,
+    prefetchOption: PREFETCHED_TWEET,
     // Twitter 専用 slash commands。registry が自動的に拾って Discord に登録する。
     commands: require('./commands'),
 };

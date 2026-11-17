@@ -26,14 +26,56 @@ const SHARD_STATUS_NAMES = {
 };
 
 
+// JSON invokes Buffer.toJSON before a replacer sees the value. Replace binary
+// data-valued children at their parent first, without changing the send object.
+function prepareBinaryChildren(value, replacements) {
+    if (!value || typeof value !== 'object') return value;
+    if (replacements.has(value)) return replacements.get(value);
+    const prototype = Object.getPrototypeOf(value);
+    if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return value;
+    let descriptors;
+    for (const key of Object.keys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !Object.hasOwn(descriptor, 'value')) continue;
+        const child = descriptor.value;
+        if (!child || typeof child !== 'object') continue;
+        let safe = binaryMetadata(child);
+        if (!safe) {
+            const attachment = Object.getOwnPropertyDescriptor(child, 'attachment');
+            const childPrototype = Object.getPrototypeOf(child);
+            if (attachment && Object.hasOwn(attachment, 'value') && childPrototype && childPrototype !== Object.prototype
+                && (Buffer.isBuffer(attachment.value) || ArrayBuffer.isView(attachment.value) || attachment.value instanceof ArrayBuffer)) {
+                const { AttachmentBuilder } = require('discord.js');
+                if (childPrototype === AttachmentBuilder.prototype && child.toJSON === AttachmentBuilder.prototype.toJSON) {
+                    const metadata = binaryMetadata(attachment.value);
+                    if (metadata) {
+                        const fields = Object.getOwnPropertyDescriptors(child);
+                        fields.attachment = { ...fields.attachment, value: metadata };
+                        safe = AttachmentBuilder.prototype.toJSON.call(Object.create(AttachmentBuilder.prototype, fields));
+                    }
+                }
+            }
+        }
+        if (safe) {
+            descriptors ||= Object.getOwnPropertyDescriptors(value);
+            descriptors[key] = { ...descriptor, value: safe };
+        }
+    }
+    if (!descriptors) return value;
+    const copy = Array.isArray(value) ? [] : Object.create(prototype);
+    Object.defineProperties(copy, descriptors);
+    replacements.set(value, copy);
+    return copy;
+}
+
 function serializable(value) {
     if (value === undefined) return null;
     const ancestors = [];
-    return JSON.parse(JSON.stringify(value, function (key, item) {
+    const replacements = new WeakMap();
+    const root = binaryMetadata(value) || prepareBinaryChildren({ value }, replacements).value;
+    return JSON.parse(JSON.stringify(root, function (key, item) {
         if (SENSITIVE_KEY.test(key)) return undefined;
-        // Buffer.toJSON runs before the replacer; inspect the original value
-        // so attachments never turn into multi-megabyte arrays of integers.
-        const binary = binaryMetadata(this[key]);
+        const binary = binaryMetadata(this[key]) || binaryMetadata(item);
         if (binary) return binary;
         if (typeof item === 'bigint') return String(item);
         if (typeof item === 'function') return undefined;
@@ -41,8 +83,10 @@ function serializable(value) {
         if (typeof item === 'string') return scrubText(item);
         if (item && typeof item === 'object') {
             while (ancestors.length && ancestors[ancestors.length - 1] !== this) ancestors.pop();
-            if (ancestors.includes(item)) return '[circular]';
-            ancestors.push(item);
+            const prepared = prepareBinaryChildren(item, replacements);
+            if (ancestors.includes(prepared)) return '[circular]';
+            ancestors.push(prepared);
+            return prepared;
         }
         return item;
     }));

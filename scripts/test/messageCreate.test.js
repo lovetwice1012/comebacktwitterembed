@@ -581,3 +581,88 @@ test('messageCreate fetches uncached guild member before role disable check', as
     assert.deepEqual(fetchCalls, ['user-1']);
     assert.equal(sendCalls.length, 0);
 });
+
+test('prefetch overlaps X source acquisition while sends and deletion remain ordered', async () => {
+    const events = [];
+    let resolvePrefetch, notifyFetchStarted;
+    const gate = new Promise(resolve => { resolvePrefetch = resolve; });
+    const fetchStarted = new Promise(resolve => { notifyFetchStarted = resolve; });
+    const key = Symbol('test-prefetch');
+    const provider = {
+        id: 'twitter', prefetchOption: key,
+        prefetch: async url => { events.push(`fetch:${url}`); notifyFetchStarted(); await gate; return { url }; },
+        extract: async (_message, url, _settings, options) => {
+            events.push(`extract:${url}`);
+            if (url.endsWith('/1')) { await fetchStarted; assert.ok(events.includes('fetch:https://x.com/u/status/2')); resolvePrefetch(); }
+            if (url.endsWith('/2')) assert.equal(options[key].url, url);
+            return [{ content: url, deleteSource: url.endsWith('/2') }];
+        },
+    };
+    const urls = ['https://x.com/u/status/1', 'https://x.com/u/status/2'];
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value },
+        loader: { extractAllUrls: () => urls.map(url => ({ provider, url })) },
+        providerSettings: { getProviderSettings: async () => ({ enabled: true }) },
+        dispatcher: { runSendSteps: async (_message, steps) => { events.push(`send:${steps[0].content}`); if (steps[0].deleteSource) events.push('delete'); return { outcome: 'F' }; } },
+        errorTracking: { recordMetric: () => {}, recordAnalyticsEvent: () => {}, recordError: error => { throw error; } },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient(); register(client);
+        await listeners[1]({ id: 'ordered-prefetch', guild: { id: 'guild' }, channel: { id: 'channel' }, author: { id: 'user' }, member: { roles: { cache: new Map() } }, content: urls.join(' ') });
+    });
+    assert.deepEqual(events.filter(event => event.startsWith('send:') || event === 'delete'), [`send:${urls[0]}`, `send:${urls[1]}`, 'delete']);
+});
+
+test('a failed speculative fetch falls back to normal extraction', async () => {
+    const calls = [];
+    const key = Symbol('test-prefetch-failure');
+    const provider = { id: 'twitter', prefetchOption: key, prefetch: async () => { throw new Error('temporary'); },
+        extract: async (_message, url, _settings, options) => { calls.push([url, options]); return []; } };
+    const urls = ['https://x.com/u/status/1', 'https://x.com/u/status/2'];
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value }, loader: { extractAllUrls: () => urls.map(url => ({ provider, url })) },
+        providerSettings: { getProviderSettings: async () => ({ enabled: true }) },
+        dispatcher: { runSendSteps: () => assert.fail('unexpected send') },
+        errorTracking: { recordMetric: () => {}, recordAnalyticsEvent: () => {}, recordError: error => { throw error; } },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient(); register(client);
+        await listeners[1]({ id: 'prefetch-failure', guild: { id: 'guild' }, channel: { id: 'channel' }, author: { id: 'user' }, member: { roles: { cache: new Map() } }, content: urls.join(' ') });
+    });
+    assert.deepEqual(calls, urls.map(url => [url, undefined]));
+});
+
+test('settings are rechecked before using prefetched data', async () => {
+    const calls = [];
+    let settingsReads = 0;
+    const provider = { id: 'twitter', prefetchOption: Symbol('test-settings'), prefetch: async url => ({ url }),
+        extract: async (_message, url) => { calls.push(url); return []; } };
+    const urls = ['https://x.com/u/status/1', 'https://x.com/u/status/2'];
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value }, loader: { extractAllUrls: () => urls.map(url => ({ provider, url })) },
+        providerSettings: { getProviderSettings: async () => ({ enabled: ++settingsReads === 1 }) },
+        dispatcher: { runSendSteps: () => assert.fail('unexpected send') },
+        errorTracking: { recordMetric: () => {}, recordAnalyticsEvent: () => {}, recordError: error => { throw error; } },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient(); register(client);
+        await listeners[1]({ id: 'prefetch-settings', guild: { id: 'guild' }, channel: { id: 'channel' }, author: { id: 'user' }, member: { roles: { cache: new Map() } }, content: urls.join(' ') });
+    });
+    assert.deepEqual(calls, [urls[0]]);
+});
+
+test('a different first provider can prefetch an eligible X URL without reordering sends', async () => {
+    const events = [], key = Symbol('cross-provider');
+    let beginFetch;
+    const started = new Promise(resolve => { beginFetch = resolve; });
+    const first = { id: 'other', extract: async () => { await started; events.push('extract:first'); return [{ content: 'first' }]; } };
+    const second = { id: 'twitter', prefetchOption: key, prefetch: async () => { events.push('prefetch:second'); beginFetch(); return { valid: true }; },
+        extract: async (_m, _u, _s, options) => { assert.equal(options[key].valid, true); return [{ content: 'second' }]; } };
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value }, loader: { extractAllUrls: () => [{ provider: first, url: 'https://other.test/1' }, { provider: second, url: 'https://x.com/u/status/2' }] },
+        providerSettings: { getProviderSettings: async () => ({ enabled: true }) },
+        dispatcher: { runSendSteps: async (_m, steps) => { events.push(`send:${steps[0].content}`); return { outcome: 'F' }; } },
+        errorTracking: { recordMetric: () => {}, recordAnalyticsEvent: () => {}, recordError: error => { throw error; } },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient(); register(client);
+        await listeners[1]({ id: 'cross-provider', guild: { id: 'guild' }, channel: { id: 'channel' }, author: { id: 'user' }, member: { roles: { cache: new Map() } }, content: 'https://other.test/1 https://x.com/u/status/2' });
+    });
+    assert.deepEqual(events.filter(event => event.startsWith('send:')), ['send:first', 'send:second']);
+});
