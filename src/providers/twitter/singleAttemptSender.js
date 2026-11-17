@@ -5,7 +5,7 @@ const { REST, Routes, Message, MessagePayload, DefaultRestOptions } = require('d
 // An HTTP 413 proves non-delivery only if the SDK did not silently retry a
 // previous POST whose acknowledgement was lost. Keep a dedicated manager for
 // these X attachment sends; never mutate the shared Discord client settings.
-function createSingleAttemptSender({ restFactory = options => new REST(options) } = {}) {
+function createSingleAttemptSender({ restFactory = options => new REST(options), prepareVideo = require('./streamedVideo').prepare } = {}) {
     const managers = new WeakMap();
     function forMessage(source, mode, previous) {
         const channel = source?.channel, client = source?.client || channel?.client;
@@ -29,8 +29,23 @@ function createSingleAttemptSender({ restFactory = options => new REST(options) 
             const reply = reference ? { reply: { messageReference: reference,
                 failIfNotExists: payload.failIfNotExists ?? client.options.failIfNotExists } } : {};
             const resolved = MessagePayload.create(channel, payload, reply).resolveBody();
-            const { body, files } = await resolved.resolveFiles();
-            const raw = await rest.post(Routes.channelMessages(channel.id), { body, files });
+            const staged = await prepareVideo(payload.files);
+            let raw;
+            if (staged) {
+                try {
+                    const form = new FormData();
+                    form.append('files[0]', staged.blob, staged.name);
+                    form.append('payload_json', JSON.stringify(resolved.body));
+                    // Keep Discord REST's per-route/global rate limiting and its
+                    // one-attempt behavior; the file-backed Blob is streamed.
+                    raw = await rest.post(Routes.channelMessages(channel.id), { body: form, passThroughBody: true });
+                } finally {
+                    try { await staged.cleanup(); } catch { console.warn('[streamedVideo] temporary media cleanup failed'); }
+                }
+            } else {
+                const { body, files } = await resolved.resolveFiles();
+                raw = await rest.post(Routes.channelMessages(channel.id), { body, files });
+            }
             if (!/^\d{16,22}$/.test(String(raw?.id || '')) || String(raw.channel_id) !== String(channel.id))
                 throw Object.assign(new Error('Discord did not return a verifiable message.'), { code: 'DISCORD_SEND_RESULT_UNKNOWN' });
             // Gateway delivery can populate the cache before this POST's

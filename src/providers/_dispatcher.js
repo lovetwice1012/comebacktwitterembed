@@ -166,31 +166,6 @@ function actualTwitterGridPart(step) {
 const FILE_FALLBACK_HTTP_STATUSES = new Set([400, 413, 415, 422]);
 const FILE_RESOLUTION_ERROR_CODES = new Set(['ENOENT', 'FileNotFound', 'ReqResourceType']);
 const TWITTER_MEDIA_TOTAL_LIMIT = 80 * 1024 * 1024;
-const TWITTER_MEDIA_ACTIVE_LIMIT = 2;
-const TWITTER_MEDIA_QUEUE_LIMIT = 16;
-const TWITTER_MEDIA_QUEUE_WAIT_MS = 30000;
-let activeTwitterMediaBatches = 0;
-const waitingTwitterMediaBatches = [];
-
-function releaseTwitterMediaBatch() {
-    const next = waitingTwitterMediaBatches.shift();
-    if (next) { clearTimeout(next.timer); next.resolve(); }
-    else activeTwitterMediaBatches--;
-}
-async function acquireTwitterMediaBatch() {
-    if (activeTwitterMediaBatches < TWITTER_MEDIA_ACTIVE_LIMIT) { activeTwitterMediaBatches++; return; }
-    if (waitingTwitterMediaBatches.length >= TWITTER_MEDIA_QUEUE_LIMIT) throw Object.assign(new Error('Twitter media preparation is busy'), { code: 'TWITTER_MEDIA_PREPARE' });
-    await new Promise((resolve, reject) => {
-        const item = { resolve, timer: null };
-        item.timer = setTimeout(() => {
-            const index = waitingTwitterMediaBatches.indexOf(item);
-            if (index >= 0) waitingTwitterMediaBatches.splice(index, 1);
-            reject(Object.assign(new Error('Twitter media preparation is busy'), { code: 'TWITTER_MEDIA_PREPARE' }));
-        }, TWITTER_MEDIA_QUEUE_WAIT_MS);
-        item.timer.unref?.(); waitingTwitterMediaBatches.push(item);
-    });
-}
-
 function safeTwitterFallback(file) {
     if (file?.spoiler === true || file?.name?.startsWith('SPOILER_')) return '';
     const candidates = typeof file === 'string' ? [file] : [file?.fallbackUrl, file?.url, file?.attachment];
@@ -339,7 +314,6 @@ async function runSendStepsNow(message, steps, trackingContext) {
     const deferredTwitterReceipts = new Map();
     let sendable = 0;
     let completeFallback = true;
-    let twitterMediaLease = false;
     const cleanup = new Map();
     async function finishPendingGrid(state) {
         const current = pendingTwitterGrid;
@@ -358,7 +332,6 @@ async function runSendStepsNow(message, steps, trackingContext) {
         if (typeof cards.finish !== 'function') return item.totalParts > 1 ? 'pending' : 'complete';
         return (await cards.finish(item)).state;
     }
-    try {
     for (let i = 0; i < steps.length; i++) {
         const previousForDependency = lastStepSent;
         if (steps[i]?.requiresPreviousSuccess && !lastStepSent) {
@@ -462,12 +435,6 @@ async function runSendStepsNow(message, steps, trackingContext) {
             telemetry.event('discord_send', 'started', attempt);
             try {
                 let outputPayload = payload;
-                // discord.js resolves URL files into memory before sending.
-                // Reserve the same bounded media slot for Vx and saved posts as
-                // for Fx, and retain it until Discord completes the upload.
-                if (providerId === 'twitter' && payload.files?.length && !twitterMediaLease) {
-                    await acquireTwitterMediaBatch(); twitterMediaLease = true;
-                }
                 if (providerId === 'twitter' && step.safeTwitterMedia === true && payload.files?.length) {
                     const alreadyVerified = payload.files.every(file => file && typeof file === 'object' && verifiedTwitterFiles.has(file));
                     preparedTwitterFiles = alreadyVerified ? payload.files : await prepareTwitterFiles(payload.files);
@@ -760,12 +727,6 @@ async function runSendStepsNow(message, steps, trackingContext) {
         : result.sent.length === sendable && !failedPostprocess ? !completeFallback ? 'P' : result.fallback ? 'D' : 'F'
             : result.sent.length ? 'P' : 'E';
     return result;
-    } finally {
-        // Prepared buffers remain reachable through subsequent split steps
-        // until the send completes or aborts. The global admission must span
-        // that full lifetime, not just the initial download.
-        if (twitterMediaLease) releaseTwitterMediaBatch();
-    }
 }
 
 module.exports = { runSendSteps };

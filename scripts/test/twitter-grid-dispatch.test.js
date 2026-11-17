@@ -423,32 +423,32 @@ test('Fx rejects a video masquerading as a photo before Discord submission', asy
     await f.run([{ files: [url], safeTwitterMedia: true }]);
     assert.equal(sent.length, 1); assert.equal(sent[0].files, undefined); assert.equal(sent[0].content, url);
 });
-test('Fx media preparation has a global batch concurrency limit', async () => {
+test('Fx media preparation does not queue behind other uploads', async () => {
     let release, started, active = 0, peak = 0, starts = 0;
     const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { started = resolve; });
-    const media = mockMedia(async url => { active++; peak = Math.max(peak, active); if (++starts === 2) started(); await gate; active--; return { data: Buffer.from(url), kind: 'photo' }; });
+    const media = mockMedia(async url => { active++; peak = Math.max(peak, active); if (++starts === 3) started(); await gate; active--; return { data: Buffer.from(url), kind: 'photo' }; });
     let id = 0; const f = fixture(async () => ({ id: String(++id) }), { prepare: async step => ({ step }) }, media);
     const jobs = Array.from({ length: 3 }, (_, i) => f.run([{ files: [`https://pbs.twimg.com/media/photo${i}?format=jpg`], safeTwitterMedia: true }]));
-    await ready; await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(starts, 2);
-    release(); await Promise.all(jobs); assert.equal(starts, 3); assert.equal(peak, 2);
+    await ready; await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(starts, 3);
+    release(); await Promise.all(jobs); assert.equal(starts, 3); assert.equal(peak, 3);
 });
-test('Fx buffer admission stays reserved while Discord responses are pending and releases after completion', async () => {
+test('Fx uploads can progress while other Discord responses are pending', async () => {
     let release, bothStarted, fetched = 0, sends = 0;
     const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { bothStarted = resolve; });
     const media = mockMedia(async url => { fetched++; return { data: Buffer.from(url), kind: 'photo' }; });
-    const f = fixture(async () => { if (++sends === 2) bothStarted(); await gate; return { id: String(sends) }; }, { prepare: async step => ({ step }) }, media);
+    const f = fixture(async () => { if (++sends === 3) bothStarted(); await gate; return { id: String(sends) }; }, { prepare: async step => ({ step }) }, media);
     const jobs = Array.from({ length: 3 }, (_, i) => f.run([{ files: [`https://pbs.twimg.com/media/lease${i}?format=jpg`], safeTwitterMedia: true }]));
     await ready; await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(fetched, 2, 'the third batch cannot allocate buffers while the first two sends are in flight');
+    assert.equal(fetched, 3);
     release(); await Promise.all(jobs); assert.equal(fetched, 3);
 });
-test('Fx buffer admission is released after ambiguous Discord failures', async () => {
+test('Fx ambiguous Discord failures are not retried', async () => {
     let release, bothStarted, fetched = 0, sends = 0;
     const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { bothStarted = resolve; });
     const media = mockMedia(async url => { fetched++; return { data: Buffer.from(url), kind: 'photo' }; });
-    const f = fixture(async () => { if (++sends === 2) bothStarted(); await gate; throw Object.assign(new Error('lost response'), { code: 'ECONNRESET' }); }, { prepare: async step => ({ step }) }, media);
+    const f = fixture(async () => { if (++sends === 3) bothStarted(); await gate; throw Object.assign(new Error('lost response'), { code: 'ECONNRESET' }); }, { prepare: async step => ({ step }) }, media);
     const jobs = Array.from({ length: 3 }, (_, i) => f.run([{ files: [`https://pbs.twimg.com/media/fail${i}?format=jpg`], safeTwitterMedia: true }]));
-    await ready; await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(fetched, 2);
+    await ready; await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(fetched, 3);
     release(); const results = await Promise.all(jobs);
     assert.equal(fetched, 3); assert.ok(results.every(result => result.outcome === 'U'));
 });
@@ -539,15 +539,15 @@ test('when a single-attempt sender cannot be verified no X multi-file post is at
     assert.equal(posts, 0); assert.equal(result.plannedSteps, 1); assert.equal(result.outcome, 'E'); assert.deepEqual(f.post, []);
 });
 
-test('Vx attachment resolutions share the bounded media admission until send completes', async () => {
+test('Vx attachment sends do not wait behind two other uploads', async () => {
     let release, bothStarted, sends = 0;
     const gate = new Promise(resolve => { release = resolve; });
     const ready = new Promise(resolve => { bothStarted = resolve; });
-    const f = fixture(async () => { const id = ++sends; if (id === 2) bothStarted(); await gate; return { id: String(id) }; }, { prepare: async step => ({ step }) });
+    const f = fixture(async () => { const id = ++sends; if (id === 3) bothStarted(); await gate; return { id: String(id) }; }, { prepare: async step => ({ step }) });
     const jobs = Array.from({ length: 3 }, (_, i) => f.run([{ files: [`https://video.twimg.com/ext_tw_video/${i}.mp4`] }]));
     await ready;
     await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(sends, 2);
+    assert.equal(sends, 3);
     release();
     const results = await Promise.all(jobs);
     assert.equal(sends, 3);
