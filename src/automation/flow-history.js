@@ -349,6 +349,10 @@ async function refreshFlowHistory(query, runIds) {
       { ...row, decision: parse(row.decision_json) || {} },
     ]),
   );
+  // Membership links can arrive in any order. Preserve the SQL-ordered trace
+  // while visiting only the steps belonging to each run, rather than scanning
+  // every selected step again for every run in the batch.
+  const stepOrder = new Map(stepRows.map((row, index) => [row.id, index]));
   const memberships = new Map();
   for (const link of stepLinks) {
     if (!memberships.has(link.run_id)) memberships.set(link.run_id, new Set());
@@ -432,9 +436,10 @@ async function refreshFlowHistory(query, runIds) {
   });
   for (const origin of origins) {
     const runId = origin.run_id,
-      steps = stepRows
-        .filter((row) => memberships.get(runId)?.has(row.id))
-        .map((row) => stepsById.get(row.id));
+      steps = [...(memberships.get(runId) || [])]
+        .map((id) => stepsById.get(id))
+        .filter(Boolean)
+        .sort((a, b) => stepOrder.get(a.id) - stepOrder.get(b.id));
     const trace = require("./flow-trace").traceProjection();
     for (const step of steps) {
       const decision = step.decision;
