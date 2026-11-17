@@ -140,7 +140,7 @@ function dispatcherFixture(makeRequest) {
         '../twitterGridCards': { prepare: async step => ({ step }) }, './twitter/singleAttemptSender': f.sender };
     compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports', 'console'], { filename })(
         id => Object.hasOwn(mocks, id) ? mocks[id] : actual(id), mod, mod.exports, { log() {}, warn() {}, error() {} });
-    return { ...f, post, run: steps => mod.exports.runSendSteps(f.source, steps, 'twitter', {}) };
+    return { ...f, post, run: (steps, provider = 'twitter') => mod.exports.runSendSteps(f.source, steps, provider, {}) };
 }
 
 test('dispatcher never resends after a one-shot X upload whose response is lost', async () => {
@@ -165,4 +165,33 @@ test('dispatcher splits only the definite 413 returned by one-shot REST', async 
     });
     const result = await f.run([{ files: [Buffer.from('a'), Buffer.from('b')], content: 'fixture', deleteSource: true }]);
     assert.deepEqual(sizes, [2, 1, 1]); assert.equal(result.outcome, 'F'); assert.deepEqual(f.post, ['delete']);
+});
+
+test('non-X dispatcher streams multiple buffered attachments using the shared REST client', async () => {
+    let posts = 0;
+    const f = dispatcherFixture(() => assert.fail('dedicated REST should not be used'));
+    f.client.rest.post = async (_route, request) => {
+        posts++;
+        assert.equal(request.passThroughBody, true);
+        assert.deepEqual([...request.body.keys()].filter(key => key.startsWith('files[')), ['files[0]', 'files[1]']);
+        assert.equal(JSON.parse(request.body.get('payload_json')).content, 'fixture');
+        return { id: SENT, channel_id: CHANNEL };
+    };
+    const result = await f.run([{ files: [Buffer.from('one'), Buffer.from('two')], content: 'fixture', deleteSource: true }], 'github');
+    assert.equal(posts, 1); assert.equal(result.outcome, 'F'); assert.deepEqual(f.post, ['delete']);
+});
+
+test('two streamed ten-attachment posts retain order and delete the source after both succeed', async () => {
+    const seen = []; let id = 555555555555555550n;
+    const f = dispatcherFixture(async (_url, init) => {
+        const files = [...init.body.keys()].filter(key => key.startsWith('files['));
+        const body = JSON.parse(init.body.get('payload_json'));
+        seen.push({ count: files.length, content: body.content });
+        return jsonResponse(200, { id: String(++id), channel_id: CHANNEL });
+    });
+    const images = Array.from({ length: 20 }, (_, i) => ({ attachment: Buffer.from(`image-${i}`), name: `${i}.jpg` }));
+    const result = await f.run([{ files: images.slice(0, 10), content: 'first', deleteSource: true },
+        { files: images.slice(10), content: 'second', send: 'channel', requiresPreviousSuccess: true }]);
+    assert.deepEqual(seen, [{ count: 10, content: 'first' }, { count: 10, content: 'second' }]);
+    assert.equal(result.outcome, 'F'); assert.deepEqual(f.post, ['delete']);
 });

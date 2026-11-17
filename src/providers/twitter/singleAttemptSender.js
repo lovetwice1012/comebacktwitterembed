@@ -7,34 +7,42 @@ const { REST, Routes, Message, MessagePayload, DefaultRestOptions } = require('d
 // these X attachment sends; never mutate the shared Discord client settings.
 function createSingleAttemptSender({ restFactory = options => new REST(options), prepareVideo = require('./streamedVideo').prepare } = {}) {
     const managers = new WeakMap();
-    function forMessage(source, mode, previous) {
+    function forMessage(source, mode, previous, options = {}) {
         const channel = source?.channel, client = source?.client || channel?.client;
         const messages = channel?.messages;
         const request = client?.rest?.options?.makeRequest;
         if (!channel?.id || !client || typeof client.token !== 'string' || !client.token
             || !client.options || !messages || typeof messages._add !== 'function' || typeof messages.resolveId !== 'function'
             || typeof request !== 'function'
-            || request !== DefaultRestOptions.makeRequest && request[Symbol.for('cbte.discord.singleAttemptFetch')] !== true) return null;
+            || request !== DefaultRestOptions.makeRequest && request[Symbol.for('cbte.discord.singleAttemptFetch')] !== true
+            || options.sharedRest && (typeof client.rest.post !== 'function' || typeof options.fallback !== 'function')) return null;
         const reference = mode === 'reply-source' ? source : mode === 'reply-previous' ? previous || source : null;
         if (reference && !reference.id) return null;
         return { send: async payload => {
-            let entry = managers.get(client);
-            if (!entry || entry.request !== request) {
-                const rest = restFactory({ ...client.rest.options, retries: 0, rejectOnRateLimit: () => true });
-                entry = { request, rest };
-                managers.set(client, entry);
+            let rest;
+            if (options.sharedRest) rest = client.rest;
+            else {
+                let entry = managers.get(client);
+                if (!entry || entry.request !== request) {
+                    rest = restFactory({ ...client.rest.options, retries: 0, rejectOnRateLimit: () => true });
+                    entry = { request, rest };
+                    managers.set(client, entry);
+                }
+                rest = entry.rest;
+                rest.setToken(client.token);
             }
-            const { rest } = entry;
-            rest.setToken(client.token);
             const reply = reference ? { reply: { messageReference: reference,
                 failIfNotExists: payload.failIfNotExists ?? client.options.failIfNotExists } } : {};
-            const resolved = MessagePayload.create(channel, payload, reply).resolveBody();
             const staged = await prepareVideo(payload.files);
+            if (!staged && options.sharedRest) return options.fallback(payload);
             let raw;
             if (staged) {
                 try {
+                    const resolved = MessagePayload.create(channel, payload, reply).resolveBody();
                     const form = new FormData();
-                    form.append('files[0]', staged.blob, staged.name);
+                    for (const [index, file] of (staged.files || [staged]).entries()) {
+                        form.append(`files[${index}]`, file.blob, file.name);
+                    }
                     form.append('payload_json', JSON.stringify(resolved.body));
                     // Keep Discord REST's per-route/global rate limiting and its
                     // one-attempt behavior; the file-backed Blob is streamed.
@@ -43,6 +51,7 @@ function createSingleAttemptSender({ restFactory = options => new REST(options),
                     try { await staged.cleanup(); } catch { console.warn('[streamedVideo] temporary media cleanup failed'); }
                 }
             } else {
+                const resolved = MessagePayload.create(channel, payload, reply).resolveBody();
                 const { body, files } = await resolved.resolveFiles();
                 raw = await rest.post(Routes.channelMessages(channel.id), { body, files });
             }

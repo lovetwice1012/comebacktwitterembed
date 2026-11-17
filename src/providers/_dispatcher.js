@@ -426,7 +426,15 @@ async function runSendStepsNow(message, steps, trackingContext) {
             }
             catch { /* Fail closed before Discord when a one-shot sender is unavailable. */ }
         }
-        const originalSender = singleAttemptSender?.send || sender;
+        // Normal providers retain the shared Discord REST manager and its
+        // existing retry/rate-limit policy. If staging is unavailable the
+        // original channel/reply sender is called without a Discord POST first.
+        let streamingSender = null;
+        if (!needsSingleAttempt && messageObject.files?.length) {
+            try { streamingSender = require('./twitter/singleAttemptSender').forMessage(message, sendMode, previousSent, { sharedRest: true, fallback: sender }); }
+            catch { /* Keep the ordinary sender when streaming is unavailable. */ }
+        }
+        const originalSender = singleAttemptSender?.send || streamingSender?.send || sender;
         let preparedTwitterFiles = null;
         let attemptedDiscordSubmission = false;
         sender = async payload => {
