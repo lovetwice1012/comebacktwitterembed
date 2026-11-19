@@ -14,7 +14,7 @@ function fixture(send, grid, media, telemetry, singleAttempt, provider = 'twitte
         '../sharedPostHistory': { run: (_m, steps, _c, run) => run(steps) }, '../mediaGallery': options.gallery || { prepare: async step => ({ step }), report() {} },
         '../personalLinks/cards': options.personal || { prepare: async step => ({ step }) }, '../twitterGridCards': grid,
         './twitter/singleAttemptSender': singleAttempt === undefined ? { forMessage: () => ({ send }) } : singleAttempt,
-        './instagram/attachment-preflight': { prepare: async () => null },
+        './instagram/attachment-preflight': options.preflight || { prepare: async () => null },
         ...(options.multipart ? { '../instagramMultipart': options.multipart } : {}),
         ...(media ? { './twitter/safeMedia': media } : {}),
     };
@@ -552,4 +552,18 @@ test('Vx attachment sends do not wait behind two other uploads', async () => {
     const results = await Promise.all(jobs);
     assert.equal(sends, 3);
     assert.ok(results.every(result => result.outcome === 'F'));
+});
+
+test('Instagram attachment policy retains its acquisition behavior through gallery conversion', async () => {
+    for (const marked of [true, false]) {
+        let preparations = 0, output;
+        const file = { attachment: 'https://images.example.test/image.jpg?stp=fixture', name: 'instagram-1.jpg' };
+        if (marked) Object.defineProperty(file, Symbol.for('cbte.instagram.bare-url-policy'), { value: true });
+        const gallery = { prepare: async step => ({ step: { ...step, files: step.files.map(value => ({ ...value })) } }), report() {} };
+        const f = fixture(async value => { output = value; return { id: '1' }; }, { prepare: async step => ({ step }) }, null, null, undefined, 'instagram',
+            { gallery, preflight: { prepare: async () => { preparations++; return null; } } });
+        const result = await f.run([{ files: [file] }]);
+        assert.equal(result.outcome, 'F'); assert.equal(preparations, marked ? 0 : 1);
+        assert.equal(output.files[0].name, 'instagram-1.jpg');
+    }
 });

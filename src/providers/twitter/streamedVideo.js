@@ -65,7 +65,7 @@ function eligible(files) {
         return files.map(file => {
             const raw = typeof file === 'string' || Buffer.isBuffer(file) ? file : file?.attachment;
             const name = typeof file === 'object' && !Buffer.isBuffer(file) && file?.name != null
-                ? String(file.name) : typeof raw === 'string' ? path.basename(raw) : 'file.jpg';
+                ? String(file.name) : typeof raw === 'string' ? path.basename(raw.split(/[?#]/, 1)[0]) : 'file.jpg';
             if (!name || /[\r\n\0]/.test(name)) throw new Error('invalid filename');
             if (Buffer.isBuffer(raw)) return { data: raw, name };
             return { url: publicUrl(raw), name };

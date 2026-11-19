@@ -943,3 +943,34 @@ test('instagram prefetch reuses Reel metadata and keeps current deletion setting
     assert.equal(calls, before); assert.equal(steps[0].deleteSource, true);
     assert.equal(steps[0].files[0].attachment, 'https://example.com/Ddmd-UrRH2B.mp4?sig=fixture');
 });
+
+test('instagram attachment display keeps a usable filename for signed image URLs', async () => {
+    const signed = 'https://scontent.cdninstagram.com/v/t51.2885-15/sample.jpg?stp=dst-jpg_e35&token=fixture';
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => embedHtml(mediaNode({ shortcode: 'CODE123', display_url: signed })) }));
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const steps = await provider.extract(createMessage(url), url, { media_display_mode: 'attachment' });
+    assert.equal(steps[0].files.length, 1);
+    assert.deepEqual(steps[0].files[0], { attachment: signed, name: 'instagram-1.jpg' });
+    assert.ok(!steps[0].files[0].name.includes('?'));
+    assert.ok(steps[0].embeds?.[0]);
+});
+
+test('instagram attachment display names each signed carousel image in order', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => crawlerHtml({
+        __typename: 'XIGPolarisCarouselMedia', media_type: 8, shortcode: 'CODE123', owner: { username: 'artist' },
+        carousel_media: Array.from({ length: 3 }, (_, i) => ({ ...xigImage(i + 1), display_uri: `https://example.test/${i + 1}.webp?stp=dst&sig=${i}` })),
+    }) }));
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const steps = await provider.extract(createMessage(url), url, { media_display_mode: 'attachment' });
+    assert.deepEqual(steps[0].files.map(file => file.name), ['instagram-1.webp', 'instagram-2.webp', 'instagram-3.webp']);
+    assert.deepEqual(steps[0].files.map(file => file.attachment), Array.from({ length: 3 }, (_, i) => `https://example.test/${i + 1}.webp?stp=dst&sig=${i}`));
+});
+
+test('Instagram attachment policy preserves the existing bare-URL acquisition path', async () => {
+    const signed = 'https://scontent.cdninstagram.com/v/t51.2885-15/sample.jpg?stp=dst-jpg';
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => embedHtml(mediaNode({ shortcode: 'CODE123', display_url: signed })) }));
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const steps = await provider.extract(createMessage(url), url, { media_display_mode: 'attachment' });
+    assert.equal(steps[0].files[0][Symbol.for('cbte.instagram.bare-url-policy')], true);
+    assert.deepEqual(steps[0].files[0], { attachment: signed, name: 'instagram-1.jpg' });
+});

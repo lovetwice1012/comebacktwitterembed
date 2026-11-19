@@ -333,3 +333,24 @@ test('spoiler filenames remain unchanged when multiple buffered attachments are 
         await staged.cleanup();
     } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('streamed bare signed URLs use the pathname as the attachment filename', () => {
+    const signed = 'https://images.example.test/path/photo.jpg?stp=dst-jpg&token=fixture#part';
+    const item = _internal.eligible([signed]);
+    assert.equal(item[0].name, 'photo.jpg');
+    assert.equal(item[0].url.search, '?stp=dst-jpg&token=fixture');
+});
+
+test('streamed multipart keeps the signed request URL while uploading a clean image name', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-signed-name-'));
+    try {
+        const signed = 'https://images.example.test/photo.jpg?stp=dst-jpg&sig=fixture';
+        let requested;
+        const staged = await prepare([signed], { tmpdir: root, fetch: async url => { requested = url; return response(Buffer.from('image-bytes')); } });
+        assert.equal(requested, signed); assert.equal(staged.files[0].name, 'photo.jpg');
+        const form = new FormData(); form.append('files[0]', staged.files[0].blob, staged.files[0].name);
+        assert.equal(form.get('files[0]').name, 'photo.jpg');
+        assert.equal(Buffer.from(await form.get('files[0]').arrayBuffer()).toString(), 'image-bytes');
+        await staged.cleanup(); assert.deepEqual(await fs.readdir(root), []);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

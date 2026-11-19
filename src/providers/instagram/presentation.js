@@ -4,6 +4,7 @@ const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { videoExtensions } = require('../../utils');
 const {
     applyMediaDisplayToStep,
+    resolveMediaDisplayMode,
     resolveDensityMaxLength,
     resolveDisplayDensity,
     shouldShowOutputItem,
@@ -68,14 +69,18 @@ function hasDirectVideoUrl(media) {
     return isVideoMedia(media) && (media?.verifiedVideoSource === true || videoExtensions.includes(mediaUrlExtension(media?.url)));
 }
 
-function mediaFilePayload(media, index) {
+function mediaFilePayload(media, index, preserveBareUrlPath = false) {
     const ext = mediaUrlExtension(media?.url) || (isVideoMedia(media) ? 'mp4' : 'jpg');
-    return {
+    const file = {
         attachment: media.url,
         // Instagram's signed CDN URLs do not always give Discord a useful
         // filename. A stable extension is required for native video rendering.
         name: `instagram-${index + 1}.${ext}`,
     };
+    // This policy path previously used bare URLs and bypassed the optional
+    // preflight. Preserve its acquisition behavior while fixing the filename.
+    if (preserveBareUrlPath) Object.defineProperty(file, Symbol.for('cbte.instagram.bare-url-policy'), { value: true });
+    return file;
 }
 
 function resolveCaptionMaxLength(value, settings = {}) {
@@ -295,7 +300,10 @@ function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaInde
 
     const payload = {
         embeds,
-        files: [],
+        // The attachment policy must retain explicit filenames. Passing bare
+        // signed URLs lets Discord treat the query string as part of the name.
+        files: resolveMediaDisplayMode(s) === 'attachment'
+            ? indexed.map(({ media, index }) => mediaFilePayload(media, index, true)) : [],
         components: buildButtons(lang, 'embeds', selected.length > 0),
     };
     return applyMediaDisplayToStep(payload, s, selected.map(media => media.url), 'Media');

@@ -303,7 +303,7 @@ test('showMediaAsAttachments preserves existing video attachments', async () => 
 
         await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
 
-        assert.deepEqual(editedMessage.files, [videoUrl, imageUrl]);
+        assert.deepEqual(editedMessage.files, [videoUrl, { attachment: imageUrl, name: 'embed-image-1.jpg' }]);
         assert.equal(editedMessage.embeds.length, 1);
         assert.equal(editedMessage.embeds[0].image, undefined);
     });
@@ -322,7 +322,7 @@ test('attachment display retains existing files and the text of subsequent quote
         }, editReply: async () => {}, deleteReply: async () => {} };
         await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
         assert.deepEqual(edited.attachments, [{ id: '222222222222222222' }, { id: '333333333333333333' }]);
-        assert.deepEqual(edited.files, [imageUrl, 'https://img.example/quoted.png', 'https://img.example/third.png']);
+        assert.deepEqual(edited.files, [{ attachment: imageUrl, name: 'embed-image-1.jpg' }, 'https://img.example/quoted.png', 'https://img.example/third.png']);
         assert.equal(edited.embeds.length, 2); assert.equal(edited.embeds[1].title, 'Quoted post');
         assert.equal(edited.embeds[1].description, 'Quoted text'); assert.equal(edited.embeds[1].url, 'https://example.test/quote');
     });
@@ -563,4 +563,28 @@ test('downloadYouTubeVideo is temporarily disabled when the button flag is off',
         if (originalStore) require.cache[storePath] = originalStore;
         else delete require.cache[storePath];
     }
+});
+
+test('attachment conversion gives signed image URLs clean filenames', async () => {
+    await withoutTimers(async () => {
+        let edited;
+        const signed = 'https://images.example/photo.jpg?stp=dst-jpg&token=fixture';
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [], embeds: [baseEmbed({ image: { url: signed } })], edit: async value => { edited = value; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
+        assert.deepEqual(edited.files, [{ attachment: signed, name: 'embed-image-1.jpg' }]);
+    });
+});
+
+test('attachment conversion removes empty query and fragment markers from names', async () => {
+    for (const suffix of ['?', '#']) await withoutTimers(async () => {
+        let edited;
+        const signed = `https://images.example/photo.jpg${suffix}`;
+        const interaction = { guildId: 'guild-components', locale: 'en', message: {
+            attachments: [], embeds: [baseEmbed({ image: { url: signed } })], edit: async value => { edited = value; },
+        }, editReply: async () => {}, deleteReply: async () => {} };
+        await showMediaAsAttachments.handle(interaction, { buttons: buttons() });
+        assert.deepEqual(edited.files, [{ attachment: signed, name: 'embed-image-1.jpg' }]);
+    });
 });

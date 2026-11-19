@@ -181,3 +181,23 @@ test('global admission bounds active preparations and leaves excess requests to 
     assert.equal(await prepare([file()]), null);
     aa.release(); aa.release(); bb.release();
 });
+
+test('signed Instagram image keeps its clean filename through preflight and streamed multipart preparation', async () => {
+    const fsp = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'cbte-ig-name-'));
+    const signed = 'https://scontent.cdninstagram.com/image.jpg?stp=dst-jpg&sig=fixture';
+    const source = { attachment: signed, name: 'instagram-1.jpg' };
+    const acquire = createPreparer({ lookup: addresses, fetchImpl: async () => response(200, Buffer.from('image-fixture')) });
+    let prepared;
+    try {
+        prepared = await acquire([source]);
+        assert.equal(prepared.files[0].name, 'instagram-1.jpg');
+        assert.equal(prepared.files[0].fallbackUrl, signed);
+        const staged = await require('../../src/providers/twitter/streamedVideo').prepare(prepared.files, { tmpdir: root });
+        assert.equal(staged.files[0].name, 'instagram-1.jpg');
+        assert.equal(Buffer.from(await staged.files[0].blob.arrayBuffer()).toString(), 'image-fixture');
+        await staged.cleanup();
+    } finally {
+        prepared?.release(); await fsp.rm(root, { recursive: true, force: true });
+    }
+});

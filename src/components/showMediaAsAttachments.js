@@ -108,7 +108,12 @@ async function resolveImageExtension(rawUrl) {
 }
 
 async function buildImageFile(url, index) {
-    if (imageUrlHasExtension(url)) return url;
+    if (imageUrlHasExtension(url)) {
+        if (!/[?#]/.test(url)) return url;
+        // Keep the complete URL for fetching but never put its signature in
+        // the Discord filename or its image extension.
+        return { attachment: url, name: `embed-image-${index}.${getImageExtensionFromUrl(url)}` };
+    }
     const extension = await resolveImageExtension(url);
     if (!extension) throw new Error('GRID_SOURCE_INCOMPLETE');
     return {

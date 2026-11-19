@@ -479,7 +479,8 @@ async function runSendStepsNow(message, steps, trackingContext) {
         const startedAt = Date.now();
         recordMetric('discord_send_attempt', trackingContext);
         try {
-            if (providerId === 'instagram' && messageObject.files?.length) {
+            if (providerId === 'instagram' && messageObject.files?.length
+                && !current.files?.some(file => file?.[Symbol.for('cbte.instagram.bare-url-policy')] === true)) {
                 // Acquire supported image attachments before entering Discord's
                 // send path, so retrying an acquisition cannot repeat a POST.
                 const prepare = require('./instagram/attachment-preflight').prepare;
